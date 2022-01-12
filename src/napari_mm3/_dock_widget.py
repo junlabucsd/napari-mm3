@@ -38,4 +38,6 @@ def example_magic_widget(img_layer: "napari.layers.Image"):
 @napari_hook_implementation
 def napari_experimental_provide_dock_widget():
     # you can return either a single widget, or a sequence of widgets
-    return [ExampleQWidget, example_magic_widget]
+    #return [ExampleQWidget, example_magic_widget]
+    return []
+
