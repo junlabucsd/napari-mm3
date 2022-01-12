@@ -1,0 +1,11 @@
+site_name: napari-mm3
+site_description: a plugin for mother machine image analysis
+site_author: Gursharan Ahir
+
+theme: readthedocs
+
+
+repo_url: https://github.com/ahirsharan/napari-mm3
+
+pages:
+- Home: index.md
