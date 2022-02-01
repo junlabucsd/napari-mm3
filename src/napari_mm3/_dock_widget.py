@@ -30,10 +30,52 @@ class ExampleQWidget(QWidget):
         print("napari has", len(self.viewer.layers), "layers")
 
 
-@magic_factory
-def example_magic_widget(img_layer: "napari.layers.Image"):
-    print(f"you have selected {img_layer}")
+#@magic_factory
+#def example_magic_widget(img_layer: "napari.layers.Image"):
+#    print(f"you have selected {img_layer}")
 
+
+import datetime
+from enum import Enum
+from pathlib import Path
+
+from magicgui import magicgui
+
+
+class Medium(Enum):
+    """Using Enums is a great way to make a dropdown menu."""
+    Glass = 1.520
+    Oil = 1.515
+    Water = 1.333
+    Air = 1.0003
+
+
+@magicgui(
+    call_button="Calculate",
+    layout="vertical",
+    # numbers default to spinbox widgets, but we can make
+    # them sliders using the `widget_type` option
+
+    #slider_int={"widget_type": "Slider", "readout": False},
+    #radio_option={
+    #    "widget_type": "RadioButtons",
+    #    "orientation": "horizontal",
+    #    "choices": [("first option", 1), ("second option", 2)],
+    #},
+    filename={"label": "Pick a file:"},  # custom label
+)
+def widget_demo(
+    OTSU_Threshold=1.0,
+    first_opening_size=2,
+    distance_Threshold=2,
+    second_opening_size=1,
+    min_object_size=25,
+    filename=Path.home(),  # path objects are provided a file picker
+):
+    """Run some computation."""
+    return locals().values()
+
+widget_demo.show(run = True) # if running locally, use `show(run=True)`
 
 @napari_hook_implementation
 def napari_experimental_provide_dock_widget():
