@@ -40,37 +40,38 @@ import mm3_helpers as mm3
 import _function as mm3_
 
 ### Main script
-if __name__ == "__main__":
+def nd2ToTIFF(params):
     '''
     This script converts a Nikon Elements .nd2 file to individual TIFF files per time point. Multiple color planes are stacked in each time point to make a multipage TIFF.
     '''
 
     # set switches and parameters
-    parser = argparse.ArgumentParser(prog='python mm3_nd2ToTIFF.py',
-                                     description='Export .nd2 files to TIFF.')
-    parser.add_argument('-f', '--paramfile', type=str,
-                        required=False, help='Yaml file containing parameters.')
-    parser.add_argument('-o', '--fov',  type=str,
-                        required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-3", etc.')
-    namespace = parser.parse_args()
+    # parser = argparse.ArgumentParser(prog='python mm3_nd2ToTIFF.py',
+    #                                  description='Export .nd2 files to TIFF.')
+    # parser.add_argument('-f', '--paramfile', type=str,
+    #                     required=False, help='Yaml file containing parameters.')
+    # parser.add_argument('-o', '--fov',  type=str,
+    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-3", etc.')
+    # namespace = parser.parse_args()
 
     # Load the project parameters file
-    mm3.information('Loading experiment parameters.')
+    information('Loading experiment parameters.')
     # if namespace.paramfile:
     #     param_file_path = namespace.paramfile
     # else:
     #     mm3.warning('No param file specified. Using 100X template.')
     #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    p = mm3_.init_mm3_helpers() # initialized the helper library
+    #p = mm3_.init_mm3_helpers() # initialized the helper library
+    p=params
 
-    if namespace.fov:
-        if '-' in namespace.fov:
-            user_spec_fovs = range(int(namespace.fov.split("-")[0]),
-                                   int(namespace.fov.split("-")[1])+1)
-        else:
-            user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    else:
-        user_spec_fovs = []
+    # if namespace.fov:
+    #     if '-' in namespace.fov:
+    #         user_spec_fovs = range(int(namespace.fov.split("-")[0]),
+    #                                int(namespace.fov.split("-")[1])+1)
+    #     else:
+    #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
+    # else:
+    user_spec_fovs = []
 
     # number of rows of channels. Used for cropping.
     number_of_rows = p['nd2ToTIFF']['number_of_rows']
