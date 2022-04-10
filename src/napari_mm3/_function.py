@@ -7299,7 +7299,7 @@ def nd2ToTIFF(params):
     #     else:
     #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
     # else:
-    user_spec_fovs = []
+    user_spec_fovs = [1,2,3,4,5]
 
     # number of rows of channels. Used for cropping.
     number_of_rows = p['nd2ToTIFF']['number_of_rows']
@@ -7489,7 +7489,7 @@ def compile(params):
     #     else:
     #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
     # else:
-    user_spec_fovs = []
+    user_spec_fovs = [1,2,3,4,5]
 
     # # number of threads for multiprocessing
     # if namespace.nproc:
@@ -8464,9 +8464,12 @@ def fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images):
     # enter user input
     # ask the user to correct cell/nocell calls
     cells_handler = fig.canvas.mpl_connect('button_press_event', onclick_cells)
+    #plt.close() resolves the event loop running error but the window stops getting displayed
+    #https://stackoverflow.com/questions/27280777/pylab-show-qcoreapplicationexec-the-event-loop-is-already-running
+
     # matplotlib has difefrent behavior for interactions in different versions.
     if float(mpl.__version__[:3]) < 1.5: # check for verions less than 1.5
-        plt.show(block=False)
+        plt.show(block=True)
         raw_input("Click colored channels to toggle between analyze (green), use for empty (blue), and ignore (red).\nPrees enter to go to the next FOV.")
     else:
         print("Click colored channels to toggle between analyze (green), use for empty (blue), and ignore (red).\nClose figure to go to the next FOV.")
@@ -8774,7 +8777,6 @@ def preload_images(specs, fov_id_list):
     for all channels in all FOVS. It is passed to the UI so that the
     figures can be populated much faster
     '''
-    global p
 
     # Intialized the dicionary
     UI_images = {}
@@ -8783,12 +8785,12 @@ def preload_images(specs, fov_id_list):
         information("Preloading images for FOV {}.".format(fov_id))
         UI_images[fov_id] = {}
         for peak_id in specs[fov_id].keys():
-            image_data = load_stack(fov_id, peak_id, color=p['phase_plane'])
+            image_data = load_stack(fov_id, peak_id, color=params['phase_plane'])
             UI_images[fov_id][peak_id] = {'first' : None, 'last' : None} # init dictionary
              # phase image at t=0. Rescale intenstiy and also cut the size in half
-            first_image = p['channel_picker']['first_image']
+            first_image = params['channel_picker']['first_image']
             UI_images[fov_id][peak_id]['first'] = image_data[first_image,::2,::2]
-            last_image = p['channel_picker']['last_image']
+            last_image = params['channel_picker']['last_image']
             # phase image at end
             UI_images[fov_id][peak_id]['last'] = image_data[last_image,::2,::2]
 
@@ -8826,7 +8828,7 @@ def channelPicker(params):
     #     mm3.warning('No param file specified. Using 100X template.')
     #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
     #p = mm3_.init_mm3_helpers() # initialized the helper library
-    p=params
+    p = params
 
     # if namespace.fov:
     #     if '-' in namespace.fov:
@@ -8835,7 +8837,7 @@ def channelPicker(params):
     #     else:
     #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
     # else:
-    user_spec_fovs = []
+    user_spec_fovs = [1,2,3,4,5]
 
     # # number of threads for multiprocessing
     # if namespace.nproc:
@@ -9262,7 +9264,7 @@ def subtract(params):
     #     else:
     #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
     # else:
-    user_spec_fovs = []
+    user_spec_fovs = [1,2,3,4,5]
 
     # number of threads for multiprocessing
     # if namespace.nproc:
@@ -9369,7 +9371,7 @@ def segmentOTSU(params):
     #     else:
     #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
     # else:
-    user_spec_fovs = []
+    user_spec_fovs = [1,2,3,4,5]
 
     # number of threads for multiprocessing
     # if namespace.nproc:
