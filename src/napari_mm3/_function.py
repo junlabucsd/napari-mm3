@@ -8,6 +8,7 @@ Replace code below according to your needs.
 """
 from __future__ import print_function, division
 from typing import TYPE_CHECKING, DefaultDict
+from unicodedata import name
 
 import six
 
@@ -63,19 +64,22 @@ from tensorflow.keras import utils
 from tensorflow.keras import backend as K
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # supress warnings
 
+
+
 # Parralelization modules
 import multiprocessing
 from multiprocessing import Pool
 
 # Plotting for debug
 import matplotlib as mpl
-from matplotlib import pyplot as plt
 font = {'family' : 'sans-serif',
         'weight' : 'normal',
         'size'   : 12}
 mpl.rc('font', **font)
 mpl.rcParams['pdf.fonttype'] = 42
 from matplotlib.patches import Ellipse
+from pathlib import Path
+import time
 import matplotlib.pyplot as plt
 
 # import modules
@@ -89,17 +93,10 @@ from skimage import io, measure, morphology
 import tifffile as tiff
 from scipy import stats
 from pprint import pprint # for human readable file output
-try:
-    import cPickle as pickle
-except:
-    import pickle
 import multiprocessing
 from multiprocessing import Pool
 import numpy as np
 import warnings
-
-from matplotlib import pyplot as plt
-
 from tensorflow.python.keras import models
 
 from enum import Enum
@@ -116,8 +113,7 @@ import matplotlib.gridspec as gridspec
 from skimage.exposure import rescale_intensity # for displaying in GUI
 from skimage import io, morphology, segmentation
 # import mm3_helpers as mm3
-if TYPE_CHECKING:
-    import napari
+import napari
 
 # This is the actual plugin function, where we export our function
 # (The functions themselves are defined below)
@@ -8334,7 +8330,7 @@ def fov_cell_segger_plot_channels(fov_id, predictionDict, specs, outputdir='.', 
 
     return specs
 
-# funtion which makes the UI plot
+# function which makes the UI plot
 def fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images):
     '''Creates a plot with the channels with guesses for empties and full channels,
     and requires the user to choose which channels to use for analysis and which to
@@ -8469,7 +8465,7 @@ def fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images):
 
     # matplotlib has difefrent behavior for interactions in different versions.
     if float(mpl.__version__[:3]) < 1.5: # check for verions less than 1.5
-        plt.show(block=True)
+        plt.show(block=False)
         raw_input("Click colored channels to toggle between analyze (green), use for empty (blue), and ignore (red).\nPrees enter to go to the next FOV.")
     else:
         print("Click colored channels to toggle between analyze (green), use for empty (blue), and ignore (red).\nClose figure to go to the next FOV.")
@@ -8478,6 +8474,68 @@ def fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images):
     plt.close()
 
     return specs
+
+def fov_choose_channels_UI_II(fov_id, specs, UI_images):
+
+    information("Starting channel picking for FOV %d." % fov_id)
+    # plot the peaks peak by peak using sorted list
+    sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
+
+    f_imgs=[]
+    l_imgs=[]
+
+    for _, peak_id in enumerate(sorted_peaks, start=1):
+        f_imgs.append(UI_images[fov_id][peak_id]['first'])
+        l_imgs.append(UI_images[fov_id][peak_id]['last'])
+
+    top=np.concatenate(f_imgs,1)
+    bottom=np.concatenate(l_imgs,1)
+    tot=np.concatenate((top,bottom),0)
+
+    napari.current_viewer().add_image(tot, name="Fov"+str(fov_id)+"_img", visible=False)
+    napari.current_viewer().add_points([], name="Fov"+str(fov_id)+"_pts", visible=False)
+    return specs
+
+def channelProcessor(params):
+    ana_dir = os.path.join(params['experiment_directory'], params['analysis_directory'])
+    specs = yaml.safe_load(Path(ana_dir+'specs.yaml').read_text())
+    print(specs)
+
+    user_spec_fovs=[1,2,3,4,5]
+
+    # load channel masks
+    channel_masks = load_channel_masks()
+
+    # make list of FOVs to process (keys of channel_mask file), but only if there are channels
+    fov_id_list = sorted([fov_id for fov_id, peaks in six.iteritems(channel_masks) if peaks])
+
+    # remove fovs if the user specified so
+    if (len(user_spec_fovs) > 0):
+        fov_id_list = [int(fov) for fov in fov_id_list if fov in user_spec_fovs]
+
+    # Set all to analyze
+    for fov_id in fov_id_list:
+        sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
+        for peak_id in sorted_peaks:
+            specs[fov_id][peak_id]=1
+
+    for fov_id in fov_id_list:
+        sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
+        npeaks = len(sorted_peaks)
+
+        namei="Fov"+str(fov_id)+"_img"
+        namep="Fov"+str(fov_id)+"_pts"
+        (_,max_width)=napari.current_viewer().layers[namei].data_raw.shape
+        pts=napari.current_viewer().layers[namep]._view_data
+        width_per_peak=max_width//npeaks
+
+        for pt in pts:
+            peak_id=sorted_peaks[int(pt[1]//width_per_peak)]
+            specs[fov_id][peak_id]-=1
+
+    # Save out specs file in yaml format
+    with open(os.path.join(ana_dir, 'specs.yaml'), 'w') as specs_file:
+        yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
 
 # function to plot CNN-derived trap classifications
 def fov_CNN_choose_channels_UI(fov_id, predictionDict, specs, UI_images):
@@ -9209,7 +9267,8 @@ def channelPicker(params):
             elif do_seg:
                 specs = fov_cell_segger_choose_channels_UI(fov_id, predictionDict, specs, UI_images)
             else: # crosscorrs == None will default to just picking with no help.
-                specs = fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images)
+                #specs = fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images)
+                specs=fov_choose_channels_UI_II(fov_id, specs, UI_images)
 
     else:
         outputdir = os.path.join(ana_dir, "fovs")
@@ -9509,8 +9568,9 @@ merged_trap_region_area_threshold: int=400):
 
 def ChannelPicker(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_crosscorrs:bool=True, do_CNN:bool=False, interactive:bool=True, do_seg:bool=False, 
-first_image: int=1, channel_picking_threshold: float =0.5, channel_picker_model_file='/Users/sharan/Desktop/Physics/mm3-latest/weights/empties_weights.hdf5', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10):
+first_image: int=1, channel_picking_threshold: float =0.5, channel_picker_model_file='/Users/sharan/Desktop/Physics/mm3-latest/weights/empties_weights.hdf5', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, selection_done:bool=False):
     """Performs Mother Machine Analysis"""    
+
     global params
     params=dict()
     params['experiment_name']=experiment_name
@@ -9559,7 +9619,10 @@ first_image: int=1, channel_picking_threshold: float =0.5, channel_picker_model_
     else:
         params['use_jd'] = False
 
-    channelPicker(params)
+    if selection_done:
+        channelProcessor(params)
+    else:
+        channelPicker(params)
     return 
 
 def Segment(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', TIFF_source:str='nd2ToTIFF',
