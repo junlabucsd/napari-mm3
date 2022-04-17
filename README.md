@@ -30,8 +30,11 @@ Clone https://github.com/ahirsharan/napari-mm3
 Open Terminal and run:
 
 ```conda create -y -n napari-env -c conda-forge python=3.9```
+
 ```conda activate napari_env```
+
 ```conda install -c conda-forge napari```
+
 ```pip install -r requirements.txt``` 
 
 In napari window, Plugins-> Install/Uninstall plugins -> drag and drop the cloned folder and hit install. The napari-mm3 plugin should now be visible in the plugins list.
