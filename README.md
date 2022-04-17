@@ -24,6 +24,7 @@ https://napari.org/plugins/stable/index.html
 ## Installation
 
 Install anaconda through  https://docs.anaconda.com/anaconda/install/
+
 Clone https://github.com/ahirsharan/napari-mm3
 
 
