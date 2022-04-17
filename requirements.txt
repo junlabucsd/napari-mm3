@@ -3,3 +3,8 @@
 # See also: https://caremad.io/posts/2013/07/setup-vs-requirement/
 
 -e .
+
+h5py
+scikit-learn
+tensorflow
+pims-nd2
