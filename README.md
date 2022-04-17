@@ -32,7 +32,7 @@ Open Terminal and run:
 
 ```conda create -y -n napari-env -c conda-forge python=3.9```
 
-```conda activate napari_env```
+```conda activate napari-env```
 
 ```conda install -c conda-forge napari```
 
