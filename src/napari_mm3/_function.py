@@ -8516,6 +8516,8 @@ def channelProcessor(params):
 
     with open(os.path.join(ana_dir, 'specs.yaml'), 'w') as specs_file:
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
+    
+    print("Channel Picking Completed")
 
 # function to plot CNN-derived trap classifications
 def fov_CNN_choose_channels_UI(fov_id, predictionDict, specs, UI_images):
