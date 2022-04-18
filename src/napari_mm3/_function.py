@@ -7268,34 +7268,19 @@ def nd2ToTIFF(params):
     This script converts a Nikon Elements .nd2 file to individual TIFF files per time point. Multiple color planes are stacked in each time point to make a multipage TIFF.
     '''
 
-    # set switches and parameters
-    # parser = argparse.ArgumentParser(prog='python mm3_nd2ToTIFF.py',
-    #                                  description='Export .nd2 files to TIFF.')
-    # parser.add_argument('-f', '--paramfile', type=str,
-    #                     required=False, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov',  type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-3", etc.')
-    # namespace = parser.parse_args()
-
     # Load the project parameters file
     information('Loading experiment parameters.')
     print("ND2TOTIFF")
-    # if namespace.paramfile:
-    #     param_file_path = namespace.paramfile
-    # else:
-    #     mm3.warning('No param file specified. Using 100X template.')
-    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    #p = mm3_.init_mm3_helpers() # initialized the helper library
     p=params
 
-    # if namespace.fov:
-    #     if '-' in namespace.fov:
-    #         user_spec_fovs = range(int(namespace.fov.split("-")[0]),
-    #                                int(namespace.fov.split("-")[1])+1)
-    #     else:
-    #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    # else:
-    user_spec_fovs = [1,2,3,4,5]
+    if p['FOV']:
+        if '-' in p['FOV']:
+            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
+                                   int(p['FOV'].split("-")[1])+1)
+        else:
+            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
+    else:
+        user_spec_fovs = []
 
     # number of rows of channels. Used for cropping.
     number_of_rows = p['nd2ToTIFF']['number_of_rows']
@@ -7455,37 +7440,18 @@ def nd2ToTIFF(params):
 def compile(params):
     '''mm3_Compile.py locates and slices out mother machine channels into image stacks.'''
 
-    # set switches and parameters
-    # parser = argparse.ArgumentParser(prog='python mm3_Compile.py',
-    #                                  description='Identifies and slices out channels into individual TIFF stacks through time.')
-    # parser.add_argument('-f', '--paramfile',  type=str,
-    #                     required=False, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov',  type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc',  type=int,
-    #                     required=False, help='Number of processors to use.')
-    # parser.add_argument('-m', '--modelfile', type=str,
-    #                     required=False, help='Path to trained U-net model.')
-    # namespace = parser.parse_args()
-
     # Load the project parameters file
     information('Loading experiment parameters.')
-    # if namespace.paramfile:
-    #     param_file_path = namespace.paramfile
-    # else:
-    #     warning('No param file specified. Using 100X template.')
-    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    #p = mm3_.init_mm3_helpers() # initialized the helper library
     p=params
 
-    # if namespace.fov:
-    #     if '-' in namespace.fov:
-    #         user_spec_fovs = range(int(namespace.fov.split("-")[0]),
-    #                                int(namespace.fov.split("-")[1])+1)
-    #     else:
-    #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    # else:
-    user_spec_fovs = [1,2,3,4,5]
+    if p['FOV']:
+        if '-' in p['FOV']:
+            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
+                                   int(p['FOV'].split("-")[1])+1)
+        else:
+            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
+    else:
+        user_spec_fovs = []
 
     # # number of threads for multiprocessing
     # if namespace.nproc:
@@ -8501,7 +8467,14 @@ def channelProcessor(params):
     specs = yaml.safe_load(Path(ana_dir+'specs.yaml').read_text())
     print(specs)
 
-    user_spec_fovs=[1,2,3,4,5]
+    if params['FOV']:
+        if '-' in params['FOV']:
+            user_spec_fovs = range(int(params['FOV'].split("-")[0]),
+                                   int(params['FOV'].split("-")[1])+1)
+        else:
+            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
+    else:
+        user_spec_fovs = []
 
     # load channel masks
     channel_masks = load_channel_masks()
@@ -8888,14 +8861,14 @@ def channelPicker(params):
     #p = mm3_.init_mm3_helpers() # initialized the helper library
     p = params
 
-    # if namespace.fov:
-    #     if '-' in namespace.fov:
-    #         user_spec_fovs = range(int(namespace.fov.split("-")[0]),
-    #                                int(namespace.fov.split("-")[1])+1)
-    #     else:
-    #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    # else:
-    user_spec_fovs = [1,2,3,4,5]
+    if p['FOV']:
+        if '-' in p['FOV']:
+            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
+                                   int(p['FOV'].split("-")[1])+1)
+        else:
+            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
+    else:
+        user_spec_fovs = []
 
     # # number of threads for multiprocessing
     # if namespace.nproc:
@@ -9308,22 +9281,17 @@ def subtract(params):
 
     # Load the project parameters file
     information('Loading experiment parameters.')
-    # if namespace.paramfile:
-    #     param_file_path = namespace.paramfile
-    # else:
-    #     mm3.warning('No param file specified. Using 100X template.')
-    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
     #p = mm3_.init_mm3_helpers() # initialized the helper library
     p=params
 
-    # if namespace.fov:
-    #     if '-' in namespace.fov:
-    #         user_spec_fovs = range(int(namespace.fov.split("-")[0]),
-    #                                int(namespace.fov.split("-")[1])+1)
-    #     else:
-    #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    # else:
-    user_spec_fovs = [1,2,3,4,5]
+    if p['FOV']:
+        if '-' in p['FOV']:
+            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
+                                   int(p['FOV'].split("-")[1])+1)
+        else:
+            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
+    else:
+        user_spec_fovs = []
 
     # number of threads for multiprocessing
     # if namespace.nproc:
@@ -9415,22 +9383,16 @@ def segmentOTSU(params):
 
     # Load the project parameters file
     information('Loading experiment parameters.')
-    # if namespace.paramfile:
-    #     param_file_path = namespace.paramfile
-    # else:
-    #     mm3.warning('No param file specified. Using 100X template.')
-    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    #p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
     p=params
 
-    # if namespace.fov:
-    #     if '-' in namespace.fov:
-    #         user_spec_fovs = range(int(namespace.fov.split("-")[0]),
-    #                                int(namespace.fov.split("-")[1])+1)
-    #     else:
-    #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    # else:
-    user_spec_fovs = [1,2,3,4,5]
+    if p['FOV']:
+        if '-' in p['FOV']:
+            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
+                                   int(p['FOV'].split("-")[1])+1)
+        else:
+            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
+    else:
+        user_spec_fovs = []
 
     # number of threads for multiprocessing
     # if namespace.nproc:
@@ -9476,25 +9438,9 @@ def segmentOTSU(params):
     information("Finished segmentation.")
 
 # 2.  MM3 analysis
-# def MM3(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/Physics/mm3-latest/exp1/', 
-# image_directory: str='TIFF/', analysis_directory:str= 'analysis/', TIFF_source:str= 'nd2ToTIFF', output: str= 'TIFF',
-# debug:str= False, phase_plane: str='c1', pxl2um:float= 0.11, image_start : int=1, image_end: int=None,
-# number_of_rows :int = 1, crop_ymin :float=None, crop_ymax :float= None, tworow_crop : tuple =None, tiff_compress :int=5,
-# external_directory : str='None', do_metadata: bool= True, do_time_table : bool= True, do_channel_masks : bool= True, do_slicing : bool= True,
-# t_end : int=None, find_channels_method: str= 'peaks', model_file_traps: str= '/Users/sharan/Desktop/Physics/mm3-latest/weights/feature_weights_512x512_normed.hdf5', 
-# image_orientation : str= 'up', channel_width : int=10, channel_separation : int=45, channel_detection_snr : int=1, channel_length_pad : int=10, 
-# channel_width_pad : int=10, trap_crop_height: int=256, trap_crop_width: int=27, trap_area_threshold: int=2, channel_prediction_batch_size: int=15, 
-# merged_trap_region_area_threshold: int=400, do_crosscorrs: bool=True, do_CNN: bool=False, interactive: bool=True, do_seg: bool=False, 
-# first_image: int=1, last_image: int=0, channel_picking_threshold: float =0.5, channel_picker_model_file: str= '/Users/sharan/Desktop/Physics/mm3-latest/weights/empties_weights.hdf5',
-# do_empties: bool=True, do_subtraction: bool=True, alignment_pad: int=10, do_segmentation: bool=True, do_lineages: bool=True, OTSU_threshold: float= 1.0, first_opening_size: int=2,
-# distance_threshold: int=2, second_opening_size: int=1, min_object_size:int= 25,  model_file:str='None', trained_model_image_height: int=256, trained_model_image_width: int=32,
-# batch_size: int=210, cell_class_threshold: float= 0.60, save_predictions: bool=True):
-#->"napari.types.LabelsData":
-
-def Compile(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', TIFF_source:str='nd2ToTIFF',
+def Compile(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', image_start : int=1, number_of_rows :int = 1, tiff_compress:int=5,
 do_metadata: bool=True, do_time_table: bool=True, do_channel_masks: bool=True, do_slicing:bool=True, find_channels_method:str='peaks',
-model_file_traps: str='/Users/sharan/Desktop/Physics/mm3-latest/weights/feature_weights_512x512_normed.hdf5',
 image_orientation : str= 'up', channel_width : int=10, channel_separation : int=45, channel_detection_snr : int=1, channel_length_pad : int=10, 
 channel_width_pad : int=10, trap_crop_height: int=256, trap_crop_width: int=27, trap_area_threshold: int=2, channel_prediction_batch_size: int=15, 
 merged_trap_region_area_threshold: int=400):
@@ -9505,6 +9451,7 @@ merged_trap_region_area_threshold: int=400):
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
     params['analysis_directory']=analysis_directory
+    params['FOV']=FOV
     params['TIFF_source']=TIFF_source
     params['output']=output
     params['debug']=debug
@@ -9526,7 +9473,8 @@ merged_trap_region_area_threshold: int=400):
     params['compile']['do_slicing']=do_slicing
     params['compile']['t_end']=None
     params['compile']['find_channels_method']=find_channels_method
-    params['compile']['model_file_traps']=model_file_traps
+    #model_file_traps: str='/Users/sharan/Desktop/Physics/mm3-latest/weights/feature_weights_512x512_normed.hdf5',
+    params['compile']['model_file_traps']='/Users/sharan/Desktop/Physics/mm3-latest/weights/feature_weights_512x512_normed.hdf5'
     params['compile']['image_orientation']=image_orientation
     params['compile']['channel_width']=channel_width
     params['compile']['channel_separation']=channel_separation
@@ -9566,7 +9514,7 @@ merged_trap_region_area_threshold: int=400):
     compile(params)
     return 
 
-def ChannelPicker(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', TIFF_source:str='nd2ToTIFF',
+def ChannelPicker(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_crosscorrs:bool=True, do_CNN:bool=False, interactive:bool=True, do_seg:bool=False, 
 first_image: int=1, channel_picking_threshold: float =0.5, channel_picker_model_file='/Users/sharan/Desktop/Physics/mm3-latest/weights/empties_weights.hdf5', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, selection_done:bool=False):
     """Performs Mother Machine Analysis"""    
@@ -9577,6 +9525,7 @@ first_image: int=1, channel_picking_threshold: float =0.5, channel_picker_model_
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
     params['analysis_directory']=analysis_directory
+    params['FOV']=FOV
     params['TIFF_source']=TIFF_source
     params['output']=output
     params['debug']=debug
@@ -9625,7 +9574,7 @@ first_image: int=1, channel_picking_threshold: float =0.5, channel_picker_model_
         channelPicker(params)
     return 
 
-def Segment(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', TIFF_source:str='nd2ToTIFF',
+def Segment(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, do_segmentation=True, do_lineages=True,  OTSU_threshold: float= 1.0, first_opening_size: int=2,
 distance_threshold: int=2, second_opening_size: int=1, min_object_size:int= 25, trained_model_image_height: int=256, trained_model_image_width: int=32,
 batch_size: int=210, cell_class_threshold: float= 0.60, save_predictions:bool=True):
@@ -9636,6 +9585,8 @@ batch_size: int=210, cell_class_threshold: float= 0.60, save_predictions:bool=Tr
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
     params['analysis_directory']=analysis_directory
+    params['external_directory']=external_directory
+    params['FOV']=FOV
     params['TIFF_source']=TIFF_source
     params['output']=output
     params['debug']=debug
