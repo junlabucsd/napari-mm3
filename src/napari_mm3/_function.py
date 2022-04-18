@@ -2030,6 +2030,9 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
             sub_filename = params['experiment_name'] + '_xy%03d_p%04d_sub_%s.tif' % (fov_id, peak_id, color)
             tiff.imsave(os.path.join(params['sub_dir'],sub_filename), subtracted_stack, compress=4) # save it
 
+            # if fov_id==1 and peak_id<50:
+            #     napari.current_viewer().add_image(subtracted_stack, name='Subtracted' + '_xy%03d_p%04d_sub_%s.tif', visible=True)
+
         if params['output'] == 'HDF5':
             h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
 
@@ -2192,6 +2195,9 @@ def segment_chnl_stack(fov_id, peak_id):
         seg_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, params['seg_img'])
         tiff.imsave(os.path.join(params['seg_dir'],seg_filename),
                     segmented_imgs, compress=5)
+                    
+        # if fov_id==1 and peak_id<50:
+        #         napari.current_viewer().add_image(segmented_imgs, name='Segmented' + '_xy%03d_p%04d_sub_%s.tif', visible=True)
 
     if params['output'] == 'HDF5':
         h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
@@ -8507,6 +8513,7 @@ def channelProcessor(params):
             specs[fov_id][peak_id]-=1
 
     # Save out specs file in yaml format
+
     with open(os.path.join(ana_dir, 'specs.yaml'), 'w') as specs_file:
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
 
