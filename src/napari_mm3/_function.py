@@ -13877,7 +13877,7 @@ def lineage_helper(params):
 
     information("Plotting lineages.")
 
-    plot_lineage_images(Cells, fov_id, peak_id, Cells2=p['cells2'], bgcolor=p['bgbolor'], fgcolor=p['fgcolor'], plot_tracks=p['plot_tracks'], trim_time=p['trim_time'], time_set=p['time_set'], t_adj=p['t_adj'])
+    plot_lineage_images(Cells, fov_id, peak_id, Cells2=p['cells2'], bgcolor=p['bgbolor'], fgcolor=p['fgcolor'], plot_tracks=p['plot_tracks'], trim_time=p['trim_time'], t_adj=p['t_adj'])
 
     information("Finished lineage plotting.")
 
@@ -14088,8 +14088,7 @@ batch_size: int=210, cell_class_threshold: float= 0.60, save_predictions:bool=Tr
     return
 
 ##WORK ON THIS
-def Plot_Lineages(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/',
-FOV = "1-5", peaks = "1-5", Cells2=None, bgcolor='c1', fgcolor='seg', plot_tracks=True, trim_time=False, time_set=(0,100), t_adj=1)):
+def Plot_Lineages(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV = "1-5", peaks = "1-5", Cells2=None, bgcolor='c1', fgcolor='seg', plot_tracks=True, trim_time=False, t_adj=1):
     """Performs Mother Machine Analysis"""    
     global params
     params=dict()
@@ -14105,7 +14104,6 @@ FOV = "1-5", peaks = "1-5", Cells2=None, bgcolor='c1', fgcolor='seg', plot_track
     params['fgcolor']=fgcolor
     params['plot_tracks']=plot_tracks
     params['trim_time']=trim_time
-    params['time_set']=time_set
     params['t_adj']=t_adj
 
     # useful folder shorthands for opening files
