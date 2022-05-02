@@ -78,6 +78,12 @@ font = {'family' : 'sans-serif',
 mpl.rc('font', **font)
 mpl.rcParams['pdf.fonttype'] = 42
 from matplotlib.patches import Ellipse
+import matplotlib.patches as mpatches
+from matplotlib import image
+import seaborn as sns
+sns.set(style='ticks', color_codes=True)
+sns.set_palette('deep')
+
 from pathlib import Path
 import time
 import matplotlib.pyplot as plt
@@ -219,14 +225,24 @@ def load_stack(fov_id, peak_id, color='c1', image_return_number=None):
     if params['output'] == 'TIFF':
         if color[0] == 'c':
             img_dir = params['chnl_dir']
+            img_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, color)
         elif 'sub' in color:
             img_dir = params['sub_dir']
+            img_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, color)
         elif 'foci' in color:
             img_dir = params['foci_seg_dir']
+            img_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, color)
         elif 'seg' in color:
-            img_dir = params['seg_dir']
+            last='seg_otsu'
+            if 'seg_img' in params.keys():
+                last=params['seg_img']
+            if 'track' in params.keys():
+                last=params['track']['seg_img']
 
-        img_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, color)
+            img_dir = params['seg_dir']
+            img_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, last)
+        else:
+            img_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, color)
 
         with tiff.TiffFile(os.path.join(img_dir, img_filename)) as tif:
             img_stack = tif.asarray()
@@ -9652,6 +9668,318 @@ def Track(params):
 
     information("Finished curating and saving cell data.")   
 
+def find_cells_of_fov_and_peak(Cells, fov_id, peak_id):
+    '''Return only cells from a specific fov/peak
+    Parameters
+    ----------
+    fov_id : int corresponding to FOV
+    peak_id : int correstonging to peak
+    '''
+
+    fCells = {} # f is for filtered
+
+    for cell_id in Cells:
+        if Cells[cell_id].fov == fov_id and Cells[cell_id].peak == peak_id:
+            fCells[cell_id] = Cells[cell_id]
+
+    return fCells
+
+def plot_lineage_images(Cells, fov_id, peak_id, Cells2=None, bgcolor='c1', fgcolor='seg', plot_tracks=True, trim_time=False, time_set=(0,100), t_adj=1):
+    '''
+    Plot linages over images across time points for one FOV/peak.
+    Parameters
+    ----------
+    bgcolor : Designation of background to use. Subtracted images look best if you have them.
+    fgcolor : Designation of foreground to use. This should be a segmented image.
+    Cells2 : second set of linages to overlay. Useful for comparing lineage output.
+    plot_tracks : bool
+        If to plot cell traces or not.
+    t_adj : int
+        adjust time indexing for differences between t index of image and image number
+    '''
+
+    # filter cells
+    Cells = find_cells_of_fov_and_peak(Cells, fov_id, peak_id)
+
+    # load subtracted and segmented data
+    image_data_bg = load_stack(fov_id, peak_id, color=bgcolor)
+
+    if fgcolor:
+        image_data_seg = load_stack(fov_id, peak_id, color=fgcolor)
+
+    if trim_time:
+        image_data_bg = image_data_bg[time_set[0]:time_set[1]]
+        if fgcolor:
+            image_data_seg = image_data_seg[time_set[0]:time_set[1]]
+
+    n_imgs = image_data_bg.shape[0]
+    image_indicies = range(n_imgs)
+
+    if fgcolor:
+        # calculate the regions across the segmented images
+        regions_by_time = [regionprops(timepoint) for timepoint in image_data_seg]
+
+        # Color map for good label colors
+        vmin = 0.5 # values under this color go to black
+        vmax = 100 # max y value
+        cmap = mpl.colors.ListedColormap(sns.husl_palette(vmax, h=0.5, l=.8, s=1))
+        cmap.set_under(color='black')
+
+    # Trying to get the image size down
+    figxsize = image_data_bg.shape[2] * n_imgs / 100.0
+    figysize = image_data_bg.shape[1] / 100.0
+
+    # plot the images in a series
+    fig, axes = plt.subplots(ncols=n_imgs, nrows=1,
+                             figsize=(figxsize, figysize),
+                             facecolor='black', edgecolor='black')
+    fig.subplots_adjust(wspace=0, hspace=0, left=0, right=1, top=1, bottom=0)
+    transFigure = fig.transFigure.inverted()
+
+    # change settings for each axis
+    ax = axes.flat # same as axes.ravel()
+    for a in ax:
+        a.set_axis_off()
+        a.set_aspect('equal')
+        ttl = a.title
+        ttl.set_position([0.5, 0.05])
+
+    for i in image_indicies:
+        ax[i].imshow(image_data_bg[i], cmap=plt.cm.gray, aspect='equal')
+
+        if fgcolor:
+            # make a new version of the segmented image where the
+            # regions are relabeled by their y centroid position.
+            # scale it so it falls within 100.
+            seg_relabeled = image_data_seg[i].copy().astype(np.float)
+            for region in regions_by_time[i]:
+                rescaled_color_index = region.centroid[0]/image_data_seg.shape[1] * vmax
+                seg_relabeled[seg_relabeled == region.label] = int(rescaled_color_index)-0.1 # subtract small value to make it so there is not overlabeling
+            ax[i].imshow(seg_relabeled, cmap=cmap, alpha=0.5, vmin=vmin, vmax=vmax)
+
+        ax[i].set_title(str(i + t_adj), color='white')
+
+    # save just the segmented images
+    # lin_dir = params['experiment_directory'] + params['analysis_directory'] + 'lineages/'
+    # if not os.path.exists(lin_dir):
+    #     os.makedirs(lin_dir)
+    # lin_filename = params['experiment_name'] + '_xy%03d_p%04d_nolin.png' % (fov_id, peak_id)
+    # lin_filepath = lin_dir + lin_filename
+    # fig.savefig(lin_filepath, dpi=75)
+    # plt.close()
+
+    # Annotate each cell with information
+    if plot_tracks:
+        for cell_id in Cells:
+            for n, t in enumerate(Cells[cell_id].times):
+                t -= t_adj # adjust for special indexing
+
+                # don't look at time points out of the interval
+                if trim_time:
+                    if t < time_set[0] or t >= time_set[1]-1:
+                        break
+
+                x = Cells[cell_id].centroids[n][1]
+                y = Cells[cell_id].centroids[n][0]
+
+                # add a circle at the centroid for every point in this cell's life
+                circle = mpatches.Circle(xy=(x, y), radius=2, color='white', lw=0, alpha=0.5)
+                ax[t].add_patch(circle)
+
+                # draw connecting lines between the centroids of cells in same lineage
+                try:
+                    if n < len(Cells[cell_id].times) - 1:
+                        # coordinates of the next centroid
+                        x_next = Cells[cell_id].centroids[n+1][1]
+                        y_next = Cells[cell_id].centroids[n+1][0]
+                        t_next = Cells[cell_id].times[n+1] - t_adj # adjust for special indexing
+
+                        # get coordinates for the whole figure
+                        coord1 = transFigure.transform(ax[t].transData.transform([x, y]))
+                        coord2 = transFigure.transform(ax[t_next].transData.transform([x_next, y_next]))
+
+                        # create line
+                        line = mpl.lines.Line2D((coord1[0], coord2[0]), (coord1[1], coord2[1]),
+                                                transform=fig.transFigure,
+                                                color='white', lw=1, alpha=0.5)
+
+                        # add it to plot
+                        fig.lines.append(line)
+                except:
+                    pass
+
+
+                # draw connecting between mother and daughters
+                try:
+                    if n == len(Cells[cell_id].times)-1 and Cells[cell_id].daughters:
+                        # daughter ids
+                        d1_id = Cells[cell_id].daughters[0]
+                        d2_id = Cells[cell_id].daughters[1]
+
+                        # both daughters should have been born at the same time.
+                        t_next = Cells[d1_id].times[0] - t_adj
+
+                        # coordinates of the two daughters
+                        x_d1 = Cells[d1_id].centroids[0][1]
+                        y_d1 = Cells[d1_id].centroids[0][0]
+                        x_d2 = Cells[d2_id].centroids[0][1]
+                        y_d2 = Cells[d2_id].centroids[0][0]
+
+                        # get coordinates for the whole figure
+                        coord1 = transFigure.transform(ax[t].transData.transform([x, y]))
+                        coordd1 = transFigure.transform(ax[t_next].transData.transform([x_d1, y_d1]))
+                        coordd2 = transFigure.transform(ax[t_next].transData.transform([x_d2, y_d2]))
+
+                        # create line and add it to plot for both
+                        for coord in [coordd1, coordd2]:
+                            line = mpl.lines.Line2D((coord1[0],coord[0]),(coord1[1],coord[1]),
+                                                    transform=fig.transFigure,
+                                                    color='white', lw=1, alpha=0.5, ls='dashed')
+                            # add it to plot
+                            fig.lines.append(line)
+                except:
+                    pass
+
+        # this is for plotting the traces from a second set of cells
+        if Cells2 and plot_tracks:
+            Cells2 = find_cells_of_fov_and_peak(Cells2, fov_id, peak_id)
+            for cell_id in Cells2:
+                for n, t in enumerate(Cells2[cell_id].times):
+                    t -= t_adj
+
+                    # don't look at time points out of the interval
+                    if trim_time:
+                        if t < time_set[0] or t >= time_set[1]-1:
+                            break
+
+                    x = Cells2[cell_id].centroids[n][1]
+                    y = Cells2[cell_id].centroids[n][0]
+
+                    # add a circle at the centroid for every point in this cell's life
+                    circle = mpatches.Circle(xy=(x, y), radius=2, color='yellow', lw=0, alpha=0.25)
+                    ax[t].add_patch(circle)
+
+                    # draw connecting lines between the centroids of cells in same lineage
+                    try:
+                        if n < len(Cells2[cell_id].times) - 1:
+                            # coordinates of the next centroid
+                            x_next = Cells2[cell_id].centroids[n+1][1]
+                            y_next = Cells2[cell_id].centroids[n+1][0]
+                            t_next = Cells2[cell_id].times[n+1] - t_adj
+
+                            # get coordinates for the whole figure
+                            coord1 = transFigure.transform(ax[t].transData.transform([x, y]))
+                            coord2 = transFigure.transform(ax[t_next].transData.transform([x_next, y_next]))
+
+                            # create line
+                            line = mpl.lines.Line2D((coord1[0],coord2[0]),(coord1[1],coord2[1]),
+                                                    transform=fig.transFigure,
+                                                    color='yellow', lw=1, alpha=0.25)
+
+                            # add it to plot
+                            fig.lines.append(line)
+                    except:
+                        pass
+
+                    # draw connecting between mother and daughters
+                    try:
+                        if n == len(Cells2[cell_id].times)-1 and Cells2[cell_id].daughters:
+                            # daughter ids
+                            d1_id = Cells2[cell_id].daughters[0]
+                            d2_id = Cells2[cell_id].daughters[1]
+
+                            # both daughters should have been born at the same time.
+                            t_next = Cells2[d1_id].times[0] - t_adj
+
+                            # coordinates of the two daughters
+                            x_d1 = Cells2[d1_id].centroids[0][1]
+                            y_d1 = Cells2[d1_id].centroids[0][0]
+                            x_d2 = Cells2[d2_id].centroids[0][1]
+                            y_d2 = Cells2[d2_id].centroids[0][0]
+
+                            # get coordinates for the whole figure
+                            coord1 = transFigure.transform(ax[t].transData.transform([x, y]))
+                            coordd1 = transFigure.transform(ax[t_next].transData.transform([x_d1, y_d1]))
+                            coordd2 = transFigure.transform(ax[t_next].transData.transform([x_d2, y_d2]))
+
+                            # create line and add it to plot for both
+                            for coord in [coordd1, coordd2]:
+                                line = mpl.lines.Line2D((coord1[0],coord[0]),(coord1[1],coord[1]),
+                                                        transform=fig.transFigure,
+                                                        color='yellow', lw=1, alpha=0.25, ls='dashed')
+                                # add it to plot
+                                fig.lines.append(line)
+                    except:
+                        pass
+
+            # this is for putting cell id on first time cell appears and when it divides
+            # this is broken, need to translate coordinates to correct location on figure.
+            # if n == 0 or n == len(Cells[cell_id].times)-1:
+            #     print(x/100.0, y/100.0, cell_id[9:])
+            #     ax[t].text(x/100.0, y/100.0, cell_id[9:], color='red', size=10, ha='center', va='center')
+
+    return fig, ax
+
+def find_cells_of_birth_label(Cells, label_num=1):
+    '''Return only cells whose starting region label is given.
+    If no birth_label is given, returns the mother cells.
+    label_num can also be a list to include cells of many birth labels
+    '''
+
+    fCells = {} # f is for filtered
+
+    if type(label_num) is int:
+        label_num = [label_num]
+
+    for cell_id in Cells:
+        if Cells[cell_id].birth_label in label_num:
+            fCells[cell_id] = Cells[cell_id]
+
+    return fCells
+
+def Lineage(params,numSamples=10):
+    # plotting lineage trees for complete cells
+    # load specs file
+    with open(os.path.join(params['ana_dir'], 'specs.yaml'), 'r') as specs_file:
+        specs = yaml.safe_load(specs_file)
+    with open(os.path.join(params['cell_dir'], 'all_cells.pkl'), 'rb') as cell_file:
+        Cells = pickle.load(cell_file)
+    with open(os.path.join(params['cell_dir'], 'complete_cells.pkl'), 'rb') as cell_file:
+        Cells2 = pickle.load(cell_file)
+        Cells2 = find_cells_of_birth_label(Cells2, label_num=[1,2])
+
+    lin_dir = os.path.join(params['experiment_directory'], params['analysis_directory'],
+                        'lineages')
+    if not os.path.exists(lin_dir):
+        os.makedirs(lin_dir)
+
+    # determine number of lineages to make
+    no_samples = numSamples
+    # list contains tuples of (fov_id, peak_id, timepoint)
+    sample_ids = [] 
+    for fov_id in specs.keys():
+        for peak_id, spec in specs[fov_id].items():
+            if spec == 1:
+                # now put the fov, peak, and a random timepoint in a tuple
+                sample_ids.append((fov_id, peak_id))
+                
+    # choose a random subset of these and sort them
+    sample_indicies = np.random.choice(len(sample_ids), no_samples)
+    sample_ids = sorted([sample_ids[i] for i in sample_indicies]) 
+
+    for sample in sample_ids:
+        fov_id, peak_id = sample
+        fig, ax = plot_lineage_images(Cells, fov_id, peak_id, Cells2,
+                                                bgcolor=params['phase_plane'])
+        lin_filename = params['experiment_name'] + '_xy%03d_p%04d_lin.png' % (fov_id, peak_id)
+        lin_filepath = os.path.join(lin_dir, lin_filename)
+        fig.savefig(lin_filepath, dpi=75)
+        img = image.imread(lin_filepath)
+        napari.current_viewer().add_image(img, name=lin_filename, visible=True)
+        plt.close(fig)
+
+    information("Completed Plotting")
+
 # 2.  MM3 analysis
 def Compile(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', image_start : int=1, number_of_rows :int = 1, tiff_compress:int=5,
@@ -9862,8 +10190,8 @@ batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= F
 
     return
 
-def Track_Standard(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', model_file: str='/Users/sharan/Desktop/exp1/20200921_MG1655_256x32.hdf5', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
-output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', lost_cell_time:int= 3, new_cell_y_cutoff:int= 150, new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, max_growth_area:float= 1.5, min_growth_area:float= 0.7 ,seg_img :str='seg_otsu'):
+def Track_Standard(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
+output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', lost_cell_time:int= 3, new_cell_y_cutoff:int= 150, new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, max_growth_area:float= 1.5, min_growth_area:float= 0.7 , numSamples:int=10, seg_img :str='seg_otsu'):
     """Performs Mother Machine Analysis"""    
     global params
     params=dict()
@@ -9905,4 +10233,5 @@ output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1',
     params['foci_track_dir'] = os.path.join(params['ana_dir'], 'tracking_foci')
 
     Track(params)
+    Lineage(params, numSamples)
     return
