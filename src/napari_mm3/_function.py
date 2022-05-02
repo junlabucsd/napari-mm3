@@ -123,8 +123,7 @@ def napari_experimental_provide_function():
     # or a tuple of (function, magicgui_options)
     # or a list of multiple functions with or without options, as shown here:
     #return [Segment, threshold, image_arithmetic]
-    return [Compile, ChannelPicker, Segment]
-
+    return [Compile, ChannelPicker, Segment, Track_Standard]
 
 # 1.  First example, a simple function that thresholds an image and creates a labels layer
 def threshold(data: "napari.types.ImageData", threshold: int) -> "napari.types.LabelsData":
@@ -9545,6 +9544,114 @@ def segmentOTSU(params):
 
     information("Finished segmentation.")
 
+def Track(params):
+    # parser = argparse.ArgumentParser(prog='python mm3_Segment.py',
+    #                                  description='Segment cells and create lineages.')
+    # parser.add_argument('-f', '--paramfile',  type=str,
+    #                     required=True, help='Yaml file containing parameters.')
+    # parser.add_argument('-o', '--fov',  type=str,
+    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
+    # parser.add_argument('-j', '--nproc',  type=int,
+    #                     required=False, help='Number of processors to use.')
+    # parser.add_argument('-s', '--segmentsource', type=str,
+    #                     required=False, help='Segmented images to use for tracking. "seg_otsu", "seg_unet", etc.')
+    # namespace = parser.parse_args()
+
+    # Load the project parameters file
+    # mm3.information('Loading experiment parameters.')
+    # if namespace.paramfile:
+    #     param_file_path = namespace.paramfile
+    # else:
+    #     mm3.warning('No param file specified. Using 100X template.')
+    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
+    # p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
+
+    # Load the project parameters file
+    information('Loading experiment parameters.')
+    p=params
+
+    if p['FOV']:
+        if '-' in p['FOV']:
+            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
+                                   int(p['FOV'].split("-")[1])+1)
+        else:
+            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
+    else:
+        user_spec_fovs = []
+
+    # if namespace.fov:
+    #     if '-' in namespace.fov:
+    #         user_spec_fovs = range(int(namespace.fov.split("-")[0]),
+    #                                int(namespace.fov.split("-")[1])+1)
+    #     else:
+    #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
+    # else:
+    #     user_spec_fovs = []
+
+    # number of threads for multiprocessing
+    # if namespace.nproc:
+    #     p['num_analyzers'] = namespace.nproc
+    # mm3.information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
+
+    # segmentation plane to be used for tracking
+    # if namespace.segmentsource:
+    #     p['track']['seg_img'] = namespace.segmentsource
+    # else:
+    #     if 'seg_img' not in p['track'].keys():
+    #         p['track']['seg_img'] = 'seg_otsu' # default to otsu. Good chance of error.
+    information("Using {} images for tracking.".format(p['track']['seg_img']))
+
+    # create segmenteation and cell data folder if they don't exist
+    if not os.path.exists(p['seg_dir']) and p['output'] == 'TIFF':
+        os.makedirs(p['seg_dir'])
+    if not os.path.exists(p['cell_dir']):
+        os.makedirs(p['cell_dir'])
+
+    # load specs file
+    specs = load_specs()
+
+    # make list of FOVs to process (keys of channel_mask file)
+    fov_id_list = sorted([fov_id for fov_id in specs.keys()])
+
+    # remove fovs if the user specified so
+    if user_spec_fovs:
+        fov_id_list[:] = [fov for fov in fov_id_list if fov in user_spec_fovs]
+
+    ### Create cell lineages from segmented images
+    information("Creating cell lineages using standard algorithm.")
+
+    # Load time table, which goes into params
+    load_time_table()
+
+    # This dictionary holds information for all cells
+    Cells = {}
+
+    # do lineage creation per fov, so pooling can be done by peak
+    for fov_id in fov_id_list:
+        # update will add the output from make_lineages_function, which is a
+        # dict of Cell entries, into Cells
+        Cells.update(make_lineages_fov(fov_id, specs))
+
+    information("Finished lineage creation.")
+
+    ### Now prune and save the data.
+    information("Curating and saving cell data.")
+
+    # this returns only cells with a parent and daughters
+    Complete_Cells = find_complete_cells(Cells)
+
+    ### save the cell data. Use the script mm3_OutputData for additional outputs.
+    # All cell data (includes incomplete cells)
+    with open(p['cell_dir'] + '/all_cells.pkl', 'wb') as cell_file:
+        pickle.dump(Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # Just the complete cells, those with mother and daugther
+    # This is a dictionary of cell objects.
+    with open(os.path.join(p['cell_dir'],'complete_cells.pkl'), 'wb') as cell_file:
+        pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    information("Finished curating and saving cell data.")   
+
 # 2.  MM3 analysis
 def Compile(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', image_start : int=1, number_of_rows :int = 1, tiff_compress:int=5,
@@ -9755,18 +9862,47 @@ batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= F
 
     return
 
-# 3. Second example, a function that adds, subtracts, multiplies, or divides two layers
+def Track_Standard(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', model_file: str='/Users/sharan/Desktop/exp1/20200921_MG1655_256x32.hdf5', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
+output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', lost_cell_time:int= 3, new_cell_y_cutoff:int= 150, new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, max_growth_area:float= 1.5, min_growth_area:float= 0.7 ,seg_img :str='seg_otsu'):
+    """Performs Mother Machine Analysis"""    
+    global params
+    params=dict()
+    params['experiment_name']=experiment_name
+    params['experiment_directory']=experiment_directory
+    params['image_directory']=image_directory
+    params['analysis_directory']=analysis_directory
+    params['external_directory']=external_directory
+    params['FOV']=FOV
+    params['TIFF_source']=TIFF_source
+    params['output']=output
+    params['debug']=debug
+    params['phase_plane']=phase_plane
+    params['pxl2um']=pxl2um
+    params['num_analyzers'] = multiprocessing.cpu_count()
+    params['track']=dict()
+    params['track']['lost_cell_time']= lost_cell_time
+    params['track']['new_cell_y_cutoff']= new_cell_y_cutoff
+    params['track']['new_cell_region_cutoff']= new_cell_region_cutoff
+    params['track']['max_growth_length']= max_growth_length
+    params['track']['min_growth_length']= min_growth_length
+    params['track']['max_growth_area']= max_growth_area
+    params['track']['min_growth_area']= min_growth_area
+    params['track']['seg_img']=seg_img
 
-# using Enums is a good way to get a dropdown menu.  Used here to select from np functions
-class Operation(Enum):
-    add = np.add
-    subtract = np.subtract
-    multiply = np.multiply
-    divide = np.divide
+    # useful folder shorthands for opening files
+    params['TIFF_dir'] = os.path.join(params['experiment_directory'], params['image_directory'])
+    params['ana_dir'] = os.path.join(params['experiment_directory'], params['analysis_directory'])
+    params['hdf5_dir'] = os.path.join(params['ana_dir'], 'hdf5')
+    params['chnl_dir'] = os.path.join(params['ana_dir'], 'channels')
+    params['empty_dir'] = os.path.join(params['ana_dir'], 'empties')
+    params['sub_dir'] = os.path.join(params['ana_dir'], 'subtracted')
+    params['seg_dir'] = os.path.join(params['ana_dir'], 'segmented')
+    params['pred_dir'] = os.path.join(params['ana_dir'], 'predictions')
+    params['foci_seg_dir'] = os.path.join(params['ana_dir'], 'segmented_foci')
+    params['foci_pred_dir'] = os.path.join(params['ana_dir'], 'predictions_foci')
+    params['cell_dir'] = os.path.join(params['ana_dir'], 'cell_data')
+    params['track_dir'] = os.path.join(params['ana_dir'], 'tracking')
+    params['foci_track_dir'] = os.path.join(params['ana_dir'], 'tracking_foci')
 
-
-def image_arithmetic(
-    layerA: "napari.types.ImageData", operation: Operation, layerB: "napari.types.ImageData"
-) -> "napari.types.LayerDataTuple":
-    """Adds, subtracts, multiplies, or divides two same-shaped image layers."""
-    return (operation.value(layerA, layerB), {"colormap": "turbo"})
+    Track(params)
+    return
