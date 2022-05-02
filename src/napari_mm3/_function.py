@@ -2200,7 +2200,7 @@ def segment_chnl_stack(fov_id, peak_id):
                     segmented_imgs, compress=5)
                   
         if fov_id==1 and peak_id<50:
-            napari.current_viewer().add_image(segmented_imgs, name='Segmented' + '_xy1_p'+str(peak_id)+'_sub_'+str(params['seg_img'])+'.tif', visible=True)
+            napari.current_viewer().add_image(segmented_imgs, name='Segmented' + '_xy1_p'+str(peak_id)+'_'+str(params['seg_img'])+'.tif', visible=True)
 
     if params['output'] == 'HDF5':
         h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
@@ -2500,7 +2500,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model):
                             segmented_imgs, compress=4)
 
             if fov_id==1 and peak_id<50:
-                napari.current_viewer().add_image(segmented_imgs, name='Segmented' + '_xy1_p'+str(peak_id)+'_sub_'+str(params['seg_img'])+'.tif', visible=True)
+                napari.current_viewer().add_image(segmented_imgs, name='Segmented' + '_xy1_p'+str(peak_id)+'_'+str(params['seg_img'])+'.tif', visible=True)
 
         if params['output'] == 'HDF5':
             h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
