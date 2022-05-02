@@ -97,7 +97,7 @@ import multiprocessing
 from multiprocessing import Pool
 import numpy as np
 import warnings
-from tensorflow.python.keras import models
+from tensorflow.keras import models
 
 from enum import Enum
 import numpy as np
@@ -1153,19 +1153,22 @@ def predict_first_image_channels(img, model,
                          'n_channels':1,
                          'normalize_to_one':True,
                          'shuffle':False}
+    # predict_gen_args = {'verbose':1,
+    #                     'use_multiprocessing':True,
+    #                     'workers':params['num_analyzers']}
+
     predict_gen_args = {'verbose':1,
-                        'use_multiprocessing':True,
-                        'workers':params['num_analyzers']}
+        'use_multiprocessing':False,}
 
     img_generator = TrapSegmentationDataGenerator(crops, **data_gen_args)
-    predictions = model.predict_generator(img_generator, **predict_gen_args)
+    predictions = model.predict(img_generator, **predict_gen_args)
     prediction = imageConcatenatorFeatures(predictions, subImageNumber=subImageNumber)
     #print(prediction.shape)
 
     cropsExpand = tileImage(imgStackExpand, subImageNumber=padSubImageNumber)
     cropsExpand = np.expand_dims(cropsExpand, -1)
     img_generator = TrapSegmentationDataGenerator(cropsExpand, **data_gen_args)
-    predictions = model.predict_generator(img_generator, **predict_gen_args)
+    predictions = model.predict(img_generator, **predict_gen_args)
     predictionExpand = imageConcatenatorFeatures2(predictions, subImageNumber=padSubImageNumber)
     predictionExpand = util.crop(predictionExpand, ((0,0),(shiftDistance,shiftDistance),(shiftDistance,shiftDistance),(0,0)))
     #print(predictionExpand.shape)
@@ -1173,7 +1176,7 @@ def predict_first_image_channels(img, model,
     cropsShiftLeft = tileImage(imgStackShiftLeft, subImageNumber=subImageNumber)
     cropsShiftLeft = np.expand_dims(cropsShiftLeft, -1)
     img_generator = TrapSegmentationDataGenerator(cropsShiftLeft, **data_gen_args)
-    predictions = model.predict_generator(img_generator, **predict_gen_args)
+    predictions = model.predict(img_generator, **predict_gen_args)
     predictionLeft = imageConcatenatorFeatures(predictions, subImageNumber=subImageNumber)
     predictionLeft = np.pad(predictionLeft, pad_width=((0,0),(0,0),(0,shiftDistance),(0,0)),
                       mode='constant', constant_values=((0,0),(0,0),(0,0),(0,0)))[:,:,shiftDistance:,:]
@@ -1182,7 +1185,7 @@ def predict_first_image_channels(img, model,
     cropsShiftRight = tileImage(imgStackShiftRight, subImageNumber=subImageNumber)
     cropsShiftRight = np.expand_dims(cropsShiftRight, -1)
     img_generator = TrapSegmentationDataGenerator(cropsShiftRight, **data_gen_args)
-    predictions = model.predict_generator(img_generator, **predict_gen_args)
+    predictions = model.predict(img_generator, **predict_gen_args)
     predictionRight = imageConcatenatorFeatures(predictions, subImageNumber=subImageNumber)
     predictionRight = np.pad(predictionRight, pad_width=((0,0),(0,0),(shiftDistance,0),(0,0)),
                       mode='constant', constant_values=((0,0),(0,0),(0,0),(0,0)))[:,:,:(-1*shiftDistance),:]
@@ -1192,7 +1195,7 @@ def predict_first_image_channels(img, model,
     #print(cropsShiftUp.shape)
     cropsShiftUp = np.expand_dims(cropsShiftUp, -1)
     img_generator = TrapSegmentationDataGenerator(cropsShiftUp, **data_gen_args)
-    predictions = model.predict_generator(img_generator, **predict_gen_args)
+    predictions = model.predict(img_generator, **predict_gen_args)
     predictionUp = imageConcatenatorFeatures(predictions, subImageNumber=subImageNumber)
     predictionUp = np.pad(predictionUp, pad_width=((0,0),(0,shiftDistance),(0,0),(0,0)),
                       mode='constant', constant_values=((0,0),(0,0),(0,0),(0,0)))[:,shiftDistance:,:,:]
@@ -1201,7 +1204,7 @@ def predict_first_image_channels(img, model,
     cropsShiftDown = tileImage(imgStackShiftDown, subImageNumber=subImageNumber)
     cropsShiftDown = np.expand_dims(cropsShiftDown, -1)
     img_generator = TrapSegmentationDataGenerator(cropsShiftDown, **data_gen_args)
-    predictions = model.predict_generator(img_generator, **predict_gen_args)
+    predictions = model.predict(img_generator, **predict_gen_args)
     predictionDown = imageConcatenatorFeatures(predictions, subImageNumber=subImageNumber)
     predictionDown = np.pad(predictionDown, pad_width=((0,0),(shiftDistance,0),(0,0),(0,0)),
                       mode='constant', constant_values=((0,0),(0,0),(0,0),(0,0)))[:,:(-1*shiftDistance),:,:]
@@ -2234,11 +2237,11 @@ def segment_image(image):
     '''
 
     # load in segmentation parameters
-    OTSU_threshold = params['segment']['otsu']['OTSU_threshold']
-    first_opening_size = params['segment']['otsu']['first_opening_size']
-    distance_threshold = params['segment']['otsu']['distance_threshold']
-    second_opening_size = params['segment']['otsu']['second_opening_size']
-    min_object_size = params['segment']['otsu']['min_object_size']
+    OTSU_threshold = params['segment']['OTSU_threshold']
+    first_opening_size = params['segment']['first_opening_size']
+    distance_threshold = params['segment']['distance_threshold']
+    second_opening_size = params['segment']['second_opening_size']
+    min_object_size = params['segment']['min_object_size']
 
     # threshold image
     try:
@@ -2401,9 +2404,12 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model):
     #                  'n_channels':1,
     #                  'normalize_to_one':False,
     #                  'shuffle':False}
-    # arguments to predict_generator
-    predict_args = dict(use_multiprocessing=True,
-                        workers=params['num_analyzers'],
+    # arguments to predict
+    # predict_args = dict(use_multiprocessing=True,
+    #                     workers=params['num_analyzers'],
+    #                     verbose=1)
+
+    predict_args = dict(use_multiprocessing=False,
                         verbose=1)
 
     for peak_id in ana_peak_ids:
@@ -2440,7 +2446,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model):
                                              shuffle=False) # keep same order
 
         # predict cell locations. This has multiprocessing built in but I need to mess with the parameters to see how to best utilize it. ***
-        predictions = model.predict_generator(image_generator, **predict_args)
+        predictions = model.predict(image_generator, **predict_args)
 
         # post processing
         # remove padding including the added last dimension
@@ -2492,6 +2498,9 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model):
             seg_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, params['seg_img'])
             tiff.imsave(os.path.join(params['seg_dir'], seg_filename),
                             segmented_imgs, compress=4)
+
+            if fov_id==1 and peak_id<50:
+                napari.current_viewer().add_image(segmented_imgs, name='Segmented' + '_xy1_p'+str(peak_id)+'_sub_'+str(params['seg_img'])+'.tif', visible=True)
 
         if params['output'] == 'HDF5':
             h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
@@ -2590,7 +2599,7 @@ def segment_foci_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model):
         image_generator = FocusSegmentationDataGenerator(img_stack, **data_gen_args)
 
         # predict foci locations.
-        predictions = model.predict_generator(image_generator, **predict_args)
+        predictions = model.predict(image_generator, **predict_args)
 
         # post processing
         # remove padding including the added last dimension
@@ -7789,13 +7798,15 @@ def compile(params):
                          'n_channels':1,
                          'normalize_to_one':True,
                          'shuffle':False}
+                # predict_gen_args = {'verbose':1,
+                #         'use_multiprocessing':True,
+                #         'workers':p['num_analyzers']}
                 predict_gen_args = {'verbose':1,
-                        'use_multiprocessing':True,
-                        'workers':p['num_analyzers']}
+                        'use_multiprocessing':False}
 
                 img_generator = TrapSegmentationDataGenerator(align_region_stack, **data_gen_args)
 
-                align_region_predictions = model.predict_generator(img_generator, **predict_gen_args)
+                align_region_predictions = model.predict(img_generator, **predict_gen_args)
                 #align_region_stack = mm3.apply_median_filter_and_normalize(align_region_stack)
                 #align_region_predictions = model.predict(align_region_stack, batch_size=batch_size)
                 # reduce dimensionality such that the class predictions are now (frame_number,512,512), and each voxel is labelled as the predicted region, i.e., 0=trap, 1=central trough, 2=background.
@@ -8471,14 +8482,13 @@ def fov_choose_channels_UI_II(fov_id, specs, UI_images):
 def channelProcessor(params):
     ana_dir = os.path.join(params['experiment_directory'], params['analysis_directory'])
     specs = yaml.safe_load(Path(ana_dir+'specs.yaml').read_text())
-    print(specs)
 
     if params['FOV']:
         if '-' in params['FOV']:
             user_spec_fovs = range(int(params['FOV'].split("-")[0]),
                                    int(params['FOV'].split("-")[1])+1)
         else:
-            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
+            user_spec_fovs = [int(val) for val in params['FOV'].split(",")]
     else:
         user_spec_fovs = []
 
@@ -8516,7 +8526,7 @@ def channelProcessor(params):
 
     with open(os.path.join(ana_dir, 'specs.yaml'), 'w') as specs_file:
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
-    
+    print(specs)
     print("Channel Picking Completed")
 
 # function to plot CNN-derived trap classifications
@@ -8963,7 +8973,7 @@ def channelPicker(params):
             channel_image_generator = TrapKymographPredictionDataGenerator(tiff_file_names, **cnn_params)
 
             # run the model
-            predictions = model.predict_generator(channel_image_generator)
+            predictions = model.predict(channel_image_generator)
             #print(predictions.shape)
             predictions = predictions[:len(tiff_file_names),:]
             #print(predictions.shape)
@@ -9010,8 +9020,11 @@ def channelPicker(params):
                          'normalize_to_one':True,
                          'shuffle':False}
         # arguments to predict_generator
-        predict_args = dict(use_multiprocessing=True,
-                            workers=p['num_analyzers'],
+        # predict_args = dict(use_multiprocessing=True,
+        #                     workers=p['num_analyzers'],
+        #                     verbose=1)
+
+        predict_args = dict(use_multiprocessing=False,
                             verbose=1)
 
         for fov_id in fov_id_list:
@@ -9059,7 +9072,7 @@ def channelPicker(params):
             # set up image generator
             image_generator = CellSegmentationDataGenerator(img_stack, **data_gen_args)
             # run predictions
-            predictions = model.predict_generator(image_generator, **predict_args)[:,:,:,0]
+            predictions = model.predict(image_generator, **predict_args)[:,:,:,0]
             if p['debug']:
                 fig,ax = plt.subplots(ncols=5)
                 for i in range(5):
@@ -9377,6 +9390,92 @@ def subtract(params):
         information("Skipping subtraction.")
         pass
 
+def segmentUNet(params):
+
+    # # set switches and parameters
+    # parser = argparse.ArgumentParser(prog='python mm3_Segment.py',
+    #                                  description='Segment cells and create lineages.')
+    # parser.add_argument('-f', '--paramfile', type=str,
+    #                     required=True, help='Yaml file containing parameters.')
+    # parser.add_argument('-o', '--fov', type=str,
+    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
+    # parser.add_argument('-j', '--nproc', type=int,
+    #                     required=False, help='Number of processors to use.')
+    # parser.add_argument('-m', '--modelfile', type=str,
+    #                     required=False, help='Path to trained U-net model.')
+    # namespace = parser.parse_args()
+
+    # Load the project parameters file
+    # mm3.information('Loading experiment parameters.')
+    # if namespace.paramfile:
+    #     param_file_path = namespace.paramfile
+    # else:
+    #     mm3.warning('No param file specified. Using 100X template.')
+    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
+    # p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
+
+    information('Loading experiment parameters.')
+    p=params
+
+    if p['FOV']:
+        if '-' in p['FOV']:
+            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
+                                   int(p['FOV'].split("-")[1])+1)
+        else:
+            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
+    else:
+        user_spec_fovs = []
+
+    # # number of threads for multiprocessing
+    # if namespace.nproc:
+    #     p['num_analyzers'] = namespace.nproc
+    # # mm3.information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
+
+    # create segmenteation and cell data folder if they don't exist
+    if not os.path.exists(p['seg_dir']) and p['output'] == 'TIFF':
+        os.makedirs(p['seg_dir'])
+    if not os.path.exists(p['cell_dir']):
+        os.makedirs(p['cell_dir'])
+
+    # set segmentation image name for saving and loading segmented images
+    p['seg_img'] = 'seg_unet'
+    p['pred_img'] = 'pred_unet'
+
+    # load specs file
+    specs = load_specs()
+    # print(specs) # for debugging
+
+    # make list of FOVs to process (keys of channel_mask file)
+    fov_id_list = sorted([fov_id for fov_id in specs.keys()])
+
+    # remove fovs if the user specified so
+    if user_spec_fovs:
+        fov_id_list[:] = [fov for fov in fov_id_list if fov in user_spec_fovs]
+
+    information("Processing %d FOVs." % len(fov_id_list))
+
+    ### Do Segmentation by FOV and then peak #######################################################
+    information("Segmenting channels using U-net.")
+
+    # load model to pass to algorithm
+    information("Loading model...")
+
+    # if namespace.modelfile:
+    #     model_file_path = namespace.modelfile
+    # else:
+    model_file_path = p['segment']['model_file']
+    # *** Need parameter for weights
+    seg_model = models.load_model(model_file_path,
+                              custom_objects={'bce_dice_loss': bce_dice_loss,
+                                              'dice_loss': dice_loss})
+    information("Model loaded.")
+
+    for fov_id in fov_id_list:
+        segment_fov_unet(fov_id, specs, seg_model, color=p['phase_plane'])
+
+    del seg_model
+    information("Finished segmentation.")    
+
 def segmentOTSU(params):
 
     # # set switches and parameters
@@ -9583,10 +9682,10 @@ first_image: int=1, channel_picking_threshold: float =0.5, channel_picker_model_
         channelPicker(params)
     return 
 
-def Segment(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
+def Segment(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', model_file: str='/Users/sharan/Desktop/exp1/20200921_MG1655_256x32.hdf5', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, do_segmentation=True, do_lineages=True,  OTSU_threshold: float= 1.0, first_opening_size: int=2,
 distance_threshold: int=2, second_opening_size: int=1, min_object_size:int= 25, trained_model_image_height: int=256, trained_model_image_width: int=32,
-batch_size: int=210, cell_class_threshold: float= 0.60, save_predictions:bool=True):
+batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= False, save_predictions:bool=False, OTSU :bool=True, UNet: bool=False):
     """Performs Mother Machine Analysis"""    
     global params
     params=dict()
@@ -9608,19 +9707,18 @@ batch_size: int=210, cell_class_threshold: float= 0.60, save_predictions:bool=Tr
     params['segment']=dict()
     params['segment']['do_segmentation']=do_segmentation
     params['segment']['do_lineages']=do_lineages
-    params['segment']['otsu']=dict()
-    params['segment']['otsu']['OTSU_threshold']=OTSU_threshold
-    params['segment']['otsu']['first_opening_size']=first_opening_size
-    params['segment']['otsu']['distance_threshold']=distance_threshold
-    params['segment']['otsu']['second_opening_size']=second_opening_size
-    params['segment']['otsu']['min_object_size']=min_object_size
-    params['segment']['model_file']='None'
+    params['segment']['OTSU_threshold']=OTSU_threshold
+    params['segment']['first_opening_size']=first_opening_size
+    params['segment']['distance_threshold']=distance_threshold
+    params['segment']['second_opening_size']=second_opening_size
+    params['segment']['min_object_size']=min_object_size
+    params['segment']['model_file']=model_file
     params['segment']['trained_model_image_height']=trained_model_image_height
     params['segment']['trained_model_image_width']=trained_model_image_width
     params['segment']['batch_size']=batch_size
     params['segment']['cell_class_threshold']=cell_class_threshold
-    params['segment']['unet']=dict()
-    params['segment']['unet']['save_predictions']=save_predictions
+    params['segment']['save_predictions']=save_predictions
+    params['segment']['normalize_to_one']=normalize_to_one
     params['num_analyzers'] = multiprocessing.cpu_count()
 
     # useful folder shorthands for opening files
@@ -9644,11 +9742,17 @@ batch_size: int=210, cell_class_threshold: float= 0.60, save_predictions:bool=Tr
     else:
         params['use_jd'] = False
 
-    if not 'save_predictions' in params['segment'].keys():
-        params['segment']['save_predictions'] = False
-
     subtract(params)
-    segmentOTSU(params)
+    
+    if OTSU:
+        params['seg_img'] = 'seg_otsu'
+        segmentOTSU(params)
+    
+    if UNet:
+        params['seg_img'] = 'seg_unet'
+        params['pred_img'] = 'pred_unet'
+        segmentUNet(params)
+
     return
 
 # 3. Second example, a function that adds, subtracts, multiplies, or divides two layers
