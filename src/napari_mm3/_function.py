@@ -8491,9 +8491,38 @@ def fov_choose_channels_UI_II(fov_id, specs, UI_images):
 
     napari.current_viewer().add_image(tot, name="Fov"+str(fov_id)+"_img", visible=False)
     napari.current_viewer().add_points([], name="Fov"+str(fov_id)+"_pts", visible=False)
+
+    # Add points in the points layer according to the cross-correlation value
+    namei="Fov"+str(fov_id)+"_img"
+    namep="Fov"+str(fov_id)+"_pts"
+    (max_height,max_width)=napari.current_viewer().layers[namei].data_raw.shape
+
+    sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
+    npeaks = len(sorted_peaks)
+
+    width_per_peak=max_width//npeaks
+
+    for i,peak_id in enumerate(sorted_peaks):
+
+        # Estimate the coordinates from peak id's index
+        x= width_per_peak*i + (width_per_peak//2)
+
+        # Adding the points at quarter height from bottom 
+        # should be good enough for visualization
+        y1= (max_height*3)//4
+        y2= (max_height*3)//4 + 10
+
+        if specs[fov_id][peak_id]==0:
+            # empty(0) => 1 points in the peak partition
+            napari.current_viewer().layers[namep].add((y1, x))
+        elif specs[fov_id][peak_id]==-1:
+            # ignore(-1) => 2 points in the peak partition
+            napari.current_viewer().layers[namep].add((y1, x))
+            napari.current_viewer().layers[namep].add((y2, x))
+
     return specs
 
-def channelProcessor(params):
+def channelProcessor(params, specs):
     ana_dir = os.path.join(params['experiment_directory'], params['analysis_directory'])
     specs = yaml.safe_load(Path(ana_dir+'specs.yaml').read_text())
 
@@ -8516,12 +8545,6 @@ def channelProcessor(params):
     if (len(user_spec_fovs) > 0):
         fov_id_list = [int(fov) for fov in fov_id_list if fov in user_spec_fovs]
 
-    # Set all to analyze
-    for fov_id in fov_id_list:
-        sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
-        for peak_id in sorted_peaks:
-            specs[fov_id][peak_id]=1
-
     for fov_id in fov_id_list:
         sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
         npeaks = len(sorted_peaks)
@@ -8531,6 +8554,10 @@ def channelProcessor(params):
         (_,max_width)=napari.current_viewer().layers[namei].data_raw.shape
         pts=napari.current_viewer().layers[namep]._view_data
         width_per_peak=max_width//npeaks
+
+        # analyze(1) => 0 points in the peak partition
+        # empty(0) => 1 points in the peak partition
+        # ignore(-1) => 2 points in the peak partititon
 
         for pt in pts:
             peak_id=sorted_peaks[int(pt[1]//width_per_peak)]
@@ -10058,7 +10085,7 @@ merged_trap_region_area_threshold: int=400):
 
 def ChannelPicker(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_crosscorrs:bool=True, do_CNN:bool=False, interactive:bool=True, do_seg:bool=False, 
-first_image: int=1, channel_picking_threshold: float =0.5, channel_picker_model_file='/Users/sharan/Desktop/Physics/mm3-latest/weights/empties_weights.hdf5', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, selection_done:bool=False):
+first_image: int=1, channel_picking_threshold: float =0.99, channel_picker_model_file='/Users/sharan/Desktop/Physics/mm3-latest/weights/empties_weights.hdf5', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, selection_done:bool=False):
     """Performs Mother Machine Analysis"""    
 
     global params
