@@ -8472,7 +8472,10 @@ def fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images):
 
     return specs
 
-def fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images):
+def fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images, params):
+
+    if not os.path.isdir(params['channel_select_dir']):
+        os.mkdir(params['channel_select_dir'])
 
     n_peaks = len(specs[fov_id].keys())
     fig = plt.figure(figsize=(int(n_peaks/2), 9))
@@ -8542,17 +8545,17 @@ def fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images):
 
     # show the plot finally
     fig.suptitle("FOV %d" % fov_id)
-    plt.tight_layout(pad=0.1)
-    plt.savefig(f"/Users/sharan/Desktop/exp1/{fov_id}.png")
+    plt.tight_layout(pad=0.2)
+    plt.savefig(os.path.join(params['channel_select_dir'],f"{fov_id}.png"))
     plt.close()
 
     information("Starting channel picking for FOV %d." % fov_id)
-    im=image.imread(f"/Users/sharan/Desktop/exp1/{fov_id}.png")
+    im=image.imread(os.path.join(params['channel_select_dir'],f"{fov_id}.png"))
 
     tot=np.array(im)
     napari.current_viewer().add_image(tot, name="Fov"+str(fov_id)+"_img", visible=False)
     napari.current_viewer().add_points([], name="Fov"+str(fov_id)+"_pts", visible=False, face_color='r', size=20)
-    offset=50
+    offset=43
     # Add points in the points layer according to the cross-correlation value
     namei="Fov"+str(fov_id)+"_img"
     namep="Fov"+str(fov_id)+"_pts"
@@ -8562,7 +8565,7 @@ def fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images):
     for i,peak_id in enumerate(sorted_peaks):
 
         # Estimate the coordinates from peak id's index
-        x= offset+ width_per_peak*i + (width_per_peak//2)
+        x= offset+ width_per_peak*i + (4*width_per_peak)//5
 
         # Adding the points at 1/3 height from bottom 
         # should be good enough for visualization
@@ -8580,7 +8583,7 @@ def fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images):
     return specs
 
 def channelProcessor(params):
-    ana_dir = os.path.join(params['experiment_directory'], params['analysis_directory'])
+    ana_dir = params['ana_dir']
     specs = yaml.safe_load(Path(ana_dir+'specs.yaml').read_text())
 
     if params['FOV']:
@@ -8618,12 +8621,13 @@ def channelProcessor(params):
         (_,max_width,_)=napari.current_viewer().layers[namei].data_raw.shape
         pts=napari.current_viewer().layers[namep]._view_data
         print(f'{fov_id}', pts)
-        width_per_peak=max_width//npeaks
+        offset=43
+        width_per_peak=(max_width-offset)//npeaks
 
         # analyze(1) => 0 points in the peak partition
         # empty(0) => 1 points in the peak partition
         # ignore(-1) => 2 points in the peak partititon
-        offset=50
+        
         for pt in pts:
             peak_id=sorted_peaks[int((pt[1]-offset)//width_per_peak)]
             specs[fov_id][peak_id]-=1
@@ -9369,7 +9373,7 @@ def channelPicker(params):
                 specs = fov_cell_segger_choose_channels_UI(fov_id, predictionDict, specs, UI_images)
             else: # crosscorrs == None will default to just picking with no help.
                 #specs = fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images)
-                specs=fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images)
+                specs=fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images, params)
 
     else:
         outputdir = os.path.join(ana_dir, "fovs")
@@ -10195,6 +10199,7 @@ first_image: int=1, channel_picking_threshold: float =0.99, channel_picker_model
     params['cell_dir'] = os.path.join(params['ana_dir'], 'cell_data')
     params['track_dir'] = os.path.join(params['ana_dir'], 'tracking')
     params['foci_track_dir'] = os.path.join(params['ana_dir'], 'tracking_foci')
+    params['channel_select_dir']= os.path.join(params['ana_dir'], 'channel_picker')
 
     # use jd time in image metadata to make time table. Set to false if no jd time
     if params['TIFF_source'] == 'elements' or params['TIFF_source'] == 'nd2ToTIFF':
