@@ -8522,7 +8522,7 @@ def fov_choose_channels_UI_II(fov_id, specs, UI_images):
 
     return specs
 
-def channelProcessor(params, specs):
+def channelProcessor(params):
     ana_dir = os.path.join(params['experiment_directory'], params['analysis_directory'])
     specs = yaml.safe_load(Path(ana_dir+'specs.yaml').read_text())
 
@@ -8544,6 +8544,13 @@ def channelProcessor(params, specs):
     # remove fovs if the user specified so
     if (len(user_spec_fovs) > 0):
         fov_id_list = [int(fov) for fov in fov_id_list if fov in user_spec_fovs]
+
+    # Mark all as analyze intitially
+    # The points layer analysis will take care later on
+    for fov_id in fov_id_list:
+        sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
+        for peak_id in sorted_peaks:
+            specs[fov_id][peak_id]=1
 
     for fov_id in fov_id_list:
         sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
