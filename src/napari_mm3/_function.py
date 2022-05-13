@@ -8472,45 +8472,102 @@ def fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images):
 
     return specs
 
-def fov_choose_channels_UI_II(fov_id, specs, UI_images):
+def fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images):
 
-    information("Starting channel picking for FOV %d." % fov_id)
+    n_peaks = len(specs[fov_id].keys())
+    fig = plt.figure(figsize=(int(n_peaks/2), 9))
+    fig.set_size_inches(int(n_peaks/2),9)
+    ax=[]
     # plot the peaks peak by peak using sorted list
     sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
+    npeaks = len(sorted_peaks)
+    last_imgs = [] # list that holds last images for updating figure
 
-    f_imgs=[]
-    l_imgs=[]
+    for n, peak_id in enumerate(sorted_peaks, start=1):
+        if crosscorrs:
+            peak_xc = crosscorrs[fov_id][peak_id] # get cross corr data from dict
 
-    for _, peak_id in enumerate(sorted_peaks, start=1):
-        f_imgs.append(UI_images[fov_id][peak_id]['first'])
-        l_imgs.append(UI_images[fov_id][peak_id]['last'])
+        # load data for figure
+        # image_data = mm3.load_stack(fov_id, peak_id, color='c1')
 
-    top=np.concatenate(f_imgs,1)
-    bottom=np.concatenate(l_imgs,1)
-    tot=np.concatenate((top,bottom),0)
+        # first_img = rescale_intensity(image_data[0,:,:]) # phase image at t=0
+        # last_img = rescale_intensity(image_data[-1,:,:]) # phase image at end
+        last_imgs.append(UI_images[fov_id][peak_id]['last']) # append for updating later
+        # del image_data # clear memory (maybe)
 
+        # append an axis handle to ax list while adding a subplot to the figure which has a
+        # column for each peak and 3 rows
+
+        # plot the first image in each channel in top row
+        ax.append(fig.add_subplot(3, npeaks, n))
+        ax[-1].imshow(UI_images[fov_id][peak_id]['first'],
+                      cmap=plt.cm.gray, interpolation='nearest')
+        ax = format_channel_plot(ax, peak_id) # format axis and title
+        if n == 1:
+            ax[-1].set_ylabel("first time point")
+
+        # plot middle row using last time point with highlighting for empty/full
+        ax.append(fig.add_subplot(3, npeaks, n + npeaks))
+        ax[-1].imshow(UI_images[fov_id][peak_id]['last'],
+                      cmap=plt.cm.gray, interpolation='nearest')
+
+        # # color image based on if it is thought empty or full
+        # ones_array = np.ones_like(UI_images[fov_id][peak_id]['last'])
+        # if specs[fov_id][peak_id] == 1: # 1 means analyze, show green
+        #     ax[-1].imshow(np.dstack((ones_array*0.1, ones_array, ones_array*0.1)), alpha=0.25)
+        # else: # otherwise show red, means don't analyze
+        #     ax[-1].imshow(np.dstack((ones_array, ones_array*0.1, ones_array*0.1)), alpha=0.25)
+
+        # format
+        ax = format_channel_plot(ax, peak_id)
+        if n == 1:
+            ax[-1].set_ylabel("last time point")
+
+        # finally plot the cross correlations a cross time
+        ax.append(fig.add_subplot(3, npeaks, n + 2*npeaks))
+        if crosscorrs: # don't try to plot if it's not there.
+            ccs = peak_xc['ccs'] # list of cc values
+            ax[-1].plot(ccs, range(len(ccs)))
+            ax[-1].set_title('avg=%1.2f' % peak_xc['cc_avg'], fontsize = 8)
+        else:
+            pass
+            # ax[-1].plot(np.zeros(10), range(10))
+
+        ax[-1].set_xlim((0.8,1))
+        ax[-1].get_xaxis().set_ticks([])
+        if not n == 1:
+            ax[-1].get_yaxis().set_ticks([])
+        else:
+            ax[-1].set_ylabel("time index, CC on X")
+
+    # show the plot finally
+    fig.suptitle("FOV %d" % fov_id)
+    plt.tight_layout(pad=0.1)
+    plt.savefig(f"/Users/sharan/Desktop/exp1/{fov_id}.png")
+    plt.close()
+
+    information("Starting channel picking for FOV %d." % fov_id)
+    im=image.imread(f"/Users/sharan/Desktop/exp1/{fov_id}.png")
+
+    tot=np.array(im)
     napari.current_viewer().add_image(tot, name="Fov"+str(fov_id)+"_img", visible=False)
-    napari.current_viewer().add_points([], name="Fov"+str(fov_id)+"_pts", visible=False)
-
+    napari.current_viewer().add_points([], name="Fov"+str(fov_id)+"_pts", visible=False, face_color='r', size=20)
+    offset=50
     # Add points in the points layer according to the cross-correlation value
     namei="Fov"+str(fov_id)+"_img"
     namep="Fov"+str(fov_id)+"_pts"
-    (max_height,max_width)=napari.current_viewer().layers[namei].data_raw.shape
-
-    sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
-    npeaks = len(sorted_peaks)
-
-    width_per_peak=max_width//npeaks
+    (max_height,max_width,_)=napari.current_viewer().layers[namei].data_raw.shape
+    width_per_peak=(max_width-offset)//npeaks
 
     for i,peak_id in enumerate(sorted_peaks):
 
         # Estimate the coordinates from peak id's index
-        x= width_per_peak*i + (width_per_peak//2)
+        x= offset+ width_per_peak*i + (width_per_peak//2)
 
-        # Adding the points at quarter height from bottom 
+        # Adding the points at 1/3 height from bottom 
         # should be good enough for visualization
-        y1= (max_height*3)//4
-        y2= (max_height*3)//4 + 10
+        y1= (max_height)//2
+        y2= (max_height)//2 + 50
 
         if specs[fov_id][peak_id]==0:
             # empty(0) => 1 points in the peak partition
@@ -8558,16 +8615,17 @@ def channelProcessor(params):
 
         namei="Fov"+str(fov_id)+"_img"
         namep="Fov"+str(fov_id)+"_pts"
-        (_,max_width)=napari.current_viewer().layers[namei].data_raw.shape
+        (_,max_width,_)=napari.current_viewer().layers[namei].data_raw.shape
         pts=napari.current_viewer().layers[namep]._view_data
+        print(f'{fov_id}', pts)
         width_per_peak=max_width//npeaks
 
         # analyze(1) => 0 points in the peak partition
         # empty(0) => 1 points in the peak partition
         # ignore(-1) => 2 points in the peak partititon
-
+        offset=50
         for pt in pts:
-            peak_id=sorted_peaks[int(pt[1]//width_per_peak)]
+            peak_id=sorted_peaks[int((pt[1]-offset)//width_per_peak)]
             specs[fov_id][peak_id]-=1
 
     # Save out specs file in yaml format
@@ -9311,7 +9369,7 @@ def channelPicker(params):
                 specs = fov_cell_segger_choose_channels_UI(fov_id, predictionDict, specs, UI_images)
             else: # crosscorrs == None will default to just picking with no help.
                 #specs = fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images)
-                specs=fov_choose_channels_UI_II(fov_id, specs, UI_images)
+                specs=fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images)
 
     else:
         outputdir = os.path.join(ana_dir, "fovs")
