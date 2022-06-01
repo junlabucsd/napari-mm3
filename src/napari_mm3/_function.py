@@ -1,68 +1,12 @@
-"""
-This module is an example of a barebones function plugin for napari
-
-It implements the ``napari_experimental_provide_function`` hook specification.
-see: https://napari.org/docs/dev/plugins/hook_specifications.html
-
-Replace code below according to your needs.
-"""
 from __future__ import print_function, division
-from unicodedata import name
-
-import six
-
-# import modules
-import sys # input, output, errors, and files
-import os # interacting with file systems
-import time # getting time
+import copy
 import datetime
-import yaml # parameter importing
-import json # for importing tiff metadata
-try:
-    import cPickle as pickle # loading and saving python objects
-except:
-    import pickle
-import numpy as np # numbers package
-import struct # for interpretting strings as binary data
-import re # regular expressions
-from pprint import pprint # for human readable file output
-import traceback # for error messaging
-import warnings # error messaging
-import copy # not sure this is needed
-import h5py # working with HDF5 files
-import pandas as pd
-
-# scipy and image analysis
-from scipy.signal import find_peaks_cwt # used in channel finding
-from scipy.optimize import curve_fit # fitting ring profile
-from scipy.optimize import leastsq # fitting 2d gaussian
-from scipy import ndimage as ndi # labeling and distance transform
-from skimage import io
-from skimage import segmentation # used in make_masks and segmentation
-from skimage.transform import rotate
-from skimage.feature import match_template # used to align images
-from skimage.feature import blob_log # used for foci finding
-from skimage.filters import threshold_otsu, median # segmentation
-from skimage import filters
-from skimage import morphology # many functions is segmentation used from this
-from skimage.measure import regionprops # used for creating lineages
-from skimage.measure import profile_line # used for ring an nucleoid analysis
-from skimage import measure
-import tifffile as tiff
-
-# deep learning
-import tensorflow as tf # ignore message about how tf was compiled
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras import models
-from tensorflow.keras import losses
-from tensorflow.keras import backend as K
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # supress warnings
-
-# Parralelization modules
+import glob
+import h5py
+import json
+import os
 import multiprocessing
 from multiprocessing import Pool
-
-# Plotting for debug
 import matplotlib as mpl
 font = {'family' : 'sans-serif',
         'weight' : 'normal',
@@ -72,45 +16,45 @@ mpl.rcParams['pdf.fonttype'] = 42
 from matplotlib.patches import Ellipse
 import matplotlib.patches as mpatches
 from matplotlib import image
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import numpy as np
+import napari
+from napari_plugin_engine import napari_hook_implementation
+import os
+try:
+    import cPickle as pickle
+except:
+    import pickle
+from pprint import pprint
+import pandas as pd
+from pathlib import Path
+import pims_nd2
+import re
+from scipy import ndimage as ndi
+from scipy.signal import find_peaks_cwt
+from scipy.optimize import curve_fit, leastsq
+from skimage import io, segmentation, filters, morphology, measure
+from skimage.transform import rotate
+from skimage.feature import match_template, blob_log
+from skimage.filters import threshold_otsu, median
+from skimage.measure import regionprops, profile_line
+from skimage.exposure import rescale_intensity
 import seaborn as sns
 sns.set(style='ticks', color_codes=True)
 sns.set_palette('deep')
-
-from pathlib import Path
+import six
+import struct
+import sys
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras import models, losses
+from tensorflow.keras import backend as K
 import time
-import matplotlib.pyplot as plt
-
-# import modules
-import os
-import glob
-import re
-import numpy as np
 import tifffile as tiff
-import pims_nd2
-from skimage import io, measure, morphology
-import tifffile as tiff
-from pprint import pprint # for human readable file output
-import multiprocessing
-from multiprocessing import Pool
-import numpy as np
+import traceback
 import warnings
-from tensorflow.keras import models
-
-from enum import Enum
-import numpy as np
-import multiprocessing
-from multiprocessing import Pool
-import os
-from napari_plugin_engine import napari_hook_implementation
-from skimage.filters import threshold_otsu # segmentation
-from skimage import morphology # many functions is segmentation used from this
-from skimage import segmentation # used in make_masks and segmentation
-from scipy import ndimage as ndi # labeling and distance transform
-import matplotlib.gridspec as gridspec
-from skimage.exposure import rescale_intensity # for displaying in GUI
-from skimage import io, morphology, segmentation
-# import mm3_helpers as mm3
-import napari
+import yaml
 
 # This is the actual plugin function, where we export our function
 # (The functions themselves are defined below)

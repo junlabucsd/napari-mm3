@@ -40,6 +40,10 @@ Open Terminal and run:
 
 In napari window, Plugins-> Install/Uninstall plugins -> drag and drop the cloned folder and hit install. The napari-mm3 plugin should now be visible in the plugins list.
 
+Or, use:
+
+``` pip install -e napari-mm3```
+
 
 ## Contributing
 
