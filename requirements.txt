@@ -6,6 +6,7 @@
 
 h5py
 scikit-learn
+scikit-image
 tensorflow
 pims-nd2
 seaborn
