@@ -7,7 +7,6 @@ see: https://napari.org/docs/dev/plugins/hook_specifications.html
 Replace code below according to your needs.
 """
 from __future__ import print_function, division
-from typing import TYPE_CHECKING, DefaultDict
 from unicodedata import name
 
 import six
@@ -17,7 +16,6 @@ import sys # input, output, errors, and files
 import os # interacting with file systems
 import time # getting time
 import datetime
-import inspect # get passed parameters
 import yaml # parameter importing
 import json # for importing tiff metadata
 try:
@@ -33,8 +31,6 @@ import warnings # error messaging
 import copy # not sure this is needed
 import h5py # working with HDF5 files
 import pandas as pd
-import networkx as nx
-import collections
 
 # scipy and image analysis
 from scipy.signal import find_peaks_cwt # used in channel finding
@@ -51,20 +47,16 @@ from skimage import filters
 from skimage import morphology # many functions is segmentation used from this
 from skimage.measure import regionprops # used for creating lineages
 from skimage.measure import profile_line # used for ring an nucleoid analysis
-from skimage import util, measure, transform, feature
+from skimage import measure
 import tifffile as tiff
-from sklearn import metrics
 
 # deep learning
 import tensorflow as tf # ignore message about how tf was compiled
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import models
 from tensorflow.keras import losses
-from tensorflow.keras import utils
 from tensorflow.keras import backend as K
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # supress warnings
-
-
 
 # Parralelization modules
 import multiprocessing
@@ -97,7 +89,6 @@ import tifffile as tiff
 import pims_nd2
 from skimage import io, measure, morphology
 import tifffile as tiff
-from scipy import stats
 from pprint import pprint # for human readable file output
 import multiprocessing
 from multiprocessing import Pool
