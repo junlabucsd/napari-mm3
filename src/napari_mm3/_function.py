@@ -5773,34 +5773,8 @@ def preload_images(specs, fov_id_list):
 def channelPicker(params):
     '''mm3_ChannelPicker.py allows the user to identify full and empty channels.'''
 
-    # # set switches and parameters
-    # parser = argparse.ArgumentParser(prog='python mm3_ChannelPicker.py',
-    #                                  description='Determines which channels should be analyzed, used as empties for subtraction, or ignored.')
-    # parser.add_argument('-f', '--paramfile', type=str,
-    #                     required=False, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov',  type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc',  type=int,
-    #                     required=False, help='Number of processors to use.')
-    # # parser.add_argument('-s', '--specfile',  type=file,
-    # #                     required=False, help='Filename of specs file.')
-    # parser.add_argument('-i', '--noninteractive', action='store_true',
-    #                     required=False, help='Do channel picking manually.')
-    # parser.add_argument('-c', '--saved_cross_correlations', action='store_true',
-    #                     required=False, help='Load cross correlation data instead of computing.')
-    # parser.add_argument('-s', '--specfile', type=str,
-    #                     required=False, help='Path to spec.yaml file.')
-    # namespace = parser.parse_args()
-
-
     # Load the project parameters file
     information('Loading experiment parameters.')
-    # if namespace.paramfile:
-    #     param_file_path = namespace.paramfile
-    # else:
-    #     mm3.warning('No param file specified. Using 100X template.')
-    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    #p = mm3_.init_mm3_helpers() # initialized the helper library
     p = params
 
     if p['FOV']:
@@ -5812,21 +5786,6 @@ def channelPicker(params):
     else:
         user_spec_fovs = []
 
-    # # number of threads for multiprocessing
-    # if namespace.nproc:
-    #     p['num_analyzers'] = namespace.nproc
-    # else:
-    #     p['num_analyzers'] = 6
-
-    # use previous specfile
-    # if namespace.specfile:
-    #     try:
-    #         specfile = os.path.relpath(namespace.specfile)
-    #         if not os.path.isfile(specfile):
-    #             raise ValueError
-    #     except ValueError:
-    #         mm3.warning("\"{}\" is not a regular file or does not exist".format(specfile))
-    # else:
     specfile = None
 
     # set cross correlation calculation flag
@@ -6213,18 +6172,6 @@ def channelPicker(params):
 def subtract(params):
     '''mm3_Subtract.py averages empty channels and then subtractions them from channels with cells'''
 
-    # parser = argparse.ArgumentParser(prog='python mm3_Subtract.py',
-    #                                  description='Subtract background from phase contrast and fluorescent channels.')
-    # parser.add_argument('-f', '--paramfile',  type=str,
-    #                     required=False, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov',  type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc',  type=int,
-    #                     required=False, help='Number of processors to use.')
-    # parser.add_argument('-c', '--color', type=str,
-    #                     required=False, help='Color plane to subtract. "c1", "c2", etc.')
-    # namespace = parser.parse_args()
-
     # Load the project parameters file
     information('Loading experiment parameters.')
     #p = mm3_.init_mm3_helpers() # initialized the helper library
@@ -6241,10 +6188,6 @@ def subtract(params):
 
     information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
-    # which color channel with which to do subtraction
-    # if namespace.color:
-    #     sub_plane = namespace.color
-    # else:
     sub_plane = 'c1'
 
     # Create folders for subtracted info if they don't exist
@@ -6313,28 +6256,6 @@ def subtract(params):
 
 def segmentUNet(params):
 
-    # # set switches and parameters
-    # parser = argparse.ArgumentParser(prog='python mm3_Segment.py',
-    #                                  description='Segment cells and create lineages.')
-    # parser.add_argument('-f', '--paramfile', type=str,
-    #                     required=True, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov', type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc', type=int,
-    #                     required=False, help='Number of processors to use.')
-    # parser.add_argument('-m', '--modelfile', type=str,
-    #                     required=False, help='Path to trained U-net model.')
-    # namespace = parser.parse_args()
-
-    # Load the project parameters file
-    # mm3.information('Loading experiment parameters.')
-    # if namespace.paramfile:
-    #     param_file_path = namespace.paramfile
-    # else:
-    #     mm3.warning('No param file specified. Using 100X template.')
-    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    # p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
-
     information('Loading experiment parameters.')
     p=params
 
@@ -6396,18 +6317,6 @@ def segmentUNet(params):
 
 def segmentOTSU(params):
 
-    # # set switches and parameters
-    # parser = argparse.ArgumentParser(prog='python mm3_Segment.py',
-    #                                  description='Segment cells and create lineages.')
-    # parser.add_argument('-f', '--paramfile',  type=str,
-    #                     required=True, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov',  type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc',  type=int,
-    #                     required=False, help='Number of processors to use.')
-    # namespace = parser.parse_args()
-
-    # Load the project parameters file
     information('Loading experiment parameters.')
     p=params
 
@@ -6419,11 +6328,6 @@ def segmentOTSU(params):
             user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
     else:
         user_spec_fovs = []
-
-    # number of threads for multiprocessing
-    # if namespace.nproc:
-    #     p['num_analyzers'] = namespace.nproc
-    # information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
     # create segmenteation and cell data folder if they don't exist
     if not os.path.exists(p['seg_dir']) and p['output'] == 'TIFF':
@@ -6464,26 +6368,6 @@ def segmentOTSU(params):
     information("Finished segmentation.")
 
 def Track(params):
-    # parser = argparse.ArgumentParser(prog='python mm3_Segment.py',
-    #                                  description='Segment cells and create lineages.')
-    # parser.add_argument('-f', '--paramfile',  type=str,
-    #                     required=True, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov',  type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc',  type=int,
-    #                     required=False, help='Number of processors to use.')
-    # parser.add_argument('-s', '--segmentsource', type=str,
-    #                     required=False, help='Segmented images to use for tracking. "seg_otsu", "seg_unet", etc.')
-    # namespace = parser.parse_args()
-
-    # Load the project parameters file
-    # mm3.information('Loading experiment parameters.')
-    # if namespace.paramfile:
-    #     param_file_path = namespace.paramfile
-    # else:
-    #     mm3.warning('No param file specified. Using 100X template.')
-    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    # p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
     # Load the project parameters file
     information('Loading experiment parameters.')
@@ -6500,12 +6384,6 @@ def Track(params):
 
     information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
-    # segmentation plane to be used for tracking
-    # if namespace.segmentsource:
-    #     p['track']['seg_img'] = namespace.segmentsource
-    # else:
-    #     if 'seg_img' not in p['track'].keys():
-    #         p['track']['seg_img'] = 'seg_otsu' # default to otsu. Good chance of error.
     information("Using {} images for tracking.".format(p['track']['seg_img']))
 
     # create segmenteation and cell data folder if they don't exist
@@ -6871,7 +6749,6 @@ def Lineage(params,numSamples=10):
 
     information("Completed Plotting")
 
-# 2.  MM3 analysis
 def Compile(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', image_start : int=1, number_of_rows :int = 1, tiff_compress:int=5,
 do_metadata: bool=True, do_time_table: bool=True, do_channel_masks: bool=True, do_slicing:bool=True, find_channels_method:str='peaks',
