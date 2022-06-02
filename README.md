@@ -7,7 +7,7 @@
 [![codecov](https://codecov.io/gh/ahirsharan/napari-mm3/branch/main/graph/badge.svg)](https://codecov.io/gh/ahirsharan/napari-mm3)
 [![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-mm3)](https://napari-hub.org/plugins/napari-mm3)
 
-a plugin for mother machine image analysis
+A plugin for Mother Machine Image Analysis by [Jun Lab](https://jun.ucsd.edu/).
 
 ----------------------------------
 
