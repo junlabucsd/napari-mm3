@@ -20,7 +20,6 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
 import napari
-from napari_plugin_engine import napari_hook_implementation
 import os
 try:
     import cPickle as pickle
@@ -55,16 +54,6 @@ import tifffile as tiff
 import traceback
 import warnings
 import yaml
-
-# This is the actual plugin function, where we export our function
-# (The functions themselves are defined below)
-@napari_hook_implementation
-def napari_experimental_provide_function():
-    # we can return a single function
-    # or a tuple of (function, magicgui_options)
-    # or a list of multiple functions with or without options, as shown here:
-    #return [Segment, threshold, image_arithmetic]
-    return [Compile, ChannelPicker, Segment, Track_Standard]
 
 # 1.  First example, a simple function that thresholds an image and creates a labels layer
 def threshold(data: "napari.types.ImageData", threshold: int) -> "napari.types.LabelsData":
@@ -2113,20 +2102,20 @@ def make_lineages_fov(fov_id, specs):
     # This is a list of tuples (fov_id, peak_id) to send to the Pool command
     fov_and_peak_ids_list = [(fov_id, peak_id) for peak_id in ana_peak_ids]
 
-    # set up multiprocessing pool. will complete pool before going on
-    pool = Pool(processes=params['num_analyzers'])
+    # # set up multiprocessing pool. will complete pool before going on
+    # pool = Pool(processes=params['num_analyzers'])
 
-    # create the lineages for each peak individually
-    # the output is a list of dictionaries
-    lineages = pool.map(make_lineage_chnl_stack, fov_and_peak_ids_list, chunksize=8)
+    # # create the lineages for each peak individually
+    # # the output is a list of dictionaries
+    # lineages = pool.map(make_lineage_chnl_stack, fov_and_peak_ids_list, chunksize=8)
 
-    pool.close() # tells the process nothing more will be added.
-    pool.join() # blocks script until everything has been processed and workers exit
+    # pool.close() # tells the process nothing more will be added.
+    # pool.join() # blocks script until everything has been processed and workers exit
 
     # This is the non-parallelized version (useful for debug)
-    # lineages = []
-    # for fov_and_peak_ids in fov_and_peak_ids_list:
-    #     lineages.append(make_lineage_chnl_stack(fov_and_peak_ids))
+    lineages = []
+    for fov_and_peak_ids in fov_and_peak_ids_list:
+        lineages.append(make_lineage_chnl_stack(fov_and_peak_ids))
 
     # combine all dictionaries into one dictionary
     Cells = {} # create dictionary to hold all information
@@ -6753,8 +6742,8 @@ def Compile(experiment_name: str='exp1', experiment_directory: str= '/Users/shar
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', image_start : int=1, number_of_rows :int = 1, tiff_compress:int=5,
 do_metadata: bool=True, do_time_table: bool=True, do_channel_masks: bool=True, do_slicing:bool=True, find_channels_method:str='peaks',
 image_orientation : str= 'up', channel_width : int=10, channel_separation : int=45, channel_detection_snr : int=1, channel_length_pad : int=10,
-channel_width_pad : int=10, trap_crop_height: int=256, trap_crop_width: int=27, trap_area_threshold: int=2, channel_prediction_batch_size: int=15,
-merged_trap_region_area_threshold: int=400):
+channel_width_pad : int=10, trap_crop_height: int=256, trap_crop_width: int=27, trap_area_threshold_1000X: float=2, channel_prediction_batch_size: int=15,
+merged_trap_region_area_threshold_1000X: float=400):
     """Performs Mother Machine Analysis"""
 
     global params
@@ -6795,9 +6784,9 @@ merged_trap_region_area_threshold: int=400):
     params['compile']['channel_width_pad']=channel_width_pad
     params['compile']['trap_crop_height']=trap_crop_height
     params['compile']['trap_crop_width']=trap_crop_width
-    params['compile']['trap_area_threshold']=trap_area_threshold*1000
+    params['compile']['trap_area_threshold']=int(trap_area_threshold_1000X*1000)
     params['compile']['channel_prediction_batch_size']=channel_prediction_batch_size
-    params['compile']['merged_trap_region_area_threshold']=merged_trap_region_area_threshold*1000
+    params['compile']['merged_trap_region_area_threshold']=int(merged_trap_region_area_threshold_1000X*1000)
 
     params['num_analyzers'] = multiprocessing.cpu_count()
 

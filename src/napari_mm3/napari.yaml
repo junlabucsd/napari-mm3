@@ -1,0 +1,46 @@
+name: napari-mm3
+schema_version: 0.1.0
+contributions:
+  commands:
+  - id: napari-mm3.Compile
+    title: Performs Mother Machine Analysis
+    python_name: napari_mm3._function:Compile
+  - id: napari-mm3.ChannelPicker
+    title: Performs Mother Machine Analysis
+    python_name: napari_mm3._function:ChannelPicker
+  - id: napari-mm3.Segment
+    title: Performs Mother Machine Analysis
+    python_name: napari_mm3._function:Segment
+  - id: napari-mm3.Track_Standard
+    title: Performs Mother Machine Analysis
+    python_name: napari_mm3._function:Track_Standard
+  - id: napari-mm3.get_reader
+    title: Get Reader
+    python_name: napari_mm3._reader:napari_get_reader
+  - id: napari-mm3.write_image
+    title: Write Image
+    python_name: napari_mm3._writer:napari_write_image
+  readers:
+  - command: napari-mm3.get_reader
+    filename_patterns:
+    - '*.npy'
+    accepts_directories: true
+  writers:
+  - command: napari-mm3.write_image
+    layer_types:
+    - image
+    filename_extensions: []
+    display_name: image
+  widgets:
+  - command: napari-mm3.Compile
+    display_name: Compile
+    autogenerate: true
+  - command: napari-mm3.ChannelPicker
+    display_name: ChannelPicker
+    autogenerate: true
+  - command: napari-mm3.Segment
+    display_name: Segment
+    autogenerate: true
+  - command: napari-mm3.Track_Standard
+    display_name: Track Standard
+    autogenerate: true
