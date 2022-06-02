@@ -10,3 +10,4 @@ scikit-image
 tensorflow
 pims-nd2
 seaborn
+pyqt5

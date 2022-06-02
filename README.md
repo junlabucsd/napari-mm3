@@ -23,27 +23,9 @@ https://napari.org/plugins/stable/index.html
 
 ## Installation
 
-Install anaconda through  https://docs.anaconda.com/anaconda/install/
+Ensure python and napari are installed in your system. To install the plugin, use:
 
-Clone https://github.com/ahirsharan/napari-mm3
-
-
-Open Terminal and run:
-
-```conda create -y -n napari-env -c conda-forge python=3.9```
-
-```conda activate napari-env```
-
-```conda install -c conda-forge napari```
-
-```pip install -r requirements.txt``` 
-
-In napari window, Plugins-> Install/Uninstall plugins -> drag and drop the cloned folder and hit install. The napari-mm3 plugin should now be visible in the plugins list.
-
-Or, use:
-
-``` pip install -e napari-mm3```
-
+``` pip install napari-mm3```
 
 ## Contributing
 
