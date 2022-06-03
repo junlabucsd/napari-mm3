@@ -2543,84 +2543,6 @@ def make_lineage_chnl_stack(fov_and_peak_id):
     # return the dictionary with all the cells
     return Cells
 
-### Cell class and related functions
-
-# this is the object that holds all information for a detection
-class Detection():
-    '''
-    The Detection is a single detection in a single frame.
-    '''
-
-    # initialize (birth) the cell
-    def __init__(self, detection_id, region, t):
-        '''The detection must be given a unique detection_id and passed the region
-        information from the segmentation
-
-        Parameters
-        __________
-
-        detection_id : str
-            detection_id is a string in the form fXpXtXrX
-            f is 3 digit FOV number
-            p is 4 digit peak number
-            t is 4 digit time point
-            r is region label for that segmentation
-            Use the function create_detection_id to return a proper string.
-
-        region : region properties object
-            Information about the labeled region from
-            skimage.measure.regionprops()
-
-            '''
-
-        # create all the attributes
-        # id
-        self.id = detection_id
-
-        # identification convenience
-        self.fov = int(detection_id.split('f')[1].split('p')[0])
-        self.peak = int(detection_id.split('p')[1].split('t')[0])
-        self.t = t
-
-        self.cell_count = 1
-
-        # self.abs_times = [params['time_table'][self.fov][t]] # elapsed time in seconds
-        if region is not None:
-            self.label = region.label
-            self.bbox = region.bbox
-            self.area = region.area
-
-            # calculating cell length and width by using Feret Diamter. These values are in pixels
-            length_tmp, width_tmp = feretdiameter(region)
-            if length_tmp == None:
-                warning('feretdiameter() failed for ' + self.id + ' at t=' + str(t) + '.')
-            self.length = length_tmp
-            self.width = width_tmp
-
-            # calculate cell volume as cylinder plus hemispherical ends (sphere). Unit is px^3
-            self.volume = (length_tmp - width_tmp) * np.pi * (width_tmp/2)**2 + (4/3) * np.pi * (width_tmp/2)**3
-
-            # angle of the fit elipsoid and centroid location
-            self.orientation = region.orientation
-            self.centroid = region.centroid
-
-        else:
-            self.label = None
-            self.bbox = None
-            self.area = None
-
-            # calculating cell length and width by using Feret Diamter. These values are in pixels
-            length_tmp, width_tmp = (None, None)
-            self.length = None
-            self.width = None
-
-            # calculate cell volume as cylinder plus hemispherical ends (sphere). Unit is px^3
-            self.volume = None
-
-            # angle of the fit elipsoid and centroid location
-            self.orientation = None
-            self.centroid = None
-
 # this is the object that holds all information for a cell
 class Cell():
     '''
@@ -2848,306 +2770,6 @@ class CellTree():
 
     def get_top_from_cell(self, cell_id):
         pass
-
-# this is the object that holds all information for a cell
-class CellFromGraph():
-    '''
-    The CellFromGraph class is one cell that has been born.
-    It is not neccesarily a cell that has divided.
-    '''
-
-    # initialize (birth) the cell
-    def __init__(self, cell_id, region, t, parent=None):
-        '''The cell must be given a unique cell_id and passed the region
-        information from the segmentation
-
-        Parameters
-        __________
-
-        cell_id : str
-            cell_id is a string in the form fXpXtXrX
-            f is 3 digit FOV number
-            p is 4 digit peak number
-            t is 4 digit time point at time of birth
-            r is region label for that segmentation
-            Use the function create_cell_id to do return a proper string.
-
-        region : region properties object
-            Information about the labeled region from
-            skimage.measure.regionprops()
-
-        parent_id : str
-            id of the parent if there is one.
-            '''
-
-        # create all the attributes
-        # id
-        self.id = cell_id
-
-        # identification convenience
-        self.fov = int(cell_id.split('f')[1].split('p')[0])
-        self.peak = int(cell_id.split('p')[1].split('t')[0])
-        self.birth_label = int(region.label)
-        self.regions = [region]
-
-        # parent is a CellFromGraph object, can be None
-        self.parent = parent
-
-        # daughters is updated when cell divides
-        # if this is none then the cell did not divide
-        self.daughters = None
-
-        # birth and division time
-        self.birth_time = t
-        self.division_time = None # filled out if cell divides
-
-        # the following information is on a per timepoint basis
-        self.times = [t]
-        self.abs_times = [params['time_table'][self.fov][t]] # elapsed time in seconds
-        self.labels = [region.label]
-        self.bboxes = [region.bbox]
-        self.areas = [region.area]
-
-        # calculating cell length and width by using Feret Diamter. These values are in pixels
-        length_tmp, width_tmp = feretdiameter(region)
-        if length_tmp == None:
-            warning('feretdiameter() failed for ' + self.id + ' at t=' + str(t) + '.')
-        self.lengths = [length_tmp]
-        self.widths = [width_tmp]
-
-        # calculate cell volume as cylinder plus hemispherical ends (sphere). Unit is px^3
-        self.volumes = [(length_tmp - width_tmp) * np.pi * (width_tmp/2)**2 +
-                       (4/3) * np.pi * (width_tmp/2)**3]
-
-        # angle of the fit elipsoid and centroid location
-        self.orientations = [region.orientation]
-        self.centroids = [region.centroid]
-
-        # these are special datatype, as they include information from the daugthers for division
-        # computed upon division
-        self.times_w_div = None
-        self.lengths_w_div = None
-        self.widths_w_div = None
-
-        # this information is the "production" information that
-        # we want to extract at the end. Some of this is for convenience.
-        # This is only filled out if a cell divides.
-        self.sb = None # in um
-        self.sd = None # this should be combined lengths of daughters, in um
-        self.delta = None
-        self.tau = None
-        self.elong_rate = None
-        self.septum_position = None
-        self.width = None
-        self.death = None
-        self.disappear = None
-        self.area_mean_fluorescence = {}
-        self.volume_mean_fluorescence = {}
-        self.total_fluorescence = {}
-        self.foci = {}
-
-    def __len__(self):
-        return(len(self.times))
-
-    def add_parent(self, parent):
-        self.parent = parent
-
-    def grow(self, region, t):
-        '''Append data from a region to this cell.
-        use cell.times[-1] to get most current value'''
-
-        self.times.append(t)
-        self.abs_times.append(params['time_table'][self.fov][t])
-        self.labels.append(region.label)
-        self.bboxes.append(region.bbox)
-        self.areas.append(region.area)
-        self.regions.append(region)
-
-        #calculating cell length and width by using Feret Diamter
-        length_tmp, width_tmp = feretdiameter(region)
-        if length_tmp == None:
-            warning('feretdiameter() failed for ' + self.id + ' at t=' + str(t) + '.')
-        self.lengths.append(length_tmp)
-        self.widths.append(width_tmp)
-        self.volumes.append((length_tmp - width_tmp) * np.pi * (width_tmp/2)**2 +
-                            (4/3) * np.pi * (width_tmp/2)**3)
-
-        self.orientations.append(region.orientation)
-        self.centroids.append(region.centroid)
-
-    def die(self, region, t):
-        '''
-        Annotate cell as dying from current t to next t.
-        '''
-        self.death = t
-
-    def disappears(self, region, t):
-        '''
-        Annotate cell as disappearing from current t to next t.
-        '''
-        self.disappear = t
-
-    def add_daughter(self, daughter, t):
-
-        if self.daughters is None:
-            self.daughters = [daughter]
-        else:
-            self.daughters.append(daughter)
-            assert len(self.daughters) < 3, "Too many daughter cells in cell {}".format(self.id)
-            # sort daughters by y position, with smaller y-value first.
-            # this will cause the daughter closer to the closed end of the trap to be listed first.
-            self.daughters.sort(key=lambda cell: cell.centroids[0][0])
-            self.divide(t)
-
-    def divide(self, t):
-        '''Divide the cell and update stats.
-        daughter1 is the daugther closer to the closed end.'''
-
-        # put the daugther ids into the cell
-        # self.daughters = [daughter1.id, daughter2.id]
-
-        # give this guy a division time
-        self.division_time = self.daughters[0].birth_time
-
-        # update times
-        self.times_w_div = self.times + [self.division_time]
-        self.abs_times.append(params['time_table'][self.fov][self.division_time])
-
-        # flesh out the stats for this cell
-        # size at birth
-        self.sb = self.lengths[0] * params['pxl2um']
-
-        # force the division length to be the combined lengths of the daughters
-        self.sd = (self.daughters[0].lengths[0] + self.daughters[1].lengths[0]) * params['pxl2um']
-
-        # delta is here for convenience
-        self.delta = self.sd - self.sb
-
-        # generation time. Use more accurate times and convert to minutes
-        self.tau = np.float64((self.abs_times[-1] - self.abs_times[0]) / 60.0)
-
-        # include the data points from the daughters
-        self.lengths_w_div = [l * params['pxl2um'] for l in self.lengths] + [self.sd]
-        self.widths_w_div = [w * params['pxl2um'] for w in self.widths] + [((self.daughters[0].widths[0] + self.daughters[1].widths[0])/2) * params['pxl2um']]
-
-        # volumes for all timepoints, in um^3
-        self.volumes_w_div = []
-        for i in range(len(self.lengths_w_div)):
-            self.volumes_w_div.append((self.lengths_w_div[i] - self.widths_w_div[i]) *
-                                       np.pi * (self.widths_w_div[i]/2)**2 +
-                                       (4/3) * np.pi * (self.widths_w_div[i]/2)**3)
-
-        # calculate elongation rate.
-        try:
-            times = np.float64((np.array(self.abs_times) - self.abs_times[0]) / 60.0) # convert times to minutes
-            log_lengths = np.float64(np.log(self.lengths_w_div))
-            p = np.polyfit(times, log_lengths, 1) # this wants float64
-            self.elong_rate = p[0] * 60.0 # convert to hours
-        except:
-            self.elong_rate = np.float64('NaN')
-            warning('Elongation rate calculate failed for {}.'.format(self.id))
-
-        # calculate the septum position as a number between 0 and 1
-        # which indicates the size of daughter closer to the closed end
-        # compared to the total size
-        self.septum_position = self.daughters[0].lengths[0] / (self.daughters[0].lengths[0] + self.daughters[1].lengths[0])
-
-        # calculate single width over cell's life
-        self.width = np.mean(self.widths_w_div)
-
-        # convert data to smaller floats. No need for float64
-        # see https://docs.scipy.org/doc/numpy-1.13.0/user/basics.types.html
-        convert_to = 'float16' # numpy datatype to convert to
-
-        self.sb = self.sb.astype(convert_to)
-        self.sd = self.sd.astype(convert_to)
-        self.delta = self.delta.astype(convert_to)
-        self.elong_rate = self.elong_rate.astype(convert_to)
-        self.tau = self.tau.astype(convert_to)
-        self.septum_position = self.septum_position.astype(convert_to)
-        self.width = self.width.astype(convert_to)
-
-        self.lengths = [length.astype(convert_to) for length in self.lengths]
-        self.lengths_w_div = [length.astype(convert_to) for length in self.lengths_w_div]
-        self.widths = [width.astype(convert_to) for width in self.widths]
-        self.widths_w_div = [width.astype(convert_to) for width in self.widths_w_div]
-        self.volumes = [vol.astype(convert_to) for vol in self.volumes]
-        self.volumes_w_div = [vol.astype(convert_to) for vol in self.volumes_w_div]
-        # note the float16 is hardcoded here
-        self.orientations = [np.float16(orientation) for orientation in self.orientations]
-        self.centroids = [(y.astype(convert_to), x.astype(convert_to)) for y, x in self.centroids]
-
-    def add_focus(self, focus, t):
-        '''Adds a focus to the cell. See function foci_info_unet'''
-        self.foci[focus.id] = focus
-
-    def print_info(self):
-        '''prints information about the cell'''
-        print('id = %s' % self.id)
-        print('times = {}'.format(', '.join('{}'.format(t) for t in self.times)))
-        print('lengths = {}'.format(', '.join('{:.2f}'.format(l) for l in self.lengths)))
-        if self.daughters is not None:
-            print('daughters = {}'.format(', '.join('{}'.format(daughter.id) for daughter in self.daughters)))
-        if self.parent is not None:
-            print('parent = {}'.format(self.parent.id))
-
-    def make_wide_df(self):
-
-        data = {}
-        data['id'] = self.id
-        data['fov'] = self.fov
-        data['trap'] = self.peak
-        data['parent'] = self.parent
-        data['child1'] = None
-        data['child2'] = None
-        data['division_time'] = self.division_time
-        data['birth_label'] = self.birth_label
-        data['birth_time'] = self.birth_time
-        data['sb'] = self.sb
-        data['sd'] = self.sd
-        data['delta'] = self.delta
-        data['tau'] = self.tau
-        data['elong_rate'] = self.elong_rate
-        data['septum_position'] = self.septum_position
-        data['death'] = self.death
-        data['disappear'] = self.disappear
-
-        if self.daughters is not None:
-            data['child1'] = self.daughters[0]
-
-            if len(self.daughters) == 2:
-                data['child2'] = self.daughters[1]
-
-        df = pd.DataFrame(data, index=[self.id])
-        return(df)
-
-    def make_long_df(self):
-
-        data = {}
-        data['id'] = [self.id]*len(self.times)
-        data['times'] = self.times
-        data['length'] = self.lengths
-        data['volume'] = self.volumes
-        data['area'] = self.areas
-
-        # if a cell divides then there is one extra value in abs_times
-        if self.division_time is None:
-            data['seconds'] = self.abs_times
-        else:
-            data['seconds'] = self.abs_times[:-1]
-
-        # if there is fluorescence data, place it into the dataframe
-        if len(self.area_mean_fluorescence.keys()) != 0:
-
-            for fluorescence_channel in self.area_mean_fluorescence.keys():
-
-                data['{}_area_mean_fluorescence'.format(fluorescence_channel)] = self.area_mean_fluorescence[fluorescence_channel]
-                data['{}_volume_mean_fluorescence'.format(fluorescence_channel)] = self.volume_mean_fluorescence[fluorescence_channel]
-                data['{}_total_fluorescence'.format(fluorescence_channel)] = self.total_fluorescence[fluorescence_channel]
-
-        df = pd.DataFrame(data, index=data['id'])
-
-        return(df)
 
 
 # obtains cell length and width of the cell using the feret diameter
@@ -5928,189 +5550,7 @@ def channelPicker(params):
 
     information("Found %d FOVs to process." % len(fov_id_list))
 
-    ### Cross correlations ########################################################################
-    if do_CNN:
-        # a nested dict to hold predictions per channel per fov.
-        crosscorrs = None
-        predictionDict = {}
-
-        information('Loading model ....')
-
-        # read in model for inference of empty vs good traps
-        model_file_path = p['channel_picker']['channel_picker_model_file']
-        model = models.load_model(model_file_path)
-
-        information("Model loaded.")
-
-        for fov_id in fov_id_list:
-
-            predictionDict[fov_id] = {}
-
-            information('Inferring good, empty, and defective traps on fov_id {} using CNN.'.format(fov_id))
-
-            # get list of tiff file names
-            tiff_file_names = glob.glob(os.path.join(chnl_dir, "*xy{:0=3}*_c1.tif".format(fov_id)))
-            tiff_file_names.sort()
-            #print(len(tiff_file_names)) # uncomment for debugging
-
-            # parameters to pass to custom image generator class, TrapKymographPredictionDataGenerator
-            cnn_params = {'dim': (210,256),
-                      'batch_size': 40,
-                      'n_classes': 4,
-                      'n_channels': 1,
-                      'shuffle': False}
-            # set up the image data generator
-            channel_image_generator = TrapKymographPredictionDataGenerator(tiff_file_names, **cnn_params)
-
-            # run the model
-            predictions = model.predict(channel_image_generator)
-            #print(predictions.shape)
-            predictions = predictions[:len(tiff_file_names),:]
-            #print(predictions.shape)
-
-            # assign each prediction to the proper fov_id, peak_id in predictions dict
-            for i,peak_id in enumerate(sorted(channel_masks[fov_id].keys())):
-                # put prediction array into dictionary
-                #print(i, peak_id) # uncomment for debugging
-                predictionDict[fov_id][peak_id] = predictions[i,:]
-
-        # write predictions to pickle and text
-        information("Writing channel picking predictions file.")
-        with open(os.path.join(ana_dir,"channel_picker_CNN_results.pkl"), 'wb') as preds_file:
-            pickle.dump(predictionDict, preds_file, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(os.path.join(ana_dir,"channel_picker_CNN_results.txt"), 'w') as preds_file:
-            pprint(predictionDict, stream=preds_file)
-        information("Wrote channel picking predictions files.")
-
-    elif do_seg:
-        # a nested dict to hold predictions per channel per fov.
-        crosscorrs = None
-        predictionDict = {}
-
-        information('Loading model ....')
-
-        # read in model for inference of empty vs good traps
-        model_file_path = p['segment']['model_file']
-        model = models.load_model(model_file_path,
-                                  custom_objects={'bce_dice_loss': bce_dice_loss,
-                                                  'dice_loss': dice_loss})
-        unet_shape = (p['segment']['trained_model_image_height'],
-                      p['segment']['trained_model_image_width'])
-
-        cellClassThreshold = p['segment']['cell_class_threshold']
-        if cellClassThreshold == 'None': # yaml imports None as a string
-            cellClassThreshold = False
-        min_object_size = p['segment']['min_object_size']
-
-        information("Model loaded.")
-
-        # arguments to data generator
-        data_gen_args = {'batch_size':p['segment']['batch_size'],
-                         'n_channels':1,
-                         'normalize_to_one':True,
-                         'shuffle':False}
-        # arguments to predict_generator
-        # predict_args = dict(use_multiprocessing=True,
-        #                     workers=p['num_analyzers'],
-        #                     verbose=1)
-
-        predict_args = dict(use_multiprocessing=False,
-                            verbose=1)
-
-        for fov_id in fov_id_list:
-
-            predictionDict[fov_id] = {}
-
-            information('Inferring number of cells in five evenly spaced frames for each trap in fov {}.'.format(fov_id))
-
-            # assign each prediction to the proper fov_id, peak_id in predictions dict
-            counter = 0
-            peak_number = len(channel_masks[fov_id])
-            for i,peak_id in enumerate(sorted(channel_masks[fov_id].keys())):
-                # get list of tiff file names
-                tiff_file_name = glob.glob(os.path.join(chnl_dir, "*xy{:0=3}_p{:0=4}_c1.tif".format(fov_id, peak_id)))[0]
-
-                img_array = io.imread(tiff_file_name)
-                img_height = img_array.shape[1]
-                img_width = img_array.shape[2]
-                slice_increment = int(img_array.shape[0]/5)
-
-                # set up stack for images from all peaks
-                # this is a bit more complicated than just doing 5 images at a time, but it is much faster
-                #   because you don't have nearly as many data transfer steps
-                if i == 0:
-                    img_stack = np.zeros((5*peak_number,img_height,img_width),dtype='uint16')
-
-                # grab 5 images to load and run cell segmentation
-                for j in range(5):
-                    img_stack[counter,...] = img_array[slice_increment*j,...]
-                    counter += 1
-
-            pad_dict = get_pad_distances(unet_shape, img_height, img_width)
-
-            # pad image to correct size
-            if p['debug']:
-                print("Padding dictionary:", pad_dict)
-
-            img_stack = np.pad(img_stack,
-                               ((0,0),
-                               (pad_dict['top_pad'],pad_dict['bottom_pad']),
-                               (pad_dict['left_pad'],pad_dict['right_pad'])),
-                               mode='constant')
-            img_stack = np.expand_dims(img_stack, -1)
-
-            # set up image generator
-            image_generator = CellSegmentationDataGenerator(img_stack, **data_gen_args)
-            # run predictions
-            predictions = model.predict(image_generator, **predict_args)[:,:,:,0]
-            if p['debug']:
-                fig,ax = plt.subplots(ncols=5)
-                for i in range(5):
-                    ax[i].imshow(predictions[i,:,:])
-                plt.show()
-
-            # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
-            if cellClassThreshold:
-                predictions[predictions >= cellClassThreshold] = 1
-                predictions[predictions < cellClassThreshold] = 0
-                predictions = predictions.astype('uint8')
-
-                segmented_imgs = np.zeros(predictions.shape, dtype='uint8')
-                # process and label each frame of the channel
-                for frame in range(segmented_imgs.shape[0]):
-                    # get rid of small holes
-                    predictions[frame,:,:] = morphology.remove_small_holes(predictions[frame,:,:], min_object_size)
-                    # get rid of small objects.
-                    predictions[frame,:,:] = morphology.remove_small_objects(morphology.label(predictions[frame,:,:], connectivity=1), min_size=min_object_size)
-                    # remove labels which touch the boarder
-                    predictions[frame,:,:] = segmentation.clear_border(predictions[frame,:,:])
-                    # relabel now
-                    segmented_imgs[frame,:,:] = morphology.label(predictions[frame,:,:], connectivity=1)
-
-            else: # in this case you just want to scale the 0 to 1 float image to 0 to 255
-                information('Converting predictions to grayscale.')
-                segmented_imgs = np.around(predictions * 100)
-
-            # put number of cells detected into array for predictionDict
-            counter = 0
-            for i,peak_id in enumerate(sorted(channel_masks[fov_id].keys())):
-
-                cell_count_array = np.zeros(5, dtype='uint8')
-                for j in range(5):
-                    cell_count_array[j] = int(np.max(segmented_imgs[counter,:,:]))
-                    counter += 1
-
-                predictionDict[fov_id][peak_id] = cell_count_array
-
-        # write predictions to pickle and text
-        information("Writing channel picking predictions file.")
-        with open(os.path.join(ana_dir,"channel_picker_seg_results.pkl"), 'wb') as preds_file:
-            pickle.dump(predictionDict, preds_file, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(os.path.join(ana_dir,"channel_picker_seg_results.txt"), 'w') as preds_file:
-            pprint(predictionDict, stream=preds_file)
-        information("Wrote channel picking predictions files.")
-
-    elif do_crosscorrs:
+    if do_crosscorrs:
         # a nested dict to hold cross corrs per channel per fov.
         crosscorrs = {}
 
@@ -6956,12 +6396,11 @@ def Lineage(params,numSamples=10):
     information("Completed Plotting")
 
 # 2.  MM3 analysis
-def Compile(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
-output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', image_start : int=1, number_of_rows :int = 1, tiff_compress:int=5,
-do_metadata: bool=True, do_time_table: bool=True, do_channel_masks: bool=True, do_slicing:bool=True, find_channels_method:str='peaks',
-image_orientation : str= 'up', channel_width : int=10, channel_separation : int=45, channel_detection_snr : int=1, channel_length_pad : int=10,
-channel_width_pad : int=10, trap_crop_height: int=256, trap_crop_width: int=27, trap_area_threshold: int=2, channel_prediction_batch_size: int=15,
-merged_trap_region_area_threshold: int=400):
+def Compile(experiment_name: str='20200911_sj1536', experiment_directory: str= '/Users/ryan/data/20200911_sj1536/', image_directory:str='TIFF/', analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
+output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', image_start : int=1,
+do_metadata: bool=True, do_time_table: bool=True, do_channel_masks: bool=True, do_slicing:bool=True,
+ channel_width : int=10, channel_separation : int=45, channel_detection_snr : int=1, channel_length_pad : int=10,
+channel_width_pad : int=10):
     """Performs Mother Machine Analysis"""
     global params
     params=dict()
@@ -6978,32 +6417,32 @@ merged_trap_region_area_threshold: int=400):
     params['nd2ToTIFF']=dict()
     params['nd2ToTIFF']['image_start']=image_start
     params['nd2ToTIFF']['image_end']=None
-    params['nd2ToTIFF']['number_of_rows']=number_of_rows
+    params['nd2ToTIFF']['number_of_rows']=int(1)
     params['nd2ToTIFF']['crop_ymin']=None
     params['nd2ToTIFF']['crop_ymax']=None
     params['nd2ToTIFF']['2row_crop']=None
-    params['nd2ToTIFF']['tiff_compress']=tiff_compress
-    params['nd2ToTIFF']['external_directory']=external_directory
+    params['nd2ToTIFF']['tiff_compress']=int(5)
+    params['nd2ToTIFF']['external_directory']=experiment_directory
     params['compile']=dict()
     params['compile']['do_metadata' ]=do_metadata
     params['compile']['do_time_table']=do_time_table
     params['compile']['do_channel_masks']=do_channel_masks
     params['compile']['do_slicing']=do_slicing
     params['compile']['t_end']=None
-    params['compile']['find_channels_method']=find_channels_method
-    #model_file_traps: str='/Users/sharan/Desktop/Physics/mm3-latest/weights/feature_weights_512x512_normed.hdf5',
+    params['compile']['find_channels_method']='peaks'
+    model_file_traps: str='/Users/sharan/Desktop/Physics/mm3-latest/weights/feature_weights_512x512_normed.hdf5',
     params['compile']['model_file_traps']='/Users/sharan/Desktop/Physics/mm3-latest/weights/feature_weights_512x512_normed.hdf5'
-    params['compile']['image_orientation']=image_orientation
+    params['compile']['image_orientation']='auto'
     params['compile']['channel_width']=channel_width
     params['compile']['channel_separation']=channel_separation
     params['compile']['channel_detection_snr']=channel_detection_snr
     params['compile']['channel_length_pad']=channel_length_pad
     params['compile']['channel_width_pad']=channel_width_pad
-    params['compile']['trap_crop_height']=trap_crop_height
-    params['compile']['trap_crop_width']=trap_crop_width
-    params['compile']['trap_area_threshold']=trap_area_threshold*1000
-    params['compile']['channel_prediction_batch_size']=channel_prediction_batch_size
-    params['compile']['merged_trap_region_area_threshold']=merged_trap_region_area_threshold*1000
+    # params['compile']['trap_crop_height']=trap_crop_height
+    # params['compile']['trap_crop_width']=trap_crop_width
+    # params['compile']['trap_area_threshold']=trap_area_threshold*1000
+    # params['compile']['channel_prediction_batch_size']=channel_prediction_batch_size
+    # params['compile']['merged_trap_region_area_threshold']=merged_trap_region_area_threshold*1000
 
     params['num_analyzers'] = multiprocessing.cpu_count()
 
@@ -7032,9 +6471,9 @@ merged_trap_region_area_threshold: int=400):
     compile(params)
     return
 
-def ChannelPicker(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
-output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_crosscorrs:bool=True, do_CNN:bool=False, interactive:bool=True, do_seg:bool=False,
-first_image: int=1, channel_picking_threshold: float =0.99, channel_picker_model_file='/Users/sharan/Desktop/Physics/mm3-latest/weights/empties_weights.hdf5', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, selection_done:bool=False):
+def ChannelPicker(experiment_name: str='20200911_sj1536', experiment_directory: str= '/Users/ryan/data/20200911_sj1536/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
+output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_crosscorrs:bool=True, interactive:bool=True,
+first_image: int=1, channel_picking_threshold: float =0.99, do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, selection_done:bool=False):
     """Performs Mother Machine Analysis"""
 
     global params
@@ -7055,13 +6494,13 @@ first_image: int=1, channel_picking_threshold: float =0.99, channel_picker_model
     params['subtract']['alignment_pad']=alignment_pad
     params['channel_picker']=dict()
     params['channel_picker']['do_crosscorrs']=do_crosscorrs
-    params['channel_picker']['do_CNN']=do_CNN
+    params['channel_picker']['do_CNN']=False
     params['channel_picker']['interactive']=interactive
-    params['channel_picker']['do_seg']=do_seg
+    params['channel_picker']['do_seg']=False
     params['channel_picker']['first_image']=first_image
     params['channel_picker']['last_image']=-1
     params['channel_picker']['channel_picking_threshold']=channel_picking_threshold
-    params['channel_picker']['channel_picker_model_file']=channel_picker_model_file
+    params['channel_picker']['channel_picker_model_file']=None
 
     params['num_analyzers'] = multiprocessing.cpu_count()
 
@@ -7093,8 +6532,8 @@ first_image: int=1, channel_picking_threshold: float =0.99, channel_picker_model
         channelPicker(params)
     return
 
-def Segment(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', model_file: str='/Users/sharan/Desktop/exp1/20200921_MG1655_256x32.hdf5', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
-output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, do_segmentation=True, do_lineages=True,  OTSU_threshold: float= 1.0, first_opening_size: int=2,
+def Segment(experiment_name: str='20200911_sj1536', experiment_directory: str= '/Users/ryan/data/20200911_sj1536/', model_file: str='/Users/ryan/models/20200921_MG1655_256x32.hdf5', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
+debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_subtraction: bool=True, alignment_pad: int=10,  OTSU_threshold: float= 1.0, first_opening_size: int=2,
 distance_threshold: int=2, second_opening_size: int=1, min_object_size:int= 25, trained_model_image_height: int=256, trained_model_image_width: int=32,
 batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= False, save_predictions:bool=False, OTSU :bool=True, UNet: bool=False):
     """Performs Mother Machine Analysis"""
@@ -7102,22 +6541,21 @@ batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= F
     params=dict()
     params['experiment_name']=experiment_name
     params['experiment_directory']=experiment_directory
-    params['image_directory']=image_directory
-    params['analysis_directory']=analysis_directory
-    params['external_directory']=external_directory
+    params['image_directory']='TIFF/'
+    params['analysis_directory']='analysis/'
     params['FOV']=FOV
     params['TIFF_source']=TIFF_source
-    params['output']=output
+    params['output']='TIFF'
     params['debug']=debug
     params['phase_plane']=phase_plane
     params['pxl2um']=pxl2um
     params['subtract']=dict()
-    params['subtract']['do_empties']=do_empties
+    params['subtract']['do_empties']=True
     params['subtract']['do_subtraction']=do_subtraction
     params['subtract']['alignment_pad']=alignment_pad
     params['segment']=dict()
-    params['segment']['do_segmentation']=do_segmentation
-    params['segment']['do_lineages']=do_lineages
+    params['segment']['do_segmentation']=True
+    params['segment']['do_lineages']=False
     params['segment']['OTSU_threshold']=OTSU_threshold
     params['segment']['first_opening_size']=first_opening_size
     params['segment']['distance_threshold']=distance_threshold
@@ -7166,7 +6604,7 @@ batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= F
 
     return
 
-def Track_Standard(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
+def Track_Standard(experiment_name: str='20200911_sj1536', experiment_directory: str= '/Users/ryan/data/20200911_sj1536/', image_directory:str='TIFF/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', lost_cell_time:int= 3, new_cell_y_cutoff:int= 150, new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, max_growth_area:float= 1.5, min_growth_area:float= 0.7 , numSamples:int=10, seg_img :str='seg_otsu'):
     """Performs Mother Machine Analysis"""
     global params
@@ -7175,7 +6613,6 @@ output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1',
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
     params['analysis_directory']=analysis_directory
-    params['external_directory']=external_directory
     params['FOV']=FOV
     params['TIFF_source']=TIFF_source
     params['output']=output
