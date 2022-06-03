@@ -1,76 +1,12 @@
-"""
-This module is an example of a barebones function plugin for napari
-
-It implements the ``napari_experimental_provide_function`` hook specification.
-see: https://napari.org/docs/dev/plugins/hook_specifications.html
-
-Replace code below according to your needs.
-"""
 from __future__ import print_function, division
-from typing import TYPE_CHECKING, DefaultDict
-from unicodedata import name
-
-import six
-
-# import modules
-import sys # input, output, errors, and files
-import os # interacting with file systems
-import time # getting time
+import copy
 import datetime
-import inspect # get passed parameters
-import yaml # parameter importing
-import json # for importing tiff metadata
-try:
-    import cPickle as pickle # loading and saving python objects
-except:
-    import pickle
-import numpy as np # numbers package
-import struct # for interpretting strings as binary data
-import re # regular expressions
-from pprint import pprint # for human readable file output
-import traceback # for error messaging
-import warnings # error messaging
-import copy # not sure this is needed
-import h5py # working with HDF5 files
-import pandas as pd
-import networkx as nx
-import collections
-
-# scipy and image analysis
-from scipy.signal import find_peaks_cwt # used in channel finding
-from scipy.optimize import curve_fit # fitting ring profile
-from scipy.optimize import leastsq # fitting 2d gaussian
-from scipy import ndimage as ndi # labeling and distance transform
-from skimage import io
-from skimage import segmentation # used in make_masks and segmentation
-from skimage.transform import rotate
-from skimage.feature import match_template # used to align images
-from skimage.feature import blob_log # used for foci finding
-from skimage.filters import threshold_otsu, median # segmentation
-from skimage import filters
-from skimage import morphology # many functions is segmentation used from this
-from skimage.measure import regionprops # used for creating lineages
-from skimage.measure import profile_line # used for ring an nucleoid analysis
-from skimage import util, measure, transform, feature
-import tifffile as tiff
-from sklearn import metrics
-
-# deep learning
-import tensorflow as tf # ignore message about how tf was compiled
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras import models
-from tensorflow.keras import losses
-from tensorflow.keras import utils
-from tensorflow.keras import backend as K
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # supress warnings
-
-
-
-# Parralelization modules
+import glob
+import h5py
+import json
+import os
 import multiprocessing
 from multiprocessing import Pool
-
-# Plotting for debug
 import matplotlib as mpl
 font = {'family' : 'sans-serif',
         'weight' : 'normal',
@@ -80,56 +16,44 @@ mpl.rcParams['pdf.fonttype'] = 42
 from matplotlib.patches import Ellipse
 import matplotlib.patches as mpatches
 from matplotlib import image
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import numpy as np
+import napari
+import os
+try:
+    import cPickle as pickle
+except:
+    import pickle
+from pprint import pprint
+import pandas as pd
+from pathlib import Path
+import pims_nd2
+import re
+from scipy import ndimage as ndi
+from scipy.signal import find_peaks_cwt
+from scipy.optimize import curve_fit, leastsq
+from skimage import io, segmentation, filters, morphology, measure
+from skimage.transform import rotate
+from skimage.feature import match_template, blob_log
+from skimage.filters import threshold_otsu, median
+from skimage.measure import regionprops, profile_line
+from skimage.exposure import rescale_intensity
 import seaborn as sns
 sns.set(style='ticks', color_codes=True)
 sns.set_palette('deep')
-
-from pathlib import Path
+import six
+import struct
+import sys
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras import models, losses
+from tensorflow.keras import backend as K
 import time
-import matplotlib.pyplot as plt
-
-# import modules
-import os
-import glob
-import re
-import numpy as np
 import tifffile as tiff
-import pims_nd2
-from skimage import io, measure, morphology
-import tifffile as tiff
-from scipy import stats
-from pprint import pprint # for human readable file output
-import multiprocessing
-from multiprocessing import Pool
-import numpy as np
+import traceback
 import warnings
-from tensorflow.keras import models
-
-from enum import Enum
-import numpy as np
-import multiprocessing
-from multiprocessing import Pool
-import os
-from napari_plugin_engine import napari_hook_implementation
-from skimage.filters import threshold_otsu # segmentation
-from skimage import morphology # many functions is segmentation used from this
-from skimage import segmentation # used in make_masks and segmentation
-from scipy import ndimage as ndi # labeling and distance transform
-import matplotlib.gridspec as gridspec
-from skimage.exposure import rescale_intensity # for displaying in GUI
-from skimage import io, morphology, segmentation
-# import mm3_helpers as mm3
-import napari
-
-# This is the actual plugin function, where we export our function
-# (The functions themselves are defined below)
-@napari_hook_implementation
-def napari_experimental_provide_function():
-    # we can return a single function
-    # or a tuple of (function, magicgui_options)
-    # or a list of multiple functions with or without options, as shown here:
-    #return [Segment, threshold, image_arithmetic]
-    return [Compile, ChannelPicker, Segment, Track_Standard]
+import yaml
 
 # 1.  First example, a simple function that thresholds an image and creates a labels layer
 def threshold(data: "napari.types.ImageData", threshold: int) -> "napari.types.LabelsData":
@@ -1597,19 +1521,19 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
         # list will length of image_data with tuples (image, empty)
         subtract_pairs = zip(image_data, avg_empty_stack)
 
-        # # set up multiprocessing pool to do subtraction. Should wait until finished
-        # pool = Pool(processes=params['num_analyzers'])
+        # set up multiprocessing pool to do subtraction. Should wait until finished
+        pool = Pool(processes=params['num_analyzers'])
 
-        # if method == 'phase':
-        #     subtracted_imgs = pool.map(subtract_phase, subtract_pairs, chunksize=10)
-        # elif method == 'fluor':
-        #     subtracted_imgs = pool.map(subtract_fluor, subtract_pairs, chunksize=10)
+        if method == 'phase':
+            subtracted_imgs = pool.map(subtract_phase, subtract_pairs, chunksize=10)
+        elif method == 'fluor':
+            subtracted_imgs = pool.map(subtract_fluor, subtract_pairs, chunksize=10)
 
-        # pool.close() # tells the process nothing more will be added.
-        # pool.join() # blocks script until everything has been processed and workers exit
+        pool.close() # tells the process nothing more will be added.
+        pool.join() # blocks script until everything has been processed and workers exit
 
         # linear loop for debug
-        subtracted_imgs = [subtract_phase(subtract_pair) for subtract_pair in subtract_pairs]
+        # subtracted_imgs = [subtract_phase(subtract_pair) for subtract_pair in subtract_pairs]
 
         # stack them up along a time axis
         subtracted_stack = np.stack(subtracted_imgs, axis=0)
@@ -1761,14 +1685,14 @@ def segment_chnl_stack(fov_id, peak_id):
     # load subtracted images
     sub_stack = load_stack(fov_id, peak_id, color='sub_{}'.format(params['phase_plane']))
 
-    # set up multiprocessing pool to do segmentation. Will do everything before going on.
-    #pool = Pool(processes=params['num_analyzers'])
+    # # set up multiprocessing pool to do segmentation. Will do everything before going on.
+    # pool = Pool(processes=params['num_analyzers'])
 
-    # send the 3d array to multiprocessing
-    #segmented_imgs = pool.map(segment_image, sub_stack, chunksize=8)
+    # # send the 3d array to multiprocessing
+    # segmented_imgs = pool.map(segment_image, sub_stack, chunksize=8)
 
-    #pool.close() # tells the process nothing more will be added.
-    #pool.join() # blocks script until everything has been processed and workers exit
+    # pool.close() # tells the process nothing more will be added.
+    # pool.join() # blocks script until everything has been processed and workers exit
 
     # image by image for debug
     segmented_imgs = []
@@ -1989,13 +1913,14 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model):
     #                  'n_channels':1,
     #                  'normalize_to_one':False,
     #                  'shuffle':False}
-    # arguments to predict
-    # predict_args = dict(use_multiprocessing=True,
-    #                     workers=params['num_analyzers'],
-    #                     verbose=1)
 
-    predict_args = dict(use_multiprocessing=False,
+    #arguments to predict
+    predict_args = dict(use_multiprocessing=True,
+                        workers=params['num_analyzers'],
                         verbose=1)
+
+    # predict_args = dict(use_multiprocessing=False,
+    #                     verbose=1)
 
     for peak_id in ana_peak_ids:
         information('Segmenting peak {}.'.format(peak_id))
@@ -2177,15 +2102,15 @@ def make_lineages_fov(fov_id, specs):
     # This is a list of tuples (fov_id, peak_id) to send to the Pool command
     fov_and_peak_ids_list = [(fov_id, peak_id) for peak_id in ana_peak_ids]
 
-    # set up multiprocessing pool. will complete pool before going on
-    #pool = Pool(processes=params['num_analyzers'])
+    # # set up multiprocessing pool. will complete pool before going on
+    # pool = Pool(processes=params['num_analyzers'])
 
-    # create the lineages for each peak individually
-    # the output is a list of dictionaries
-    #lineages = pool.map(make_lineage_chnl_stack, fov_and_peak_ids_list, chunksize=8)
+    # # create the lineages for each peak individually
+    # # the output is a list of dictionaries
+    # lineages = pool.map(make_lineage_chnl_stack, fov_and_peak_ids_list, chunksize=8)
 
-    #pool.close() # tells the process nothing more will be added.
-    #pool.join() # blocks script until everything has been processed and workers exit
+    # pool.close() # tells the process nothing more will be added.
+    # pool.join() # blocks script until everything has been processed and workers exit
 
     # This is the non-parallelized version (useful for debug)
     lineages = []
@@ -4745,9 +4670,6 @@ def compile(params):
     else:
         user_spec_fovs = []
 
-    # # number of threads for multiprocessing
-    # if namespace.nproc:
-    #     p['num_analyzers'] = namespace.nproc
     information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
     # only analyze images up until this t point. Put in None otherwise
@@ -4843,10 +4765,10 @@ def compile(params):
                 # for each file name. True means look for channels
 
                 # This is the non-parallelized version (useful for debug)
-                analyzed_imgs[fn] = get_tif_params(fn, True)
+                # analyzed_imgs[fn] = get_tif_params(fn, True)
 
                 # Parallelized
-                #analyzed_imgs[fn] = pool.apply_async(mm3.get_tif_params, args=(fn, True))
+                analyzed_imgs[fn] = pool.apply_async(get_tif_params, args=(fn, True))
 
             information('Waiting for image analysis pool to be finished.')
 
@@ -4855,13 +4777,13 @@ def compile(params):
 
             information('Image analysis pool finished, getting results.')
 
-            # # get results from the pool and put them in a dictionary
-            # for fn in analyzed_imgs.keys():
-            #     result = analyzed_imgs[fn]
-            #     if result.successful():
-            #         analyzed_imgs[fn] = result.get() # put the metadata in the dict if it's good
-            #     else:
-            #         analyzed_imgs[fn] = False # put a false there if it's bad
+            # get results from the pool and put them in a dictionary
+            for fn in analyzed_imgs.keys():
+                result = analyzed_imgs[fn]
+                if result.successful():
+                    analyzed_imgs[fn] = result.get() # put the metadata in the dict if it's good
+                else:
+                    analyzed_imgs[fn] = False # put a false there if it's bad
 
         elif p['compile']['find_channels_method'] == 'Unet':
             # Use Unet trained on trap and central channel locations to locate, crop, and align traps
@@ -4887,10 +4809,10 @@ def compile(params):
                 # for each file name. Won't look for channels, just gets the metadata for later use by Unet
 
                 # This is the non-parallelized version (useful for debug)
-                analyzed_imgs[fn] = get_initial_tif_params(fn)
+                # analyzed_imgs[fn] = get_initial_tif_params(fn)
 
                 # Parallelized
-                #analyzed_imgs[fn] = pool.apply_async(mm3.get_initial_tif_params, args=(fn,))
+                analyzed_imgs[fn] = pool.apply_async(get_initial_tif_params, args=(fn,))
 
             information('Waiting for image metadata pool to be finished.')
             pool.close() # tells the process nothing more will be added.
@@ -4899,12 +4821,12 @@ def compile(params):
             information('Image metadata pool finished, getting results.')
 
             # get results from the pool and put them in a dictionary
-            # for fn in analyzed_imgs.keys():
-            #    result = analyzed_imgs[fn]
-            #    if result.successful():
-            #        analyzed_imgs[fn] = result.get() # put the metadata in the dict if it's good
-            #    else:
-            #        analyzed_imgs[fn] = False # put a false there if it's bad
+            for fn in analyzed_imgs.keys():
+               result = analyzed_imgs[fn]
+               if result.successful():
+                   analyzed_imgs[fn] = result.get() # put the metadata in the dict if it's good
+               else:
+                   analyzed_imgs[fn] = False # put a false there if it's bad
 
             # print(analyzed_imgs)
 
@@ -5075,11 +4997,11 @@ def compile(params):
                          'n_channels':1,
                          'normalize_to_one':True,
                          'shuffle':False}
-                # predict_gen_args = {'verbose':1,
-                #         'use_multiprocessing':True,
-                #         'workers':p['num_analyzers']}
                 predict_gen_args = {'verbose':1,
-                        'use_multiprocessing':False}
+                        'use_multiprocessing':True,
+                        'workers':p['num_analyzers']}
+                # predict_gen_args = {'verbose':1,
+                #         'use_multiprocessing':False}
 
                 img_generator = TrapSegmentationDataGenerator(align_region_stack, **data_gen_args)
 
@@ -5784,7 +5706,7 @@ def channelProcessor(params):
         namep="Fov"+str(fov_id)+"_pts"
         (_,max_width,_)=napari.current_viewer().layers[namei].data_raw.shape
         pts=napari.current_viewer().layers[namep]._view_data
-        print(f'{fov_id}', pts)
+        # print(f'{fov_id}', pts)
         offset=43
         width_per_peak=(max_width-offset)//npeaks
 
@@ -5793,14 +5715,14 @@ def channelProcessor(params):
         # ignore(-1) => 2 points in the peak partititon
 
         for pt in pts:
-            peak_id=sorted_peaks[int((pt[1]-offset)//width_per_peak)]
+            peak_id=sorted_peaks[max(0,min(int((pt[1]-offset)//width_per_peak), len(sorted_peaks)-1))]
             specs[fov_id][peak_id]-=1
 
     # Save out specs file in yaml format
 
     with open(os.path.join(ana_dir, 'specs.yaml'), 'w') as specs_file:
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
-    print(specs)
+    # print(specs)
     print("Channel Picking Completed")
 
 # function for better formatting of channel plot
@@ -5840,34 +5762,8 @@ def preload_images(specs, fov_id_list):
 def channelPicker(params):
     '''mm3_ChannelPicker.py allows the user to identify full and empty channels.'''
 
-    # # set switches and parameters
-    # parser = argparse.ArgumentParser(prog='python mm3_ChannelPicker.py',
-    #                                  description='Determines which channels should be analyzed, used as empties for subtraction, or ignored.')
-    # parser.add_argument('-f', '--paramfile', type=str,
-    #                     required=False, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov',  type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc',  type=int,
-    #                     required=False, help='Number of processors to use.')
-    # # parser.add_argument('-s', '--specfile',  type=file,
-    # #                     required=False, help='Filename of specs file.')
-    # parser.add_argument('-i', '--noninteractive', action='store_true',
-    #                     required=False, help='Do channel picking manually.')
-    # parser.add_argument('-c', '--saved_cross_correlations', action='store_true',
-    #                     required=False, help='Load cross correlation data instead of computing.')
-    # parser.add_argument('-s', '--specfile', type=str,
-    #                     required=False, help='Path to spec.yaml file.')
-    # namespace = parser.parse_args()
-
-
     # Load the project parameters file
     information('Loading experiment parameters.')
-    # if namespace.paramfile:
-    #     param_file_path = namespace.paramfile
-    # else:
-    #     mm3.warning('No param file specified. Using 100X template.')
-    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    #p = mm3_.init_mm3_helpers() # initialized the helper library
     p = params
 
     if p['FOV']:
@@ -5879,21 +5775,6 @@ def channelPicker(params):
     else:
         user_spec_fovs = []
 
-    # # number of threads for multiprocessing
-    # if namespace.nproc:
-    #     p['num_analyzers'] = namespace.nproc
-    # else:
-    #     p['num_analyzers'] = 6
-
-    # use previous specfile
-    # if namespace.specfile:
-    #     try:
-    #         specfile = os.path.relpath(namespace.specfile)
-    #         if not os.path.isfile(specfile):
-    #             raise ValueError
-    #     except ValueError:
-    #         mm3.warning("\"{}\" is not a regular file or does not exist".format(specfile))
-    # else:
     specfile = None
 
     # set cross correlation calculation flag
@@ -6010,12 +5891,12 @@ def channelPicker(params):
                          'normalize_to_one':True,
                          'shuffle':False}
         # arguments to predict_generator
-        # predict_args = dict(use_multiprocessing=True,
-        #                     workers=p['num_analyzers'],
-        #                     verbose=1)
-
-        predict_args = dict(use_multiprocessing=False,
+        predict_args = dict(use_multiprocessing=True,
+                            workers=p['num_analyzers'],
                             verbose=1)
+
+        # predict_args = dict(use_multiprocessing=False,
+        #                     verbose=1)
 
         for fov_id in fov_id_list:
 
@@ -6122,43 +6003,44 @@ def channelPicker(params):
             crosscorrs[fov_id] = {}
 
             # initialize pool for analyzing image metadata
-            #pool = Pool(p['num_analyzers'])
+            pool = Pool(p['num_analyzers'])
 
             # find all peak ids in the current FOV
             for peak_id in sorted(channel_masks[fov_id].keys()):
                 information("Calculating cross correlations for peak %d." % peak_id)
 
                 # linear loop
-                crosscorrs[fov_id][peak_id] = channel_xcorr(fov_id, peak_id)
+                # crosscorrs[fov_id][peak_id] = channel_xcorr(fov_id, peak_id)
 
-                # # multiprocessing verion
-                #crosscorrs[fov_id][peak_id] = pool.apply_async(mm3.channel_xcorr, args=(fov_id, peak_id,))
+                # multiprocessing verion
+                crosscorrs[fov_id][peak_id] = pool.apply_async(channel_xcorr, args=(fov_id, peak_id,))
 
             information('Waiting for cross correlation pool to finish for FOV %d.' % fov_id)
 
-            #pool.close() # tells the process nothing more will be added.
-            #pool.join() # blocks script until everything has been processed and workers exit
+            pool.close() # tells the process nothing more will be added.
+            pool.join() # blocks script until everything has been processed and workers exit
 
             information("Finished cross correlations for FOV %d." % fov_id)
-
-        # # get results from the pool and put the results in the dictionary if succesful
-        # for fov_id, peaks in six.iteritems(crosscorrs):
-        #     for peak_id, result in six.iteritems(peaks):
-        #         if result.successful():
-        #             # put the results, with the average, and a guess if the channel
-        #             # is full into the dictionary
-        #             crosscorrs[fov_id][peak_id] = {'ccs' : result.get(),
-        #                                            'cc_avg' : np.average(result.get()),
-        #                                            'full' : np.average(result.get()) < p['channel_picker']['channel_picking_threshold']}
-        #         else:
-        #             crosscorrs[fov_id][peak_id] = False # put a false there if it's bad
 
         # get results from the pool and put the results in the dictionary if succesful
         for fov_id, peaks in six.iteritems(crosscorrs):
             for peak_id, result in six.iteritems(peaks):
-                crosscorrs[fov_id][peak_id] = {'ccs' : result,
-                                                   'cc_avg' : np.average(result),
-                                                   'full' : np.average(result) < p['channel_picker']['channel_picking_threshold']}
+                if result.successful():
+                    # put the results, with the average, and a guess if the channel
+                    # is full into the dictionary
+                    crosscorrs[fov_id][peak_id] = {'ccs' : result.get(),
+                                                   'cc_avg' : np.average(result.get()),
+                                                   'full' : np.average(result.get()) < p['channel_picker']['channel_picking_threshold']}
+                else:
+                    crosscorrs[fov_id][peak_id] = False # put a false there if it's bad
+
+        # linear loop for debug
+        # get results from the pool and put the results in the dictionary if succesful
+        # for fov_id, peaks in six.iteritems(crosscorrs):
+        #     for peak_id, result in six.iteritems(peaks):
+        #         crosscorrs[fov_id][peak_id] = {'ccs' : result,
+        #                                            'cc_avg' : np.average(result),
+        #                                            'full' : np.average(result) < p['channel_picker']['channel_picking_threshold']}
 
         # write cross-correlations to pickle and text
         information("Writing cross correlations file.")
@@ -6279,18 +6161,6 @@ def channelPicker(params):
 def subtract(params):
     '''mm3_Subtract.py averages empty channels and then subtractions them from channels with cells'''
 
-    # parser = argparse.ArgumentParser(prog='python mm3_Subtract.py',
-    #                                  description='Subtract background from phase contrast and fluorescent channels.')
-    # parser.add_argument('-f', '--paramfile',  type=str,
-    #                     required=False, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov',  type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc',  type=int,
-    #                     required=False, help='Number of processors to use.')
-    # parser.add_argument('-c', '--color', type=str,
-    #                     required=False, help='Color plane to subtract. "c1", "c2", etc.')
-    # namespace = parser.parse_args()
-
     # Load the project parameters file
     information('Loading experiment parameters.')
     #p = mm3_.init_mm3_helpers() # initialized the helper library
@@ -6305,15 +6175,8 @@ def subtract(params):
     else:
         user_spec_fovs = []
 
-    # number of threads for multiprocessing
-    # if namespace.nproc:
-    #     p['num_analyzers'] = namespace.nproc
     information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
-    # which color channel with which to do subtraction
-    # if namespace.color:
-    #     sub_plane = namespace.color
-    # else:
     sub_plane = 'c1'
 
     # Create folders for subtracted info if they don't exist
@@ -6382,28 +6245,6 @@ def subtract(params):
 
 def segmentUNet(params):
 
-    # # set switches and parameters
-    # parser = argparse.ArgumentParser(prog='python mm3_Segment.py',
-    #                                  description='Segment cells and create lineages.')
-    # parser.add_argument('-f', '--paramfile', type=str,
-    #                     required=True, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov', type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc', type=int,
-    #                     required=False, help='Number of processors to use.')
-    # parser.add_argument('-m', '--modelfile', type=str,
-    #                     required=False, help='Path to trained U-net model.')
-    # namespace = parser.parse_args()
-
-    # Load the project parameters file
-    # mm3.information('Loading experiment parameters.')
-    # if namespace.paramfile:
-    #     param_file_path = namespace.paramfile
-    # else:
-    #     mm3.warning('No param file specified. Using 100X template.')
-    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    # p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
-
     information('Loading experiment parameters.')
     p=params
 
@@ -6416,10 +6257,7 @@ def segmentUNet(params):
     else:
         user_spec_fovs = []
 
-    # # number of threads for multiprocessing
-    # if namespace.nproc:
-    #     p['num_analyzers'] = namespace.nproc
-    # # mm3.information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
+    information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
     # create segmenteation and cell data folder if they don't exist
     if not os.path.exists(p['seg_dir']) and p['output'] == 'TIFF':
@@ -6468,18 +6306,6 @@ def segmentUNet(params):
 
 def segmentOTSU(params):
 
-    # # set switches and parameters
-    # parser = argparse.ArgumentParser(prog='python mm3_Segment.py',
-    #                                  description='Segment cells and create lineages.')
-    # parser.add_argument('-f', '--paramfile',  type=str,
-    #                     required=True, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov',  type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc',  type=int,
-    #                     required=False, help='Number of processors to use.')
-    # namespace = parser.parse_args()
-
-    # Load the project parameters file
     information('Loading experiment parameters.')
     p=params
 
@@ -6491,11 +6317,6 @@ def segmentOTSU(params):
             user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
     else:
         user_spec_fovs = []
-
-    # number of threads for multiprocessing
-    # if namespace.nproc:
-    #     p['num_analyzers'] = namespace.nproc
-    information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
     # create segmenteation and cell data folder if they don't exist
     if not os.path.exists(p['seg_dir']) and p['output'] == 'TIFF':
@@ -6536,26 +6357,6 @@ def segmentOTSU(params):
     information("Finished segmentation.")
 
 def Track(params):
-    # parser = argparse.ArgumentParser(prog='python mm3_Segment.py',
-    #                                  description='Segment cells and create lineages.')
-    # parser.add_argument('-f', '--paramfile',  type=str,
-    #                     required=True, help='Yaml file containing parameters.')
-    # parser.add_argument('-o', '--fov',  type=str,
-    #                     required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
-    # parser.add_argument('-j', '--nproc',  type=int,
-    #                     required=False, help='Number of processors to use.')
-    # parser.add_argument('-s', '--segmentsource', type=str,
-    #                     required=False, help='Segmented images to use for tracking. "seg_otsu", "seg_unet", etc.')
-    # namespace = parser.parse_args()
-
-    # Load the project parameters file
-    # mm3.information('Loading experiment parameters.')
-    # if namespace.paramfile:
-    #     param_file_path = namespace.paramfile
-    # else:
-    #     mm3.warning('No param file specified. Using 100X template.')
-    #     param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    # p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
     # Load the project parameters file
     information('Loading experiment parameters.')
@@ -6570,26 +6371,8 @@ def Track(params):
     else:
         user_spec_fovs = []
 
-    # if namespace.fov:
-    #     if '-' in namespace.fov:
-    #         user_spec_fovs = range(int(namespace.fov.split("-")[0]),
-    #                                int(namespace.fov.split("-")[1])+1)
-    #     else:
-    #         user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    # else:
-    #     user_spec_fovs = []
+    information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
-    # number of threads for multiprocessing
-    # if namespace.nproc:
-    #     p['num_analyzers'] = namespace.nproc
-    # mm3.information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
-
-    # segmentation plane to be used for tracking
-    # if namespace.segmentsource:
-    #     p['track']['seg_img'] = namespace.segmentsource
-    # else:
-    #     if 'seg_img' not in p['track'].keys():
-    #         p['track']['seg_img'] = 'seg_otsu' # default to otsu. Good chance of error.
     information("Using {} images for tracking.".format(p['track']['seg_img']))
 
     # create segmenteation and cell data folder if they don't exist
@@ -6955,14 +6738,14 @@ def Lineage(params,numSamples=10):
 
     information("Completed Plotting")
 
-# 2.  MM3 analysis
 def Compile(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', image_start : int=1, number_of_rows :int = 1, tiff_compress:int=5,
 do_metadata: bool=True, do_time_table: bool=True, do_channel_masks: bool=True, do_slicing:bool=True, find_channels_method:str='peaks',
 image_orientation : str= 'up', channel_width : int=10, channel_separation : int=45, channel_detection_snr : int=1, channel_length_pad : int=10,
-channel_width_pad : int=10, trap_crop_height: int=256, trap_crop_width: int=27, trap_area_threshold: int=2, channel_prediction_batch_size: int=15,
-merged_trap_region_area_threshold: int=400):
+channel_width_pad : int=10, trap_crop_height: int=256, trap_crop_width: int=27, trap_area_threshold_1000X: float=2, channel_prediction_batch_size: int=15,
+merged_trap_region_area_threshold_1000X: float=400):
     """Performs Mother Machine Analysis"""
+
     global params
     params=dict()
     params['experiment_name']=experiment_name
@@ -7001,9 +6784,9 @@ merged_trap_region_area_threshold: int=400):
     params['compile']['channel_width_pad']=channel_width_pad
     params['compile']['trap_crop_height']=trap_crop_height
     params['compile']['trap_crop_width']=trap_crop_width
-    params['compile']['trap_area_threshold']=trap_area_threshold*1000
+    params['compile']['trap_area_threshold']=int(trap_area_threshold_1000X*1000)
     params['compile']['channel_prediction_batch_size']=channel_prediction_batch_size
-    params['compile']['merged_trap_region_area_threshold']=merged_trap_region_area_threshold*1000
+    params['compile']['merged_trap_region_area_threshold']=int(merged_trap_region_area_threshold_1000X*1000)
 
     params['num_analyzers'] = multiprocessing.cpu_count()
 
@@ -7098,6 +6881,7 @@ output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1',
 distance_threshold: int=2, second_opening_size: int=1, min_object_size:int= 25, trained_model_image_height: int=256, trained_model_image_width: int=32,
 batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= False, save_predictions:bool=False, OTSU :bool=True, UNet: bool=False):
     """Performs Mother Machine Analysis"""
+
     global params
     params=dict()
     params['experiment_name']=experiment_name
@@ -7169,6 +6953,7 @@ batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= F
 def Track_Standard(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
 output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', lost_cell_time:int= 3, new_cell_y_cutoff:int= 150, new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, max_growth_area:float= 1.5, min_growth_area:float= 0.7 , numSamples:int=10, seg_img :str='seg_otsu'):
     """Performs Mother Machine Analysis"""
+
     global params
     params=dict()
     params['experiment_name']=experiment_name

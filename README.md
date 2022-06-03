@@ -7,7 +7,7 @@
 [![codecov](https://codecov.io/gh/ahirsharan/napari-mm3/branch/main/graph/badge.svg)](https://codecov.io/gh/ahirsharan/napari-mm3)
 [![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-mm3)](https://napari-hub.org/plugins/napari-mm3)
 
-a plugin for mother machine image analysis
+A plugin for Mother Machine Image Analysis by [Jun Lab](https://jun.ucsd.edu/).
 
 ----------------------------------
 
@@ -23,23 +23,9 @@ https://napari.org/plugins/stable/index.html
 
 ## Installation
 
-Install anaconda through  https://docs.anaconda.com/anaconda/install/
+Ensure python and napari are installed in your system. To install the plugin, use:
 
-Clone https://github.com/ahirsharan/napari-mm3
-
-
-Open Terminal and run:
-
-```conda create -y -n napari-env -c conda-forge python=3.9```
-
-```conda activate napari-env```
-
-```conda install -c conda-forge napari```
-
-```pip install -r requirements.txt``` 
-
-In napari window, Plugins-> Install/Uninstall plugins -> drag and drop the cloned folder and hit install. The napari-mm3 plugin should now be visible in the plugins list.
-
+``` pip install napari-mm3```
 
 ## Contributing
 
