@@ -55,6 +55,7 @@ The working directory now contains:
 ```
 
 ### 1. Locate channels, create channel stacks, and return metadata (Compile widget).
+<img width="1187" alt="fov_inspect1" src="https://user-images.githubusercontent.com/40699438/177629474-5fd7ee80-682e-4aaa-bf6e-dd547e40c458.png">
 
 The Compile widget attempts to automatically identify and crop out individual growth channels. Images corresponding to a specific channel are then stacked in time, and these "channel stacks" are the basis of further analysis. If there are multiple colors, a channel stack is made for each color for each channel.
 
@@ -83,6 +84,7 @@ The working directory now contains:
 ```
 
 ### 2. User guided selection of empty and full channels (ChannelSorter).
+<img width="1177" alt="channel_picker" src="https://user-images.githubusercontent.com/40699438/177629496-73b6c4cf-7427-41e6-ac20-720b6fbf2ba1.png">
 
 The Compile widget identifies all growth channels, regardless of if they contain or do not contain cells. ChannelSorter first attempts to guess, and then presents the user with a GUI to decide which channels should be analyzed, which channels should be ignored, and which channels should be used as empty channels during subtraction. This information is contained within the specs.yaml file.
 
@@ -114,6 +116,7 @@ The working directory is now:
 ```
 
 ### 3. Subtract phase contrast images (Subtract widget).
+<img width="1183" alt="subtract" src="https://user-images.githubusercontent.com/40699438/177629512-c5ba4abd-0e03-4540-a4bb-7414ad0560d0.png">
 
 Downstream analysis of phase contrast (brightfield) images requires background subtraction to remove artifacts of the PDMS device in the images. 
 
@@ -139,6 +142,8 @@ The working directory is now:
 
 ### 4. Segment images (SegmentOTSU or SegmentUnet).
 
+<img width="1486" alt="otsu" src="https://user-images.githubusercontent.com/40699438/177629756-2bf87d2e-6ec8-4580-8675-648d68b29cb5.png">
+<img width="1180" alt="unet" src="https://user-images.githubusercontent.com/40699438/177629546-81c2f826-73e8-41ef-adbd-7ceb191db461.png">
 mm3 can use either deep learning or a traditional machine vision approach (Otsu thresholding, morphological operations and watershedding) to locate cells from the subtracted images.
 
 **OTSU parameters**
@@ -175,6 +180,9 @@ The working directory is now:
 
 
 ### 5. Create cell lineages (Track widget).
+
+<img width="1188" alt="lineage" src="https://user-images.githubusercontent.com/40699438/177629704-b866d74e-cd80-4171-a6cf-92a887617160.png">
+
 After cells are found for each channel in each time point, these labeled cells are connected across time to create complete cells and lineages.
 
 **Parameters**
