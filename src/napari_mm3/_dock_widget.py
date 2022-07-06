@@ -1,4 +1,4 @@
-from qtpy.QtWidgets import QWidget, QPushButton, QVBoxLayout, QLineEdit, QLabel, QFileDialog
+from qtpy.QtWidgets import QWidget, QPushButton, QVBoxLayout, QLineEdit, QLabel, QFileDialog, QHBoxLayout
 from qtpy.QtCore import Qt
 from magicgui import magic_factory
 
