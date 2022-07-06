@@ -7,19 +7,12 @@ import json
 import os
 import multiprocessing
 from multiprocessing import Pool
-import matplotlib as mpl
-font = {'family' : 'sans-serif',
-        'weight' : 'normal',
-        'size'   : 12}
-mpl.rc('font', **font)
-mpl.rcParams['pdf.fonttype'] = 42
-from matplotlib.patches import Ellipse
-import matplotlib.patches as mpatches
-from matplotlib import image
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import numpy as np
 import napari
+from magicgui import magic_factory, magicgui
+from napari.types import ImageData, LabelsData
+from dask import delayed
+import dask.array as da
 import os
 try:
     import cPickle as pickle
@@ -39,32 +32,33 @@ from skimage.feature import match_template, blob_log
 from skimage.filters import threshold_otsu, median
 from skimage.measure import regionprops, profile_line
 from skimage.exposure import rescale_intensity
-import seaborn as sns
-sns.set(style='ticks', color_codes=True)
-sns.set_palette('deep')
+
 import six
 import struct
 import sys
-import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras import models, losses
-from tensorflow.keras import backend as K
 import time
 import tifffile as tiff
 import traceback
 import warnings
 import yaml
 
-# 1.  First example, a simple function that thresholds an image and creates a labels layer
-def threshold(data: "napari.types.ImageData", threshold: int) -> "napari.types.LabelsData":
-    """Threshold an image and return a mask."""
-    return (data > threshold).astype(int)
+import matplotlib as mpl
+from matplotlib.patches import Ellipse
+import matplotlib.patches as mpatches
+from matplotlib import image
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set(style='ticks', color_codes=True)
+sns.set_palette('deep')
+
+
+### functions ###########################################################
+# alert the user what is up
 
 # print a warning
 def warning(*objs):
     print(time.strftime("%H:%M:%S WARNING:", time.localtime()), *objs, file=sys.stderr)
 
-# print information
 def information(*objs):
     print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
 
@@ -271,9 +265,9 @@ def get_initial_tif_params(image_filename):
             plane_list = [str(i+1) for i in range(image_data.shape[0])]
             #print(plane_list) # uncomment for debug
 
-            if params['TIFF_source'] == 'elements':
+            if params['TIFF_source'] == 'TIFF_from_elements':
                 image_metadata = get_tif_metadata_elements(tif)
-            elif params['TIFF_source'] == 'nd2ToTIFF':
+            elif params['TIFF_source'] == ('nd2' or 'TIFF_from_nd2'):
                 image_metadata = get_tif_metadata_nd2ToTIFF(tif)
             else:
                 image_metadata = get_tif_metadata_filename(tif)
@@ -327,9 +321,9 @@ def get_tif_params(image_filename, find_channels=True):
         with tiff.TiffFile(os.path.join(params['TIFF_dir'],image_filename)) as tif:
             image_data = tif.asarray()
 
-            if params['TIFF_source'] == 'elements':
+            if params['TIFF_source'] == 'TIFF_from_elements':
                 image_metadata = get_tif_metadata_elements(tif)
-            elif params['TIFF_source'] == 'nd2ToTIFF':
+            elif params['TIFF_source'] == 'nd2' or 'TIFF_from_nd2':
                 image_metadata = get_tif_metadata_nd2ToTIFF(tif)
             else:
                 image_metadata = get_tif_metadata_filename(tif)
@@ -1128,12 +1122,6 @@ def make_masks(analyzed_imgs):
             chnl_mask[1][0] = int(chnl_mask[1][0])
             chnl_mask[1][1] = int(chnl_mask[1][1])
 
-            # cm_copy[fov][peak] = {'y_top': chnl_mask[0][0],
-            #                       'y_bot': chnl_mask[0][1],
-            #                       'x_left': chnl_mask[1][0],
-            #                       'x_right': chnl_mask[1][1]}
-            # print(type(cm_copy[fov][peak][1][0]), cm_copy[fov][peak][1][0])
-
     #save the channel mask dictionary to a pickle and a text file
     # with open(os.path.join(params['ana_dir'], 'channel_masks.pkl'), 'wb') as cmask_file:
     #     pickle.dump(cm_copy, cmask_file, protocol=pickle.HIGHEST_PROTOCOL)
@@ -1257,7 +1245,7 @@ def channel_xcorr(fov_id, peak_id):
     The very first value should be 1.
     '''
 
-    pad_size = params['subtract']['alignment_pad']
+    pad_size = params['compile']['alignment_pad']
 
     # Use this number of images to calculate cross correlations
     number_of_images = 20
@@ -1511,7 +1499,8 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
     if not ana_peak_ids:
         return False
 
-    # load images for the peak and get phase images
+    # load images for the peak and get phase images'
+    out_counter = 0
     for peak_id in ana_peak_ids:
         information('Subtracting peak %d.' % peak_id)
 
@@ -1543,9 +1532,11 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
             sub_filename = params['experiment_name'] + '_xy%03d_p%04d_sub_%s.tif' % (fov_id, peak_id, color)
             tiff.imsave(os.path.join(params['sub_dir'],sub_filename), subtracted_stack, compress=4) # save it
 
-            if fov_id==1 and peak_id<50:
-                napari.current_viewer().add_image(subtracted_stack, name='Subtracted' + '_xy1_p'+str(peak_id)+'_sub_'+str(color)+'.tif', visible=True)
-
+            # if fov_id < 3:
+            
+            napari.current_viewer().add_image(subtracted_stack, name='Subtracted' + '_xy%03d_p%04d'%(fov_id, peak_id), visible=True)
+            
+        
         if params['output'] == 'HDF5':
             h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
 
@@ -1708,8 +1699,10 @@ def segment_chnl_stack(fov_id, peak_id):
         seg_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, params['seg_img'])
         tiff.imsave(os.path.join(params['seg_dir'],seg_filename),
                     segmented_imgs, compress=5)
-        if fov_id==1 and peak_id<50:
-            napari.current_viewer().add_image(segmented_imgs, name='Segmented' + '_xy1_p'+str(peak_id)+'_'+str(params['seg_img'])+'.tif', visible=True)
+        # if fov_id==1:
+        viewer = napari.current_viewer()
+        
+        viewer.add_labels(segmented_imgs, name='Segmented' + '_xy%03d_p%04d'%(fov_id,peak_id)+'_'+str(params['seg_img'])+'.tif', visible=True)
 
     if params['output'] == 'HDF5':
         h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
@@ -1744,7 +1737,6 @@ def segment_image(image):
         should correspond to cells, all have the same integer value starting with 1.
         Non labeled area should have value zero.
     '''
-
     # load in segmentation parameters
     OTSU_threshold = params['segment']['OTSU_threshold']
     first_opening_size = params['segment']['first_opening_size']
@@ -1754,7 +1746,9 @@ def segment_image(image):
 
     # threshold image
     try:
-        thresh = threshold_otsu(image) # finds optimal OTSU threshhold value
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            thresh = threshold_otsu(image) # finds optimal OTSU threshhold value
     except:
         return np.zeros_like(image)
 
@@ -1777,7 +1771,9 @@ def segment_image(image):
 
     ### Calculate distance matrix, use as markers for random walker (diffusion watershed)
     # Generate the markers based on distance to the background
-    distance = ndi.distance_transform_edt(morph)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        distance = ndi.distance_transform_edt(morph)
 
     # threshold distance image
     distance_thresh = np.zeros_like(distance)
@@ -1816,53 +1812,15 @@ def segment_image(image):
         # set anything outside of OTSU threshold to -1 so it will not be labeled
         markers[threshholded_watershed == 0] = -1
         # here is the main algorithm
-        labeled_image = segmentation.random_walker(-1*image, markers)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            labeled_image = segmentation.random_walker(-1*image, markers)
         # put negative values back to zero for proper image
         labeled_image[labeled_image == -1] = 0
     except:
         return np.zeros_like(image)
 
     return labeled_image
-
-# loss functions for model
-def dice_coeff(y_true, y_pred):
-    smooth = 1.
-    # Flatten
-    y_true_f = tf.reshape(y_true, [-1])
-    y_pred_f = tf.reshape(y_pred, [-1])
-    intersection = tf.reduce_sum(y_true_f * y_pred_f)
-    score = (2. * intersection + smooth) / (tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth)
-    return score
-
-def dice_loss(y_true, y_pred):
-    loss = 1 - dice_coeff(y_true, y_pred)
-    return loss
-
-def bce_dice_loss(y_true, y_pred):
-    loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
-    return loss
-
-def tversky_loss(y_true, y_pred):
-    alpha = 0.5
-    beta  = 0.5
-
-    ones = K.ones((512,512,3)) #K.ones(K.shape(y_true))
-    p0 = y_pred      # proba that voxels are class i
-    p1 = ones-y_pred # proba that voxels are not class i
-    g0 = y_true
-    g1 = ones-y_true
-
-    num = K.sum(p0*g0, (0,1,2))
-    den = num + alpha*K.sum(p0*g1,(0,1,2)) + beta*K.sum(p1*g0,(0,1,2))
-
-    T = K.sum(num/den) # when summing over classes, T has dynamic range [0 Ncl]
-
-    Ncl = K.cast(K.shape(y_true)[-1], 'float32')
-    return Ncl-T
-
-def cce_tversky_loss(y_true, y_pred):
-    loss = losses.categorical_crossentropy(y_true, y_pred) + tversky_loss(y_true, y_pred)
-    return loss
 
 def get_pad_distances(unet_shape, img_height, img_width):
     '''Finds padding and trimming sizes to make the input image the same as the size expected by the U-net model.
@@ -1899,181 +1857,22 @@ def get_pad_distances(unet_shape, img_height, img_width):
 
     return pad_dict
 
-#@profile
-def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model):
+# loss functions for model
+def dice_coeff(y_true, y_pred):
+    smooth = 1.
+    # Flatten
+    y_true_f = tf.reshape(y_true, [-1])
+    y_pred_f = tf.reshape(y_pred, [-1])
+    intersection = tf.reduce_sum(y_true_f * y_pred_f)
+    score = (2. * intersection + smooth) / (tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth)
+    return score
 
-    batch_size = params['segment']['batch_size']
-    cellClassThreshold = params['segment']['cell_class_threshold']
-    if cellClassThreshold == 'None': # yaml imports None as a string
-        cellClassThreshold = False
-    min_object_size = params['segment']['min_object_size']
+def dice_loss(y_true, y_pred):
+    loss = 1 - dice_coeff(y_true, y_pred)
+    return loss
 
-    # arguments to data generator
-    # data_gen_args = {'batch_size':batch_size,
-    #                  'n_channels':1,
-    #                  'normalize_to_one':False,
-    #                  'shuffle':False}
-
-    #arguments to predict
-    predict_args = dict(use_multiprocessing=True,
-                        workers=params['num_analyzers'],
-                        verbose=1)
-
-    # predict_args = dict(use_multiprocessing=False,
-    #                     verbose=1)
-
-    for peak_id in ana_peak_ids:
-        information('Segmenting peak {}.'.format(peak_id))
-
-        img_stack = load_stack(fov_id, peak_id, color=params['phase_plane'])
-
-        if params['segment']['normalize_to_one']:
-            med_stack = np.zeros(img_stack.shape)
-            selem = morphology.disk(1)
-
-            for frame_idx in range(img_stack.shape[0]):
-                tmpImg = img_stack[frame_idx,...]
-                med_stack[frame_idx,...] = median(tmpImg, selem)
-
-            # robust normalization of peak's image stack to 1
-            max_val = np.max(med_stack)
-            img_stack = img_stack/max_val
-            img_stack[img_stack > 1] = 1
-
-        # trim and pad image to correct size
-        img_stack = img_stack[:, :unet_shape[0], :unet_shape[1]]
-        img_stack = np.pad(img_stack,
-                           ((0,0),
-                           (pad_dict['top_pad'],pad_dict['bottom_pad']),
-                           (pad_dict['left_pad'],pad_dict['right_pad'])),
-                           mode='constant')
-        img_stack = np.expand_dims(img_stack, -1) # TF expects images to be 4D
-        # set up image generator
-        # image_generator = CellSegmentationDataGenerator(img_stack, **data_gen_args)
-        image_datagen = ImageDataGenerator()
-        image_generator = image_datagen.flow(x=img_stack,
-                                             batch_size=batch_size,
-                                             shuffle=False) # keep same order
-
-        # predict cell locations. This has multiprocessing built in but I need to mess with the parameters to see how to best utilize it. ***
-        predictions = model.predict(image_generator, **predict_args)
-
-        # post processing
-        # remove padding including the added last dimension
-        predictions = predictions[:, pad_dict['top_pad']:unet_shape[0]-pad_dict['bottom_pad'],
-                                     pad_dict['left_pad']:unet_shape[1]-pad_dict['right_pad'], 0]
-
-        # pad back incase the image had been trimmed
-        predictions = np.pad(predictions,
-                             ((0,0),
-                             (0,pad_dict['bottom_trim']),
-                             (0,pad_dict['right_trim'])),
-                             mode='constant')
-
-        if params['segment']['save_predictions']:
-            pred_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, params['pred_img'])
-            if not os.path.isdir(params['pred_dir']):
-                os.makedirs(params['pred_dir'])
-            int_preds = (predictions * 255).astype('uint8')
-            tiff.imsave(os.path.join(params['pred_dir'], pred_filename),
-                            int_preds, compress=4)
-
-        # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
-        if cellClassThreshold:
-            predictions[predictions >= cellClassThreshold] = 1
-            predictions[predictions < cellClassThreshold] = 0
-            predictions = predictions.astype('uint8')
-
-            segmented_imgs = np.zeros(predictions.shape, dtype='uint8')
-            # process and label each frame of the channel
-            for frame in range(segmented_imgs.shape[0]):
-                # get rid of small holes
-                predictions[frame,:,:] = morphology.remove_small_holes(predictions[frame,:,:], min_object_size)
-                # get rid of small objects.
-                predictions[frame,:,:] = morphology.remove_small_objects(morphology.label(predictions[frame,:,:], connectivity=1), min_size=min_object_size)
-                # remove labels which touch the boarder
-                predictions[frame,:,:] = segmentation.clear_border(predictions[frame,:,:])
-                # relabel now
-                segmented_imgs[frame,:,:] = morphology.label(predictions[frame,:,:], connectivity=1)
-
-        else: # in this case you just want to scale the 0 to 1 float image to 0 to 255
-            information('Converting predictions to grayscale.')
-            segmented_imgs = np.around(predictions * 100)
-
-        # both binary and grayscale should be 8bit. This may be ensured above and is unneccesary
-        segmented_imgs = segmented_imgs.astype('uint8')
-
-        # save out the segmented stacks
-        if params['output'] == 'TIFF':
-            seg_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, params['seg_img'])
-            tiff.imsave(os.path.join(params['seg_dir'], seg_filename),
-                            segmented_imgs, compress=4)
-
-            if fov_id==1 and peak_id<50:
-                napari.current_viewer().add_image(segmented_imgs, name='Segmented' + '_xy1_p'+str(peak_id)+'_'+str(params['seg_img'])+'.tif', visible=True)
-
-        if params['output'] == 'HDF5':
-            h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
-            # put segmented channel in correct group
-            h5g = h5f['channel_%04d' % peak_id]
-            # delete the dataset if it exists (important for debug)
-            if 'p%04d_%s' % (peak_id, params['seg_img']) in h5g:
-                del h5g['p%04d_%s' % (peak_id, params['seg_img'])]
-
-            h5ds = h5g.create_dataset(u'p%04d_%s' % (peak_id, params['seg_img']),
-                                data=segmented_imgs,
-                                chunks=(1, segmented_imgs.shape[1], segmented_imgs.shape[2]),
-                                maxshape=(None, segmented_imgs.shape[1], segmented_imgs.shape[2]),
-                                compression="gzip", shuffle=True, fletcher32=True)
-            h5f.close()
-
-#@profile
-def segment_fov_unet(fov_id, specs, model, color=None):
-    '''
-    Segments the channels from one fov using the U-net CNN model.
-
-    Parameters
-    ----------
-    fov_id : int
-    specs : dict
-    model : TensorFlow model
-    '''
-
-    information('Segmenting FOV {} with U-net.'.format(fov_id))
-
-    if color is None:
-        color = params['phase_plane']
-
-    # load segmentation parameters
-    unet_shape = (params['segment']['trained_model_image_height'],
-                  params['segment']['trained_model_image_width'])
-
-    ### determine stitching of images.
-    # need channel shape, specifically the width. load first for example
-    # this assumes that all channels are the same size for this FOV, which they should
-    for peak_id, spec in six.iteritems(specs[fov_id]):
-        if spec == 1:
-            break # just break out with the current peak_id
-
-    img_stack = load_stack(fov_id, peak_id, color=color)
-    img_height = img_stack.shape[1]
-    img_width = img_stack.shape[2]
-
-    pad_dict = get_pad_distances(unet_shape, img_height, img_width)
-
-    # dermine how many channels we have to analyze for this FOV
-    ana_peak_ids = []
-    for peak_id, spec in six.iteritems(specs[fov_id]):
-        if spec == 1:
-            ana_peak_ids.append(peak_id)
-    ana_peak_ids.sort() # sort for repeatability
-    #ana_peak_ids = ana_peak_ids[:2]
-
-    segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model)
-
-    information("Finished segmentation for FOV {}.".format(fov_id))
-
-    return
+def bce_dice_loss(y_true, y_pred):
+    loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
 
 # finds lineages for all peaks in a fov
 def make_lineages_fov(fov_id, specs):
@@ -2139,150 +1938,6 @@ def get_cell_counts(regionprops_list):
     total_interactions = np.sum(interaction_count_list)
 
     return(total_cells, total_interactions, cell_count_list, interaction_count_list)
-
-# get cells' information for track prediction
-def gather_interactions_and_events(regionprops_list):
-
-    total_cells, total_interactions, cell_count_list, interaction_count_list = get_cell_counts(regionprops_list)
-
-    # instantiate an array with a 2x4 array for each pair of cells'
-    #   min_y, max_y, centroid_y, and area
-    # in reality it would be much, much more efficient to
-    #   look this information up in the data generator at run time
-    #   for now, this will work
-    pairwise_cell_data = np.zeros((total_interactions,2,5,1))
-
-    # make a dictionary, the keys of which will be row indices so that we
-    #   can quickly look up which timepoints/cells correspond to which
-    #   rows of our model's ouput
-    pairwise_cell_lookup = {}
-
-    # populate arrays
-    interaction_count = 0
-    cell_count = 0
-
-    for frame, frame_regions in enumerate(regionprops_list):
-
-        for region in frame_regions:
-
-            cell_label = region.label
-            y,x = region.centroid
-            bbox = region.bbox
-            orientation = region.orientation
-            min_y = bbox[0]
-            max_y = bbox[2]
-            area = region.area
-            cell_label = region.label
-            cell_info = (min_y, max_y, y, area, orientation)
-            cell_count += 1
-
-            try:
-                frame_plus_one_regions = regionprops_list[frame+1]
-            except IndexError as e:
-                # print(e)
-                break
-
-            for region_plus_one in frame_plus_one_regions:
-
-                paired_cell_label = region_plus_one.label
-                y,x = region_plus_one.centroid
-                bbox = region_plus_one.bbox
-                min_y = bbox[0]
-                max_y = bbox[2]
-                area = region_plus_one.area
-                paired_cell_label = region_plus_one.label
-
-                pairwise_cell_data[interaction_count,0,:,0] = cell_info
-                pairwise_cell_data[interaction_count,1,:,0] = (min_y, max_y, y, area, orientation)
-
-                pairwise_cell_lookup[interaction_count] = {'frame':frame, 'cell_label':cell_label, 'paired_cell_label':paired_cell_label}
-
-                interaction_count += 1
-
-    return(pairwise_cell_data, pairwise_cell_lookup)
-
-# look up which cells are interacting according to the track model
-def cell_interaction_lookup(predictions, lookup_table):
-    '''
-    Accepts prediction matrix and
-    '''
-    frame = []
-    cell_label = []
-    paired_cell_label = []
-    interaction_type = []
-
-    # loop over rows of predictions
-    for row_index in range(predictions.shape[0]):
-
-        row_predictions = predictions[row_index]
-        row_relationship = np.where(row_predictions > 0.95)[0]
-        if row_relationship.size == 0:
-            continue
-        elif row_relationship[0] == 3:
-            continue
-        elif row_relationship[0] == 0:
-            interaction_type.append('migration')
-        elif row_relationship[0] == 1:
-            interaction_type.append('child')
-        elif row_relationship[0] == 2:
-            interaction_type.append('false_join')
-
-        frame.append(lookup_table[row_index]['frame'])
-        cell_label.append(lookup_table[row_index]['cell_label'])
-        paired_cell_label.append(lookup_table[row_index]['paired_cell_label'])
-
-    track_df = pd.DataFrame(data={'frame':frame,
-                              'cell_label':cell_label,
-                              'paired_cell_label':paired_cell_label,
-                              'interaction_type':interaction_type})
-    return(track_df)
-
-def get_tracking_model_dict():
-
-    model_dict = {}
-
-    if not 'migrate_model' in model_dict:
-        model_dict['migrate_model'] = models.load_model(params['tracking']['migrate_model'],
-                                                                    custom_objects={'all_loss':all_loss,
-                                                                        'f2_m':f2_m})
-    if not 'child_model' in model_dict:
-        model_dict['child_model'] = models.load_model(params['tracking']['child_model'],
-                                        custom_objects={'bce_dice_loss':bce_dice_loss,
-                                                                    'f2_m':f2_m})
-    if not 'appear_model' in model_dict:
-        model_dict['appear_model'] = models.load_model(params['tracking']['appear_model'],
-                                        custom_objects={'all_loss':all_loss,
-                                                                    'f2_m':f2_m})
-    if not 'die_model' in model_dict:
-        model_dict['die_model'] = models.load_model(params['tracking']['die_model'],
-                                        custom_objects={'all_loss':all_loss,
-                                                                    'f2_m':f2_m})
-    if not 'disappear_model' in model_dict:
-        model_dict['disappear_model'] = models.load_model(params['tracking']['disappear_model'],
-                                        custom_objects={'all_loss':all_loss,
-                                                                    'f2_m':f2_m})
-    if not 'born_model' in model_dict:
-        model_dict['born_model'] = models.load_model(params['tracking']['born_model'],
-                                        custom_objects={'all_loss':all_loss,
-                                                                    'f2_m':f2_m})
-    # if not 'zero_cell_model' in model_dict:
-    #     model_dict['zero_cell_model'] = models.load_model(params['tracking']['zero_cell_model'],
-    #                                     custom_objects={'absolute_dice_loss':absolute_dice_loss,
-    #                                                                 'f2_m':f2_m})
-    # if not 'one_cell_model' in model_dict:
-    #     model_dict['one_cell_model'] = models.load_model(params['tracking']['one_cell_model'],
-    #                                     custom_objects={'bce_dice_loss':bce_dice_loss,
-    #                                                                 'f2_m':f2_m})
-    # if not 'two_cell_model' in model_dict:
-    #     model_dict['two_cell_model'] = models.load_model(params['tracking']['two_cell_model'],
-    #                                     custom_objects={'all_loss':all_loss,
-    #                                                                 'f2_m':f2_m})
-    # if not 'geq_three_cell_model' in model_dict:
-    #     model_dict['geq_three_cell_model'] = models.load_model(params['tracking']['geq_three_cell_model'],
-    #                                     custom_objects={'bce_dice_loss':bce_dice_loss,
-    #                                                                 'f2_m':f2_m})
-
-    return(model_dict)
 
 # Creates lineage for a single channel
 def make_lineage_chnl_stack(fov_and_peak_id):
@@ -2469,82 +2124,6 @@ def make_lineage_chnl_stack(fov_and_peak_id):
     return Cells
 
 ### Cell class and related functions
-
-# this is the object that holds all information for a detection
-class Detection():
-    '''
-    The Detection is a single detection in a single frame.
-    '''
-
-    # initialize (birth) the cell
-    def __init__(self, detection_id, region, t):
-        '''The detection must be given a unique detection_id and passed the region
-        information from the segmentation
-
-        Parameters
-        __________
-
-        detection_id : str
-            detection_id is a string in the form fXpXtXrX
-            f is 3 digit FOV number
-            p is 4 digit peak number
-            t is 4 digit time point
-            r is region label for that segmentation
-            Use the function create_detection_id to return a proper string.
-
-        region : region properties object
-            Information about the labeled region from
-            skimage.measure.regionprops()
-
-            '''
-
-        # create all the attributes
-        # id
-        self.id = detection_id
-
-        # identification convenience
-        self.fov = int(detection_id.split('f')[1].split('p')[0])
-        self.peak = int(detection_id.split('p')[1].split('t')[0])
-        self.t = t
-
-        self.cell_count = 1
-
-        # self.abs_times = [params['time_table'][self.fov][t]] # elapsed time in seconds
-        if region is not None:
-            self.label = region.label
-            self.bbox = region.bbox
-            self.area = region.area
-
-            # calculating cell length and width by using Feret Diamter. These values are in pixels
-            length_tmp, width_tmp = feretdiameter(region)
-            if length_tmp == None:
-                warning('feretdiameter() failed for ' + self.id + ' at t=' + str(t) + '.')
-            self.length = length_tmp
-            self.width = width_tmp
-
-            # calculate cell volume as cylinder plus hemispherical ends (sphere). Unit is px^3
-            self.volume = (length_tmp - width_tmp) * np.pi * (width_tmp/2)**2 + (4/3) * np.pi * (width_tmp/2)**3
-
-            # angle of the fit elipsoid and centroid location
-            self.orientation = region.orientation
-            self.centroid = region.centroid
-
-        else:
-            self.label = None
-            self.bbox = None
-            self.area = None
-
-            # calculating cell length and width by using Feret Diamter. These values are in pixels
-            length_tmp, width_tmp = (None, None)
-            self.length = None
-            self.width = None
-
-            # calculate cell volume as cylinder plus hemispherical ends (sphere). Unit is px^3
-            self.volume = None
-
-            # angle of the fit elipsoid and centroid location
-            self.orientation = None
-            self.centroid = None
 
 # this is the object that holds all information for a cell
 class Cell():
@@ -2751,328 +2330,6 @@ class Cell():
         print('id = %s' % self.id)
         print('times = {}'.format(', '.join('{}'.format(t) for t in self.times)))
         print('lengths = {}'.format(', '.join('{:.2f}'.format(l) for l in self.lengths)))
-
-class CellTree():
-
-    def __init__(self):
-        self.cells = {}
-        self.scores = [] # probably needs to be different
-        self.score = 0
-        self.cell_id_list = []
-
-    def add_cell(self, cell):
-        self.cells[cell.id] = cell
-        self.cell_id_list.append(cell.id)
-        self.cell_id_list.sort()
-
-    def update_score(self):
-        pass
-
-    def get_cell(self, cell_id):
-        return(self.cells[cell_id])
-
-    def get_top_from_cell(self, cell_id):
-        pass
-
-# this is the object that holds all information for a cell
-class CellFromGraph():
-    '''
-    The CellFromGraph class is one cell that has been born.
-    It is not neccesarily a cell that has divided.
-    '''
-
-    # initialize (birth) the cell
-    def __init__(self, cell_id, region, t, parent=None):
-        '''The cell must be given a unique cell_id and passed the region
-        information from the segmentation
-
-        Parameters
-        __________
-
-        cell_id : str
-            cell_id is a string in the form fXpXtXrX
-            f is 3 digit FOV number
-            p is 4 digit peak number
-            t is 4 digit time point at time of birth
-            r is region label for that segmentation
-            Use the function create_cell_id to do return a proper string.
-
-        region : region properties object
-            Information about the labeled region from
-            skimage.measure.regionprops()
-
-        parent_id : str
-            id of the parent if there is one.
-            '''
-
-        # create all the attributes
-        # id
-        self.id = cell_id
-
-        # identification convenience
-        self.fov = int(cell_id.split('f')[1].split('p')[0])
-        self.peak = int(cell_id.split('p')[1].split('t')[0])
-        self.birth_label = int(region.label)
-        self.regions = [region]
-
-        # parent is a CellFromGraph object, can be None
-        self.parent = parent
-
-        # daughters is updated when cell divides
-        # if this is none then the cell did not divide
-        self.daughters = None
-
-        # birth and division time
-        self.birth_time = t
-        self.division_time = None # filled out if cell divides
-
-        # the following information is on a per timepoint basis
-        self.times = [t]
-        self.abs_times = [params['time_table'][self.fov][t]] # elapsed time in seconds
-        self.labels = [region.label]
-        self.bboxes = [region.bbox]
-        self.areas = [region.area]
-
-        # calculating cell length and width by using Feret Diamter. These values are in pixels
-        length_tmp, width_tmp = feretdiameter(region)
-        if length_tmp == None:
-            warning('feretdiameter() failed for ' + self.id + ' at t=' + str(t) + '.')
-        self.lengths = [length_tmp]
-        self.widths = [width_tmp]
-
-        # calculate cell volume as cylinder plus hemispherical ends (sphere). Unit is px^3
-        self.volumes = [(length_tmp - width_tmp) * np.pi * (width_tmp/2)**2 +
-                       (4/3) * np.pi * (width_tmp/2)**3]
-
-        # angle of the fit elipsoid and centroid location
-        self.orientations = [region.orientation]
-        self.centroids = [region.centroid]
-
-        # these are special datatype, as they include information from the daugthers for division
-        # computed upon division
-        self.times_w_div = None
-        self.lengths_w_div = None
-        self.widths_w_div = None
-
-        # this information is the "production" information that
-        # we want to extract at the end. Some of this is for convenience.
-        # This is only filled out if a cell divides.
-        self.sb = None # in um
-        self.sd = None # this should be combined lengths of daughters, in um
-        self.delta = None
-        self.tau = None
-        self.elong_rate = None
-        self.septum_position = None
-        self.width = None
-        self.death = None
-        self.disappear = None
-        self.area_mean_fluorescence = {}
-        self.volume_mean_fluorescence = {}
-        self.total_fluorescence = {}
-        self.foci = {}
-
-    def __len__(self):
-        return(len(self.times))
-
-    def add_parent(self, parent):
-        self.parent = parent
-
-    def grow(self, region, t):
-        '''Append data from a region to this cell.
-        use cell.times[-1] to get most current value'''
-
-        self.times.append(t)
-        self.abs_times.append(params['time_table'][self.fov][t])
-        self.labels.append(region.label)
-        self.bboxes.append(region.bbox)
-        self.areas.append(region.area)
-        self.regions.append(region)
-
-        #calculating cell length and width by using Feret Diamter
-        length_tmp, width_tmp = feretdiameter(region)
-        if length_tmp == None:
-            warning('feretdiameter() failed for ' + self.id + ' at t=' + str(t) + '.')
-        self.lengths.append(length_tmp)
-        self.widths.append(width_tmp)
-        self.volumes.append((length_tmp - width_tmp) * np.pi * (width_tmp/2)**2 +
-                            (4/3) * np.pi * (width_tmp/2)**3)
-
-        self.orientations.append(region.orientation)
-        self.centroids.append(region.centroid)
-
-    def die(self, region, t):
-        '''
-        Annotate cell as dying from current t to next t.
-        '''
-        self.death = t
-
-    def disappears(self, region, t):
-        '''
-        Annotate cell as disappearing from current t to next t.
-        '''
-        self.disappear = t
-
-    def add_daughter(self, daughter, t):
-
-        if self.daughters is None:
-            self.daughters = [daughter]
-        else:
-            self.daughters.append(daughter)
-            assert len(self.daughters) < 3, "Too many daughter cells in cell {}".format(self.id)
-            # sort daughters by y position, with smaller y-value first.
-            # this will cause the daughter closer to the closed end of the trap to be listed first.
-            self.daughters.sort(key=lambda cell: cell.centroids[0][0])
-            self.divide(t)
-
-    def divide(self, t):
-        '''Divide the cell and update stats.
-        daughter1 is the daugther closer to the closed end.'''
-
-        # put the daugther ids into the cell
-        # self.daughters = [daughter1.id, daughter2.id]
-
-        # give this guy a division time
-        self.division_time = self.daughters[0].birth_time
-
-        # update times
-        self.times_w_div = self.times + [self.division_time]
-        self.abs_times.append(params['time_table'][self.fov][self.division_time])
-
-        # flesh out the stats for this cell
-        # size at birth
-        self.sb = self.lengths[0] * params['pxl2um']
-
-        # force the division length to be the combined lengths of the daughters
-        self.sd = (self.daughters[0].lengths[0] + self.daughters[1].lengths[0]) * params['pxl2um']
-
-        # delta is here for convenience
-        self.delta = self.sd - self.sb
-
-        # generation time. Use more accurate times and convert to minutes
-        self.tau = np.float64((self.abs_times[-1] - self.abs_times[0]) / 60.0)
-
-        # include the data points from the daughters
-        self.lengths_w_div = [l * params['pxl2um'] for l in self.lengths] + [self.sd]
-        self.widths_w_div = [w * params['pxl2um'] for w in self.widths] + [((self.daughters[0].widths[0] + self.daughters[1].widths[0])/2) * params['pxl2um']]
-
-        # volumes for all timepoints, in um^3
-        self.volumes_w_div = []
-        for i in range(len(self.lengths_w_div)):
-            self.volumes_w_div.append((self.lengths_w_div[i] - self.widths_w_div[i]) *
-                                       np.pi * (self.widths_w_div[i]/2)**2 +
-                                       (4/3) * np.pi * (self.widths_w_div[i]/2)**3)
-
-        # calculate elongation rate.
-        try:
-            times = np.float64((np.array(self.abs_times) - self.abs_times[0]) / 60.0) # convert times to minutes
-            log_lengths = np.float64(np.log(self.lengths_w_div))
-            p = np.polyfit(times, log_lengths, 1) # this wants float64
-            self.elong_rate = p[0] * 60.0 # convert to hours
-        except:
-            self.elong_rate = np.float64('NaN')
-            warning('Elongation rate calculate failed for {}.'.format(self.id))
-
-        # calculate the septum position as a number between 0 and 1
-        # which indicates the size of daughter closer to the closed end
-        # compared to the total size
-        self.septum_position = self.daughters[0].lengths[0] / (self.daughters[0].lengths[0] + self.daughters[1].lengths[0])
-
-        # calculate single width over cell's life
-        self.width = np.mean(self.widths_w_div)
-
-        # convert data to smaller floats. No need for float64
-        # see https://docs.scipy.org/doc/numpy-1.13.0/user/basics.types.html
-        convert_to = 'float16' # numpy datatype to convert to
-
-        self.sb = self.sb.astype(convert_to)
-        self.sd = self.sd.astype(convert_to)
-        self.delta = self.delta.astype(convert_to)
-        self.elong_rate = self.elong_rate.astype(convert_to)
-        self.tau = self.tau.astype(convert_to)
-        self.septum_position = self.septum_position.astype(convert_to)
-        self.width = self.width.astype(convert_to)
-
-        self.lengths = [length.astype(convert_to) for length in self.lengths]
-        self.lengths_w_div = [length.astype(convert_to) for length in self.lengths_w_div]
-        self.widths = [width.astype(convert_to) for width in self.widths]
-        self.widths_w_div = [width.astype(convert_to) for width in self.widths_w_div]
-        self.volumes = [vol.astype(convert_to) for vol in self.volumes]
-        self.volumes_w_div = [vol.astype(convert_to) for vol in self.volumes_w_div]
-        # note the float16 is hardcoded here
-        self.orientations = [np.float16(orientation) for orientation in self.orientations]
-        self.centroids = [(y.astype(convert_to), x.astype(convert_to)) for y, x in self.centroids]
-
-    def add_focus(self, focus, t):
-        '''Adds a focus to the cell. See function foci_info_unet'''
-        self.foci[focus.id] = focus
-
-    def print_info(self):
-        '''prints information about the cell'''
-        print('id = %s' % self.id)
-        print('times = {}'.format(', '.join('{}'.format(t) for t in self.times)))
-        print('lengths = {}'.format(', '.join('{:.2f}'.format(l) for l in self.lengths)))
-        if self.daughters is not None:
-            print('daughters = {}'.format(', '.join('{}'.format(daughter.id) for daughter in self.daughters)))
-        if self.parent is not None:
-            print('parent = {}'.format(self.parent.id))
-
-    def make_wide_df(self):
-
-        data = {}
-        data['id'] = self.id
-        data['fov'] = self.fov
-        data['trap'] = self.peak
-        data['parent'] = self.parent
-        data['child1'] = None
-        data['child2'] = None
-        data['division_time'] = self.division_time
-        data['birth_label'] = self.birth_label
-        data['birth_time'] = self.birth_time
-        data['sb'] = self.sb
-        data['sd'] = self.sd
-        data['delta'] = self.delta
-        data['tau'] = self.tau
-        data['elong_rate'] = self.elong_rate
-        data['septum_position'] = self.septum_position
-        data['death'] = self.death
-        data['disappear'] = self.disappear
-
-        if self.daughters is not None:
-            data['child1'] = self.daughters[0]
-
-            if len(self.daughters) == 2:
-                data['child2'] = self.daughters[1]
-
-        df = pd.DataFrame(data, index=[self.id])
-        return(df)
-
-    def make_long_df(self):
-
-        data = {}
-        data['id'] = [self.id]*len(self.times)
-        data['times'] = self.times
-        data['length'] = self.lengths
-        data['volume'] = self.volumes
-        data['area'] = self.areas
-
-        # if a cell divides then there is one extra value in abs_times
-        if self.division_time is None:
-            data['seconds'] = self.abs_times
-        else:
-            data['seconds'] = self.abs_times[:-1]
-
-        # if there is fluorescence data, place it into the dataframe
-        if len(self.area_mean_fluorescence.keys()) != 0:
-
-            for fluorescence_channel in self.area_mean_fluorescence.keys():
-
-                data['{}_area_mean_fluorescence'.format(fluorescence_channel)] = self.area_mean_fluorescence[fluorescence_channel]
-                data['{}_volume_mean_fluorescence'.format(fluorescence_channel)] = self.volume_mean_fluorescence[fluorescence_channel]
-                data['{}_total_fluorescence'.format(fluorescence_channel)] = self.total_fluorescence[fluorescence_channel]
-
-        df = pd.DataFrame(data, index=data['id'])
-
-        return(df)
 
 
 # obtains cell length and width of the cell using the feret diameter
@@ -3381,71 +2638,6 @@ def filter_cells_containing_val_in_attr(Cells, attr, val):
 
     return Filtered_Cells
 
-### functions for additional cell centric analysis
-def compile_cell_info_df(Cells):
-
-    # count the number of rows that will be in the long dataframe
-    quant_fluor = False
-    long_df_row_number = 0
-    for cell in Cells.values():
-
-        # first time through, evaluate whether we quantified cells' fluorescence
-        if long_df_row_number == 0:
-            if len(cell.area_mean_fluorescence.keys()) != 0:
-                quant_fluor = True
-                fluorescence_channels = [k for k in cell.area_mean_fluorescence.keys()]
-
-        long_df_row_number += len(cell.times)
-
-    # initialize some arrays for filling with data
-    data = {
-        # ids can be up to 100 characters long
-        'id': np.chararray(long_df_row_number, itemsize=100),
-        'times': np.zeros(long_df_row_number, dtype='uint16'),
-        'lengths': np.zeros(long_df_row_number),
-        'volumes': np.zeros(long_df_row_number),
-        'areas': np.zeros(long_df_row_number),
-        'abs_times': np.zeros(long_df_row_number, dtype='uint32')
-    }
-
-    if quant_fluor:
-        for fluorescence_channel in fluorescence_channels:
-            data['{}_area_mean_fluorescence'.format(fluorescence_channel)] = np.zeros(long_df_row_number)
-            data['{}_volume_mean_fluorescence'.format(fluorescence_channel)] = np.zeros(long_df_row_number)
-            data['{}_total_fluorescence'.format(fluorescence_channel)] = np.zeros(long_df_row_number)
-
-    data = populate_focus_arrays(Cells, data, cell_quants=True)
-    long_df = pd.DataFrame(data=data)
-
-    wide_df_row_number = len(Cells)
-    data = {
-        # ids can be up to 100 characters long
-        'id': np.chararray(wide_df_row_number, itemsize=100),
-        'fov': np.zeros(wide_df_row_number, dtype='uint8'),
-        'peak': np.zeros(wide_df_row_number, dtype='uint16'),
-        'parent_id': np.chararray(wide_df_row_number, itemsize=100),
-        'child1_id': np.chararray(wide_df_row_number, itemsize=100),
-        'child2_id': np.chararray(wide_df_row_number, itemsize=100),
-        'division_time': np.zeros(wide_df_row_number),
-        'birth_label': np.zeros(wide_df_row_number, dtype='uint8'),
-        'birth_time': np.zeros(wide_df_row_number, dtype='uint16'),
-        'sb': np.zeros(wide_df_row_number),
-        'sd': np.zeros(wide_df_row_number),
-        'delta': np.zeros(wide_df_row_number),
-        'tau': np.zeros(wide_df_row_number),
-        'elong_rate': np.zeros(wide_df_row_number),
-        'septum_position': np.zeros(wide_df_row_number),
-        'death': np.zeros(wide_df_row_number),
-        'disappear': np.zeros(wide_df_row_number)
-    }
-    data = populate_focus_arrays(Cells, data, cell_quants=True, wide=True)
-    # data['parent_id'] = data['parent_id'].decode()
-    # data['child1_id'] = data['child1_id'].decode()
-    # data['child2_id'] = data['child2_id'].decode()
-    wide_df = pd.DataFrame(data=data)
-
-    return(wide_df,long_df)
-
 def find_all_cell_intensities(Cells,
                               specs, time_table, channel_name='sub_c2',
                               apply_background_correction=True):
@@ -3635,354 +2827,6 @@ def find_cell_intensities(fov_id, peak_id, Cells, midline=False, channel_name='s
     # no need to return anything specifically.
     return
 
-# find foci using a difference of gaussians method
-def foci_analysis(fov_id, peak_id, Cells):
-    '''Find foci in cells using a fluorescent image channel.
-    This function works on a single peak and all the cells therein.'''
-
-    # make directory for foci debug
-    # foci_dir = os.path.join(params['ana_dir'], 'overlay/')
-    # if not os.path.exists(foci_dir):
-    #     os.makedirs(foci_dir)
-
-    # Import segmented and fluorescenct images
-    try:
-        image_data_seg = load_stack(fov_id, peak_id, color='seg_unet')
-    except IOError:
-        image_data_seg = load_stack(fov_id, peak_id, color='seg_otsu')
-    image_data_FL = load_stack(fov_id, peak_id,
-                               color='sub_{}'.format(params['foci']['foci_plane']))
-
-    # determine absolute time index
-    times_all = []
-    for fov, times in params['time_table'].items():
-        times_all = np.append(times_all, list(times.keys()))
-    times_all = np.unique(times_all)
-    times_all = np.sort(times_all)
-    times_all = np.array(times_all, np.int_)
-    t0 = times_all[0] # first time index
-
-    for cell_id, cell in six.iteritems(Cells):
-
-        information('Extracting foci information for %s.' % (cell_id))
-        # declare lists holding information about foci.
-        disp_l = []
-        disp_w = []
-        foci_h = []
-        # foci_stack = np.zeros((np.size(cell.times),
-        #                        image_data_seg[0,:,:].shape[0], image_data_seg[0,:,:].shape[1]))
-
-        # Go through each time point of this cell
-        for t in cell.times:
-            # retrieve this timepoint and images.
-            image_data_temp = image_data_FL[t-t0,:,:]
-            image_data_temp_seg = image_data_seg[t-t0,:,:]
-
-            # find foci as long as there is information in the fluorescent image
-            if np.sum(image_data_temp) != 0:
-                disp_l_tmp, disp_w_tmp, foci_h_tmp = foci_lap(image_data_temp_seg,
-                                                              image_data_temp, cell, t)
-
-                disp_l.append(disp_l_tmp)
-                disp_w.append(disp_w_tmp)
-                foci_h.append(foci_h_tmp)
-
-            # if there is no information, append an empty list.
-            # Should this be NaN?
-            else:
-                disp_l.append([])
-                disp_w.append([])
-                foci_h.append([])
-                # foci_stack[i] = image_data_temp_seg
-
-        # add information to the cell (will replace old data)
-        cell.disp_l = disp_l
-        cell.disp_w = disp_w
-        cell.foci_h = foci_h
-
-        # Create a stack of the segmented images with marked foci
-        # This should poentially be changed to the fluorescent images with marked foci
-        # foci_stack = np.uint16(foci_stack)
-        # foci_stack = np.stack(foci_stack, axis=0)
-        # # Export overlaid images
-        # foci_filename = params['experiment_name'] + 't%04d_xy%03d_p%04d_r%02d_overlay.tif' % (Cells[cell_id].birth_time, Cells[cell_id].fov, Cells[cell_id].peak, Cells[cell_id].birth_label)
-        # foci_filepath = foci_dir + foci_filename
-        #
-        # tiff.imsave(foci_filepath, foci_stack, compress=3) # save it
-
-        # test
-        # sys.exit()
-
-    return
-
-# foci pool (for parallel analysis)
-def foci_analysis_pool(fov_id, peak_id, Cells):
-    '''Find foci in cells using a fluorescent image channel.
-    This function works on a single peak and all the cells therein.'''
-
-    # make directory for foci debug
-    # foci_dir = os.path.join(params['ana_dir'], 'overlay/')
-    # if not os.path.exists(foci_dir):
-    #     os.makedirs(foci_dir)
-
-    # Import segmented and fluorescenct images
-    image_data_seg = load_stack(fov_id, peak_id, color='seg_unet')
-    image_data_FL = load_stack(fov_id, peak_id,
-                               color='sub_{}'.format(params['foci']['foci_plane']))
-
-    # Load time table to determine first image index.
-    times_all = np.array(np.sort(params['time_table'][fov_id].keys()), np.int_)
-    t0 = times_all[0] # first time index
-    tN = times_all[-1] # last time index
-
-    # call foci_cell for each cell object
-    pool = Pool(processes=params['num_analyzers'])
-    [pool.apply_async(foci_cell(cell_id, cell, t0, image_data_seg, image_data_FL)) for cell_id, cell in six.iteritems(Cells)]
-    pool.close()
-    pool.join()
-
-# parralel function for each cell
-def foci_cell(cell_id, cell, t0, image_data_seg, image_data_FL):
-    '''find foci in a cell, single instance to be called by the foci_analysis_pool for parallel processing.
-    '''
-    disp_l = []
-    disp_w = []
-    foci_h = []
-    # foci_stack = np.zeros((np.size(cell.times),
-    #                        image_data_seg[0,:,:].shape[0], image_data_seg[0,:,:].shape[1]))
-
-    # Go through each time point of this cell
-    for t in cell.times:
-        # retrieve this timepoint and images.
-        image_data_temp = image_data_FL[t-t0,:,:]
-        image_data_temp_seg = image_data_seg[t-t0,:,:]
-
-        # find foci as long as there is information in the fluorescent image
-        if np.sum(image_data_temp) != 0:
-            disp_l_tmp, disp_w_tmp, foci_h_tmp = foci_lap(image_data_temp_seg,
-                                                          image_data_temp, cell, t)
-
-            disp_l.append(disp_l_tmp)
-            disp_w.append(disp_w_tmp)
-            foci_h.append(foci_h_tmp)
-
-        # if there is no information, append an empty list.
-        # Should this be NaN?
-        else:
-            disp_l.append(np.nan)
-            disp_w.append(np.nan)
-            foci_h.append(np.nan)
-            # foci_stack[i] = image_data_temp_seg
-
-    # add information to the cell (will replace old data)
-    cell.disp_l = disp_l
-    cell.disp_w = disp_w
-    cell.foci_h = foci_h
-
-# actual worker function for foci detection
-def foci_lap(img, img_foci, cell, t):
-    '''foci_lap finds foci using a laplacian convolution then fits a 2D
-    Gaussian.
-
-    The returned information are the parameters of this Gaussian.
-    All the information is returned in the form of np.arrays which are the
-    length of the number of found foci across all cells in the image.
-
-    Parameters
-    ----------
-    img : 2D np.array
-        phase contrast or bright field image. Only used for debug
-    img_foci : 2D np.array
-        fluorescent image with foci.
-    cell : cell object
-    t : int
-        time point to which the images correspond
-
-    Returns
-    -------
-    disp_l : 1D np.array
-        displacement on long axis, in px, of a foci from the center of the cell
-    disp_w : 1D np.array
-        displacement on short axis, in px, of a foci from the center of the cell
-    foci_h : 1D np.array
-        Foci "height." Sum of the intensity of the gaussian fitting area.
-    '''
-
-    # pull out useful information for just this time point
-    i = cell.times.index(t) # find position of the time point in lists (time points may be missing)
-    bbox = cell.bboxes[i]
-    orientation = cell.orientations[i]
-    centroid = cell.centroids[i]
-    region = cell.labels[i]
-
-    # declare arrays which will hold foci data
-    disp_l = [] # displacement in length of foci from cell center
-    disp_w = [] # displacement in width of foci from cell center
-    foci_h = [] # foci total amount (from raw image)
-
-    # define parameters for foci finding
-    minsig = params['foci']['foci_log_minsig']
-    maxsig = params['foci']['foci_log_maxsig']
-    thresh = params['foci']['foci_log_thresh']
-    peak_med_ratio = params['foci']['foci_log_peak_med_ratio']
-    debug_foci = params['foci']['debug_foci']
-
-    # test
-    #print ("minsig={:d}  maxsig={:d}  thres={:.4g}  peak_med_ratio={:.2g}".format(minsig,maxsig,thresh,peak_med_ratio))
-    # test
-
-    # calculate median cell intensity. Used to filter foci
-    img_foci_masked = np.copy(img_foci).astype(np.float)
-    img_foci_masked[img != region] = np.nan
-    cell_fl_median = np.nanmedian(img_foci_masked)
-    cell_fl_mean = np.nanmean(img_foci_masked)
-
-    img_foci_masked[img != region] = 0
-
-    # subtract this value from the cell
-    if False:
-        img_foci = img_foci.astype('int32') - cell_fl_median.astype('int32')
-        img_foci[img_foci < 0] = 0
-        img_foci = img_foci.astype('uint16')
-
-    # int_mask = np.zeros(img_foci.shape, np.uint8)
-    # avg_int = cv2.mean(img_foci, mask=int_mask)
-    # avg_int = avg_int[0]
-
-    # print('median', cell_fl_median)
-
-    # find blobs using difference of gaussian
-    over_lap = .95 # if two blobs overlap by more than this fraction, smaller blob is cut
-    numsig = (maxsig - minsig + 1) # number of division to consider between min ang max sig
-    blobs = blob_log(img_foci_masked, min_sigma=minsig, max_sigma=maxsig,
-                     overlap=over_lap, num_sigma=numsig, threshold=thresh)
-
-    # these will hold information about foci position temporarily
-    x_blob, y_blob, r_blob = [], [], []
-    x_gaus, y_gaus, w_gaus = [], [], []
-
-    # loop through each potential foci
-    for blob in blobs:
-        yloc, xloc, sig = blob # x location, y location, and sigma of gaus
-        xloc = int(np.around(xloc)) # switch to int for slicing images
-        yloc = int(np.around(yloc))
-        radius = int(np.ceil(np.sqrt(2)*sig)) # will be used to slice out area around foci
-
-        # ensure blob is inside the bounding box
-        # this might be better to check if (xloc, yloc) is in regions.coords
-        if yloc > np.int16(bbox[0]) and yloc < np.int16(bbox[2]) and xloc > np.int16(bbox[1]) and xloc < np.int16(bbox[3]):
-
-            x_blob.append(xloc) # for plotting
-            y_blob.append(yloc) # for plotting
-            r_blob.append(radius)
-
-            # cut out a small image from original image to fit gaussian
-            gfit_area = img_foci[yloc-radius:yloc+radius, xloc-radius:xloc+radius]
-            # gfit_area_0 = img_foci[max(0, yloc-1*radius):min(img_foci.shape[0], yloc+1*radius),
-            #                        max(0, xloc-1*radius):min(img_foci.shape[1], xloc+1*radius)]
-            gfit_area_fixed = img_foci[yloc-maxsig:yloc+maxsig, xloc-maxsig:xloc+maxsig]
-
-            # fit gaussian to proposed foci in small box
-            p = fitgaussian(gfit_area)
-            (peak_fit, x_fit, y_fit, w_fit) = p
-
-            # print('peak', peak_fit)
-            if x_fit <= 0 or x_fit >= radius*2 or y_fit <= 0 or y_fit >= radius*2:
-                if debug_foci: print('Throw out foci (gaus fit not in gfit_area)')
-                continue
-            elif peak_fit/cell_fl_median < peak_med_ratio:
-                if debug_foci: print('Peak does not pass height test.')
-                continue
-            else:
-                # find x and y position relative to the whole image (convert from small box)
-                x_rel = int(xloc - radius + x_fit)
-                y_rel = int(yloc - radius + y_fit)
-                x_gaus = np.append(x_gaus, x_rel) # for plotting
-                y_gaus = np.append(y_gaus, y_rel) # for plotting
-                w_gaus = np.append(w_gaus, w_fit) # for plotting
-
-                if debug_foci: print('x', xloc, x_rel, x_fit, 'y', yloc, y_rel, y_fit, 'w', sig, radius, w_fit, 'h', np.sum(gfit_area), np.sum(gfit_area_fixed), peak_fit)
-
-                # calculate distance of foci from middle of cell (scikit image)
-                if orientation < 0:
-                    orientation = np.pi+orientation
-                disp_y = (y_rel-centroid[0])*np.sin(orientation) - (x_rel-centroid[1])*np.cos(orientation)
-                disp_x = (y_rel-centroid[0])*np.cos(orientation) + (x_rel-centroid[1])*np.sin(orientation)
-
-                # append foci information to the list
-                disp_l = np.append(disp_l, disp_y)
-                disp_w = np.append(disp_w, disp_x)
-                foci_h = np.append(foci_h, np.sum(gfit_area_fixed))
-                # foci_h = np.append(foci_h, peak_fit)
-        else:
-            if debug_foci:
-                print ('Blob not in bounding box.')
-
-    # draw foci on image for quality control
-    if debug_foci:
-        outputdir = os.path.join(params['ana_dir'], 'debug_foci')
-        if not os.path.isdir(outputdir):
-            os.makedirs(outputdir)
-
-        # print(np.min(gfit_area), np.max(gfit_area), gfit_median, avg_int, peak)
-        # processing of image
-        fig = plt.figure(figsize=(12,12))
-        ax = fig.add_subplot(1,5,1)
-        plt.title('fluor image')
-        plt.imshow(img_foci, interpolation='nearest', cmap='gray')
-        ax = fig.add_subplot(1,5,2)
-        ax.set_title('segmented image')
-        ax.imshow(img, interpolation='nearest', cmap='gray')
-
-        ax = fig.add_subplot(1,5,3)
-        ax.set_title('DoG blobs')
-        ax.imshow(img_foci, interpolation='nearest', cmap='gray')
-        # add circles for where the blobs are
-        for i, spot in enumerate(x_blob):
-            foci_center = Ellipse([x_blob[i], y_blob[i]], r_blob[i], r_blob[i],
-                                  color=(1.0, 1.0, 0), linewidth=2, fill=False, alpha=0.5)
-            ax.add_patch(foci_center)
-
-        # show the shape of the gaussian for recorded foci
-        ax = fig.add_subplot(1,5,4)
-        ax.set_title('final foci')
-        ax.imshow(img_foci, interpolation='nearest', cmap='gray')
-        # print foci that pass and had gaussians fit
-        for i, spot in enumerate(x_gaus):
-            foci_ellipse = Ellipse([x_gaus[i], y_gaus[i]], w_gaus[i], w_gaus[i],
-                                    color=(0, 1.0, 0.0), linewidth=2, fill=False, alpha=0.5)
-            ax.add_patch(foci_ellipse)
-
-        ax = fig.add_subplot(1,5,5)
-        ax.set_title('overlay')
-        ax.imshow(img, interpolation='nearest', cmap='gray')
-        # print foci that pass and had gaussians fit
-        for i, spot in enumerate(x_gaus):
-            foci_ellipse = Ellipse([x_gaus[i], y_gaus[i]], 3, 3,
-                                    color=(1.0, 1.0, 0), linewidth=2, fill=False, alpha=0.5)
-            ax.add_patch(foci_ellipse)
-
-        #plt.show()
-        filename = 'foci_' + cell.id + '_time{:04d}'.format(t) + '.pdf'
-        fileout = os.path.join(outputdir,filename)
-        fig.savefig(fileout, bbox_inches='tight', pad_inches=0)
-        print (fileout)
-        plt.close('all')
-        nblobs = len(blobs)
-        print ("nblobs = {:d}".format(nblobs))
-
-    return disp_l, disp_w, foci_h
-
-def update_cell_foci(cells, foci):
-    '''Updates cells' .foci attribute in-place using information
-    in foci dictionary
-    '''
-    for focus_id, focus in foci.items():
-        for cell in focus.cells:
-
-            cell_id = cell.id
-            cells[cell_id].foci[focus_id] = focus
-
 # finds best fit for 2d gaussian using functin above
 def fitgaussian(data):
     """Returns (height, x, y, width_x, width_y)
@@ -3993,18 +2837,6 @@ def fitgaussian(data):
     errorfunction = lambda p: np.ravel(gaussian(*p)(*np.indices(data.shape)) - data)
     p, success = leastsq(errorfunction, gparams)
     return p
-
-# calculate dice coefficient for two blobs
-def dice_coeff_foci(mask_1_f, mask_2_f):
-    '''Accepts two flattened numpy arrays from
-    binary masks of two blobs and compares them
-    using the dice metric.
-
-    Returns a single dice score.
-    '''
-    intersection = np.sum(mask_1_f * mask_2_f)
-    score = (2. * intersection) / (np.sum(mask_1_f) + np.sum(mask_2_f))
-    return score
 
 # returnes a 2D gaussian function
 def gaussian(height, center_x, center_y, width):
@@ -4041,444 +2873,6 @@ def gaussian1d(x, height, mean, sigma):
     sigma : RMS width
     '''
     return height * np.exp(-(x-mean)**2 / (2*sigma**2))
-
-# analyze ring fluroescence.
-def ring_analysis(fov_id, peak_id, Cells, ring_plane='c2'):
-    '''Add information to the Cell objects about the location of the Z ring. Sums the fluorescent channel along the long axis of the cell. This can be plotted directly to give a good idea about the development of the ring. Also fits a gaussian to the profile.
-
-    Parameters
-    ----------
-    fov_id : int
-        FOV number of the lineage to analyze.
-    peak_id : int
-        Peak number of the lineage to analyze.
-    Cells : dict of Cell objects (from a Lineages dictionary)
-        Cells should be prefiltered to match fov_id and peak_id.
-    ring_plane : str
-        The suffix of the channel to analyze. 'c1', 'c2', 'sub_c2', etc.
-
-    Usage
-    -----
-    for fov_id, peaks in Lineages.iteritems():
-        for peak_id, Cells in peaks.iteritems():
-            mm3.ring_analysis(fov_id, peak_id, Cells, ring_plane='sub_c2')
-    '''
-
-    peak_width_guess = 2
-
-    # Load data
-    ring_stack = load_stack(fov_id, peak_id, color=ring_plane)
-    seg_stack = load_stack(fov_id, peak_id, color='seg_unet')
-
-    # Load time table to determine first image index.
-    time_table = load_time_table()
-    times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
-    t0 = times_all[0] # first time index
-
-    # Loop through cells
-    for Cell in Cells.values():
-
-        # initialize ring data arrays for cell
-        Cell.ring_locs = []
-        Cell.ring_heights = []
-        Cell.ring_widths = []
-        Cell.ring_medians = []
-        Cell.ring_profiles = []
-
-        # loop through each time point for this cell
-        for n, t in enumerate(Cell.times):
-            # Make mask of fluorescent channel using segmented image
-            ring_image_masked = np.copy(ring_stack[t-t0])
-            ring_image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
-
-            # Sum along long axis, use the profile_line function from skimage
-            # Use orientation of cell as calculated from the ellipsoid fit,
-            # the known length of the cell from the feret diameter,
-            # and a width that is greater than the cell width.
-
-            # find endpoints of line
-            centroid = Cell.centroids[n]
-            orientation = Cell.orientations[n]
-            length = Cell.lengths[n]
-            width = Cell.widths[n] * 1.25
-
-            # give 2 pixel buffer to each end to capture area outside cell.
-            p1 = (centroid[0] - np.sin(orientation) * (length+4)/2,
-                  centroid[1] - np.cos(orientation) * (length+4)/2)
-            p2 = (centroid[0] + np.sin(orientation) * (length+4)/2,
-                  centroid[1] + np.cos(orientation) * (length+4)/2)
-
-            # ensure old pole is always first point
-            if p1[0] > p2[0]:
-                p1, p2 = p2, p1 # python is cool
-
-            profile = profile_line(ring_image_masked, p1, p2, linewidth=width,
-                                   order=1, mode='constant', cval=0)
-            profile_indicies = np.arange(len(profile))
-
-            # subtract median from profile, using non-zero values for median
-            profile_median = np.median(profile[np.nonzero(profile)])
-            profile_sub = profile - profile_median
-            profile_sub[profile_sub < 0] = 0
-
-            # find peak position simply using maximum.
-            peak_index = np.argmax(profile)
-            peak_height = profile[peak_index]
-            peak_height_sub = profile_sub[peak_index]
-
-            try:
-                # Fit gaussian
-                p_guess = [peak_height_sub, peak_index, peak_width_guess]
-                popt, pcov = curve_fit(gaussian1d, profile_indicies,
-                                       profile_sub, p0=p_guess)
-
-                peak_width = popt[2]
-            except:
-                # information('Ring gaussian fit failed. {} {} {}'.format(fov_id, peak_id, t))
-                peak_width = np.float('NaN')
-
-            # Add data to cells
-            Cell.ring_locs.append(peak_index - 3) # minus 3 because we added 2 before and line_profile adds 1.
-            Cell.ring_heights.append(peak_height)
-            Cell.ring_widths.append(peak_width)
-            Cell.ring_medians.append(profile_median)
-            Cell.ring_profiles.append(profile) # append whole profile
-
-    return
-
-# Calculate Y projection intensity of a fluorecent channel per cell
-def profile_analysis(fov_id, peak_id, Cells, profile_plane='c2'):
-    '''Calculate profile of plane along cell and add information to Cell object. Sums the fluorescent channel along the long axis of the cell.
-
-    Parameters
-    ----------
-    fov_id : int
-        FOV number of the lineage to analyze.
-    peak_id : int
-        Peak number of the lineage to analyze.
-    Cells : dict of Cell objects (from a Lineages dictionary)
-        Cells should be prefiltered to match fov_id and peak_id.
-    profile_plane : str
-        The suffix of the channel to analyze. 'c1', 'c2', 'sub_c2', etc.
-
-    Usage
-    -----
-
-    '''
-
-    # Load data
-    fl_stack = load_stack(fov_id, peak_id, color=profile_plane)
-    seg_stack = load_stack(fov_id, peak_id, color='seg_unet')
-
-    # Load time table to determine first image index.
-    # load_time_table()
-    times_all = []
-    for fov in params['time_table']:
-        times_all = np.append(times_all, list(params['time_table'][fov].keys()))
-    times_all = np.unique(times_all)
-    times_all = np.sort(times_all)
-    times_all = np.array(times_all,np.int_)
-    t0 = times_all[0] # first time index
-
-    # Loop through cells
-    for Cell in Cells.values():
-
-        # initialize ring data arrays for cell
-        fl_profiles = []
-
-        # loop through each time point for this cell
-        for n, t in enumerate(Cell.times):
-            # Make mask of fluorescent channel using segmented image
-            image_masked = np.copy(fl_stack[t-t0])
-            image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
-
-            # Sum along long axis, use the profile_line function from skimage
-            # Use orientation of cell as calculated from the ellipsoid fit,
-            # the known length of the cell from the feret diameter,
-            # and a width that is greater than the cell width.
-
-            # find endpoints of line
-            centroid = Cell.centroids[n]
-            orientation = Cell.orientations[n]
-            length = Cell.lengths[n]
-            width = Cell.widths[n] * 1.25
-
-            # give 2 pixel buffer to each end to capture area outside cell.
-            p1 = (centroid[0] - np.sin(orientation) * (length+4)/2,
-                  centroid[1] - np.cos(orientation) * (length+4)/2)
-            p2 = (centroid[0] + np.sin(orientation) * (length+4)/2,
-                  centroid[1] + np.cos(orientation) * (length+4)/2)
-
-            # ensure old pole is always first point
-            if p1[0] > p2[0]:
-                p1, p2 = p2, p1 # python is cool
-
-            profile = profile_line(image_masked, p1, p2, linewidth=width,
-                                   order=1, mode='constant', cval=0)
-
-            fl_profiles.append(profile)
-
-        # append whole profile, using plane name
-        setattr(Cell, 'fl_profiles_'+profile_plane, fl_profiles)
-
-    return
-
-# Calculate X projection at midcell and quarter position
-def x_profile_analysis(fov_id, peak_id, Cells, profile_plane='sub_c2'):
-    '''Calculate profile of plane along cell and add information to Cell object. Sums the fluorescent channel along the long axis of the cell.
-
-    Parameters
-    ----------
-    fov_id : int
-        FOV number of the lineage to analyze.
-    peak_id : int
-        Peak number of the lineage to analyze.
-    Cells : dict of Cell objects (from a Lineages dictionary)
-        Cells should be prefiltered to match fov_id and peak_id.
-    profile_plane : str
-        The suffix of the channel to analyze. 'c1', 'c2', 'sub_c2', etc.
-
-    '''
-
-    # width to sum over in pixels
-    line_width = 6
-
-    # Load data
-    fl_stack = load_stack(fov_id, peak_id, color=profile_plane)
-    seg_stack = load_stack(fov_id, peak_id, color='seg_unet')
-
-    # Load time table to determine first image index.
-    time_table = load_time_table()
-    t0 = times_all[0] # first time index
-
-    # Loop through cells
-    for Cell in Cells.values():
-
-        # print(Cell.id)
-
-        # initialize data arrays for cell
-        midcell_fl_profiles = []
-        midcell_pts = []
-        quarter_fl_profiles = []
-        quarter_pts = []
-
-        # loop through each time point for this cell
-        for n, t in enumerate(Cell.times):
-            # Make mask of fluorescent channel using segmented image
-            image_masked = np.copy(fl_stack[t-t0])
-            # image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
-
-            # Sum along short axis, use the profile_line function from skimage
-            # Use orientation of cell as calculated from the ellipsoid fit,
-            # the known length of the cell from the feret diameter,
-            # and a width that is greater than the cell width.
-
-            # find end points for summing
-            centroid = Cell.centroids[n]
-            orientation = Cell.orientations[n]
-            length = Cell.lengths[n]
-            width = Cell.widths[n]
-
-            # midcell
-            # give 2 pixel buffer to each end to capture area outside cell.
-            md_p1 = (centroid[0] - np.cos(orientation) * (width+8)/2,
-                     centroid[1] - np.sin(orientation) * (width+8)/2)
-            md_p2 = (centroid[0] + np.cos(orientation) * (width+8)/2,
-                     centroid[1] + np.sin(orientation) * (width+8)/2)
-
-            # ensure lower x point is always first
-            if md_p1[1] > md_p2[1]:
-                md_p1, md_p2 = md_p2, md_p1 # python is cool
-            midcell_pts.append((md_p1, md_p2))
-
-            # print(t, centroid, orientation, md_p1, md_p2)
-            md_profile = profile_line(image_masked, md_p1, md_p2,
-                                      linewidth=line_width,
-                                      order=1, mode='constant', cval=0)
-            midcell_fl_profiles.append(md_profile)
-
-            # quarter position, want to measure at mother end
-            if orientation > 0:
-                yq = centroid[0] - np.sin(orientation) * 0.5 * (length * 0.5)
-                xq = centroid[1] + np.cos(orientation) * 0.5 * (length * 0.5)
-            else:
-                yq = centroid[0] + np.sin(orientation) * 0.5 * (length * 0.5)
-                xq = centroid[1] - np.cos(orientation) * 0.5 * (length * 0.5)
-
-            q_p1 = (yq - np.cos(orientation) * (width+8)/2,
-                    xq - np.sin(orientation) * (width+8)/2)
-            q_p2 = (yq + np.cos(orientation) * (width+8)/2,
-                    xq + np.sin(orientation) * (width+8)/2)
-
-            if q_p1[1] > q_p2[1]:
-                q_p1, q_p2 = q_p2, q_p1
-            quarter_pts.append((q_p1, q_p2))
-
-            q_profile = profile_line(image_masked, q_p1, q_p2,
-                                     linewidth=line_width,
-                                     order=1, mode='constant', cval=0)
-            quarter_fl_profiles.append(q_profile)
-
-        # append whole profile, using plane name
-        setattr(Cell, 'fl_md_profiles_'+profile_plane, midcell_fl_profiles)
-        setattr(Cell, 'midcell_pts', midcell_pts)
-        setattr(Cell, 'fl_quar_profiles_'+profile_plane, quarter_fl_profiles)
-        setattr(Cell, 'quarter_pts', quarter_pts)
-
-    return
-
-# Calculate X projection at midcell and quarter position
-def constriction_analysis(fov_id, peak_id, Cells, plane='sub_c1'):
-    '''Calculate profile of plane along cell and add information to Cell object. Sums the fluorescent channel along the long axis of the cell.
-
-    Parameters
-    ----------
-    fov_id : int
-        FOV number of the lineage to analyze.
-    peak_id : int
-        Peak number of the lineage to analyze.
-    Cells : dict of Cell objects (from a Lineages dictionary)
-        Cells should be prefiltered to match fov_id and peak_id.
-    plane : str
-        The suffix of the channel to analyze. 'c1', 'c2', 'sub_c2', etc.
-
-    '''
-
-    # Load data
-    sub_stack = load_stack(fov_id, peak_id, color=plane)
-    seg_stack = load_stack(fov_id, peak_id, color='seg_unet')
-
-    # Load time table to determine first image index.
-    time_table = load_time_table()
-    t0 = times_all[0] # first time index
-
-    # Loop through cells
-    for Cell in Cells.values():
-
-        # print(Cell.id)
-
-        # initialize data arrays for cell
-        midcell_imgs = [] # Just a small image of the midcell
-        midcell_sums = [] # holds sum of pixel values in midcell area
-        midcell_vars = [] # variances
-
-        coeffs_2nd = [] # coeffiients for fitting
-
-        # loop through each time point for this cell
-        for n, t in enumerate(Cell.times):
-            # Make mask of subtracted image
-            image_masked = np.copy(sub_stack[t-t0])
-            image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
-
-            # make a box aroud the midcell from which to calculate stats
-            centroid = Cell.centroids[n]
-            orientation = Cell.orientations[n]
-            length = Cell.lengths[n]
-            slice_l = np.around(length/4).astype('int')
-            width = Cell.widths[n]
-            slice_w = np.around(width/2).astype('int') + 3
-            slice_l = slice_w
-
-            # rotate box and then slice out area around centroid
-            if orientation > 0:
-                rot_angle = 90 - orientation * (180 / np.pi)
-            else:
-                rot_angle = -90 - orientation * (180 / np.pi)
-
-            rotated = rotate(image_masked, rot_angle, resize=False,
-                             center=centroid, mode='constant', cval=0)
-            centroid = [int(coord) for coord in centroid]
-            cropped_md = rotated[centroid[0]-slice_l:centroid[0]+slice_l,
-                                 centroid[1]-slice_w:centroid[1]+slice_w]
-
-            # sum across with widths
-            md_widths = np.array([np.around(sum(row),5) for row in cropped_md])
-
-            # fit widths
-            x_pixels = np.arange(1, len(md_widths)+1) - (len(md_widths)+1)/2
-            p_guess = (1, 1, 1)
-            popt, pcov = curve_fit(poly2o, x_pixels, md_widths, p0=p_guess)
-            a, b, c = popt
-            # save coefficients
-            coeffs_2nd.append(a)
-
-            # go backwards through coeeficients and find at which index the coeff becomes negative.
-            constriction_index = None
-            for i, coeff in enumerate(reversed(coeffs_2nd), start=0):
-                if coeff < 0:
-                    constriction_index = i
-                    break
-
-            # fix index
-            if constriction_index == None:
-                constriction_index = len(coeffs_2nd) - 1 # make it last point if it was not found
-            else:
-                constriction_index = len(coeffs_2nd) - constriction_index - 1
-
-            # midcell_imgs.append(cropped_md)
-            # midcell_sums.append(np.sum(cropped_md))
-            # midcell_vars.append(np.var(cropped_md))
-
-        # append whole profile, using plane name
-        # setattr(Cell, 'md_image_'+plane, midcell_imgs)
-        # setattr(Cell, 'md_sums', midcell_sums)
-        # setattr(Cell, 'md_vars', midcell_vars)
-
-        setattr(Cell, 'constriction_time', Cell.times[constriction_index])
-
-    return
-
-# Calculate pole age of cell and add as attribute
-def calculate_pole_age(Cells):
-    '''Finds the pole age of each end of the cell. Adds this information to the cell object.
-
-    This should maybe move to helpers
-    '''
-
-    # run through once and set up default
-    for cell_id, cell_tmp in six.iteritems(Cells):
-        cell_tmp.poleage = None
-
-    for cell_id, cell_tmp in six.iteritems(Cells):
-        # start from r1 cells which have r1 parents in the list.
-        # these cells are old pole mothers.
-    #     if cell_tmp.parent in Cells and cell_tmp.birth_label == 1:
-
-        # less stringent requirement that the cell just r1
-        if cell_tmp.birth_label == 1:
-
-            # label this cell
-            cell_tmp.poleage = (1000, 0) # closed end age first, 1000 for old pole.
-
-            # label the daughter cell 01 if it is in the list
-            if cell_tmp.daughters[1] in Cells:
-                # sets poleage of this cell and recursively goes through descendents.
-                Cells = set_poleages(cell_tmp.daughters[1], 1, Cells)
-
-    return Cells
-
-def set_poleages(cell_id, daughter_index, Cells):
-    '''Determines pole ages for cells. Only for cells which are not old-pole mother.'''
-
-    parent_poleage = Cells[Cells[cell_id].parent].poleage
-
-    # the lower daughter
-    if daughter_index == 0:
-        Cells[cell_id].poleage = (parent_poleage[0]+1, 0)
-    elif daughter_index == 1:
-        Cells[cell_id].poleage = (0, parent_poleage[1]+1)
-
-    for i, daughter_id in enumerate(Cells[cell_id].daughters):
-        if daughter_id in Cells:
-            Cells = set_poleages(daughter_id, i, Cells)
-
-    return Cells
-
-def poly2o(x, a, b, c):
-    '''Second order polynomial of the form
-       y = a*x^2 + bx + c'''
-
-    return a*x**2 + b*x + c
 
 def nd2ToTIFF(params):
     '''
@@ -4523,13 +2917,9 @@ def nd2ToTIFF(params):
         os.makedirs(p['TIFF_dir'])
 
     # Load ND2 files into a list for processing
-    if p['nd2ToTIFF']['external_directory']:
-        nd2files = glob.glob(os.path.join(p['nd2ToTIFF']['external_directory'], "*.nd2"))
-        information("Found %d files to analyze from external directory." % len(nd2files))
-    else:
-        information("Experiment directory: {:s}".format(p['experiment_directory']))
-        nd2files = glob.glob(os.path.join(p['experiment_directory'], "*.nd2"))
-        information("Found %d files to analyze in experiment directory." % len(nd2files))
+    information("Experiment directory: {:s}".format(p['experiment_directory']))
+    nd2files = glob.glob(os.path.join(p['experiment_directory'], "*.nd2"))
+    information("Found %d files to analyze in experiment directory." % len(nd2files))
 
     for nd2_file in nd2files:
         file_prefix = os.path.split(os.path.splitext(nd2_file)[0])[1]
@@ -4663,12 +3053,43 @@ def compile(params):
 
     if p['FOV']:
         if '-' in p['FOV']:
-            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
-                                   int(p['FOV'].split("-")[1])+1)
+            user_spec_fovs = range(int(p['FOV'].split("-")[0]),int(p['FOV'].split("-")[1])+1)
         else:
             user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
     else:
         user_spec_fovs = []
+
+    if p['inspect']:
+        viewer = napari.current_viewer()
+        viewer.layers.clear()
+        fov_id_list = sorted(user_spec_fovs)
+
+        # remove fovs if the user specified so
+        for fov_id in fov_id_list:
+            found_files = glob.glob(os.path.join(p['TIFF_dir'], '*xy%02d.tif' % fov_id))# get all tiffs
+
+            # found_files = [filepath.split('/')[-1] for filepath in found_files] # remove pre-path
+            found_files = sorted(found_files) # should sort by timepoint
+
+            sample = io.imread(found_files[0])
+
+            lazy_imread = delayed(io.imread)  # lazy reader
+            lazy_arrays = [lazy_imread(fn) for fn in found_files]
+            dask_arrays = [
+                da.from_delayed(delayed_reader, shape=sample.shape, dtype=sample.dtype)
+                for delayed_reader in lazy_arrays
+            ]
+            # Stack into one large dask.array
+            stack = da.stack(dask_arrays, axis=0)
+            
+            # viewer.add_image(stack,name='FOV %02d' % fov_id,contrast_limits=[90,250])
+            viewer.add_image(stack,name='FOV %02d' % fov_id)
+
+        viewer.grid.enabled = True
+        grid_w = int(len(fov_id_list)/17)+1
+        grid_h = int(len(fov_id_list)/grid_w)+1
+        viewer.grid.shape = (grid_h,grid_w)
+        return
 
     information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
@@ -4754,396 +3175,34 @@ def compile(params):
         else:
             warning('No TIFF files found')
 
-        if p['compile']['find_channels_method'] == 'peaks':
+        # initialize pool for analyzing image metadata
+        pool = Pool(p['num_analyzers'])
 
-            # initialize pool for analyzing image metadata
-            pool = Pool(p['num_analyzers'])
+        # loop over images and get information
+        for fn in found_files:
+            # get_params gets the image metadata and puts it in analyzed_imgs dictionary
+            # for each file name. True means look for channels
 
-            # loop over images and get information
-            for fn in found_files:
-                # get_params gets the image metadata and puts it in analyzed_imgs dictionary
-                # for each file name. True means look for channels
+            # This is the non-parallelized version (useful for debug)
+            # analyzed_imgs[fn] = get_tif_params(fn, True)
 
-                # This is the non-parallelized version (useful for debug)
-                # analyzed_imgs[fn] = get_tif_params(fn, True)
+            # Parallelized
+            analyzed_imgs[fn] = pool.apply_async(get_tif_params, args=(fn, True))
 
-                # Parallelized
-                analyzed_imgs[fn] = pool.apply_async(get_tif_params, args=(fn, True))
+        information('Waiting for image analysis pool to be finished.')
 
-            information('Waiting for image analysis pool to be finished.')
+        pool.close() # tells the process nothing more will be added.
+        pool.join() # blocks script until everything has been processed and workers exit
 
-            pool.close() # tells the process nothing more will be added.
-            pool.join() # blocks script until everything has been processed and workers exit
+        information('Image analysis pool finished, getting results.')
 
-            information('Image analysis pool finished, getting results.')
-
-            # get results from the pool and put them in a dictionary
-            for fn in analyzed_imgs.keys():
-                result = analyzed_imgs[fn]
-                if result.successful():
-                    analyzed_imgs[fn] = result.get() # put the metadata in the dict if it's good
-                else:
-                    analyzed_imgs[fn] = False # put a false there if it's bad
-
-        elif p['compile']['find_channels_method'] == 'Unet':
-            # Use Unet trained on trap and central channel locations to locate, crop, and align traps
-            information("Identifying channel locations and aligning images using U-net.")
-
-            # load model to pass to algorithm
-            information("Loading model...")
-
-            # if namespace.modelfile:
-            #     model_file_path = namespace.modelfile
-            # else:
-            model_file_path = p['compile']['model_file_traps']
-            # *** Need parameter for weights
-            model = models.load_model(model_file_path, custom_objects={'tversky_loss': tversky_loss,'cce_tversky_loss': cce_tversky_loss})
-            information("Model loaded.")
-
-            # initialize pool for getting image metadata
-            pool = Pool(p['num_analyzers'])
-
-            # loop over images and get information
-            for fn in found_files:
-                # get_params gets the image metadata and puts it in analyzed_imgs dictionary
-                # for each file name. Won't look for channels, just gets the metadata for later use by Unet
-
-                # This is the non-parallelized version (useful for debug)
-                # analyzed_imgs[fn] = get_initial_tif_params(fn)
-
-                # Parallelized
-                analyzed_imgs[fn] = pool.apply_async(get_initial_tif_params, args=(fn,))
-
-            information('Waiting for image metadata pool to be finished.')
-            pool.close() # tells the process nothing more will be added.
-            pool.join() # blocks script until everything has been processed and workers exit
-
-            information('Image metadata pool finished, getting results.')
-
-            # get results from the pool and put them in a dictionary
-            for fn in analyzed_imgs.keys():
-               result = analyzed_imgs[fn]
-               if result.successful():
-                   analyzed_imgs[fn] = result.get() # put the metadata in the dict if it's good
-               else:
-                   analyzed_imgs[fn] = False # put a false there if it's bad
-
-            # print(analyzed_imgs)
-
-            # set up some variables for Unet and image aligment/cropping
-            file_names = [key for key in analyzed_imgs.keys()]
-            file_names.sort() # sort the file names by time
-            file_names = np.asarray(file_names)
-            fov_ids = [analyzed_imgs[key]['fov'] for key in analyzed_imgs.keys()]
-
-            unique_fov_ids = np.unique(fov_ids)
-
-            if p['compile']['do_channel_masks']:
-                channel_masks = {}
-
-            for fov_id in unique_fov_ids:
-
-                information('Performing trap segmentation for fov_id: {}'.format(fov_id))
-                #print(analyzed_imgs)
-                fov_indices = np.where(fov_ids == fov_id)[0]
-                # print(fov_indices)
-                fov_file_names = [file_names[idx] for idx in fov_indices]
-                trap_align_metadata = {'first_frame_name': fov_file_names[0],
-                                    'frame_count': len(fov_file_names),
-                                    'plane_number': len(analyzed_imgs[fn]['planes']),
-                                    'trap_height': p['compile']['trap_crop_height'],
-                                    'trap_width': p['compile']['trap_crop_width'],
-                                    'phase_plane': p['phase_plane'],
-                                    'phase_plane_index': p['moviemaker']['phase_plane_index'],
-                                    'shift_distance': 256,
-                                    'full_frame_size': 2048}
-
-                dilator = np.ones((1,300))
-
-                # create weights for taking weighted mean of several runs of Unet over various crops of the first image in the series. This helps remove "blind spots" from the neural network at the edges of each crop of the original image.
-                stack_weights = get_weights_array(np.zeros((trap_align_metadata['full_frame_size'],trap_align_metadata['full_frame_size'])), trap_align_metadata['shift_distance'], subImageNumber=16, padSubImageNumber=25)[0,...]
-                # print(stack_weights.shape) #uncomment for debugging
-
-                # get prediction of where traps are located in first image
-                imgPath = os.path.join(p['experiment_directory'], p['image_directory'],
-                                       trap_align_metadata['first_frame_name'])
-                img = io.imread(imgPath)
-                # detect if there are multiple imaging channels, and rearrange image if necessary, keeping only the phase image
-                img = permute_image(img, trap_align_metadata)
-                if p['debug']:
-                    io.imshow(img/np.max(img))
-                    plt.title("Initial phase image")
-                    plt.show()
-
-                # produces predition stack with 3 "pages", index 0 is for traps, index 1 is for central tough, index 2 is for background
-                information("Predicting trap locations for first frame.")
-                first_frame_trap_prediction = get_frame_predictions(img,
-                                                                        model,
-                                                                        stack_weights,
-                                                                        trap_align_metadata['shift_distance'],
-                                                                        subImageNumber=16,
-                                                                        padSubImageNumber=25,
-                                                                        debug=p['debug'])
-
-                if p['debug']:
-                    fig,ax = plt.subplots(nrows=1, ncols=4, figsize=(12,12))
-                    ax[0].imshow(img)
-                    for i in range(first_frame_trap_prediction.shape[-1]):
-                        ax[i+1].imshow(first_frame_trap_prediction[:,:,i])
-                    plt.show()
-
-                # flatten prediction stack such that each pixel of the resulting 2D image is the index of the prediction image above with the highest predicted probability
-                class_predictions = np.argmax(first_frame_trap_prediction, axis=2)
-
-                traps = class_predictions == 0 # returns boolean array where our intial guesses at trap locations are True
-
-                if p['debug']:
-                    io.imshow(traps)
-                    plt.title('Initial trap masks')
-                    plt.show()
-
-                trap_labels = measure.label(traps)
-                trap_props = measure.regionprops(trap_labels)
-
-                trap_area_threshold = p['compile']['trap_area_threshold']
-                trap_bboxes = get_frame_trap_bounding_boxes(trap_labels,
-                                                                   trap_props,
-                                                                   trapAreaThreshold=trap_area_threshold,
-                                                                   trapWidth=trap_align_metadata['trap_width'],
-                                                                   trapHeight=trap_align_metadata['trap_height'])
-
-                # create boolean array to contain filtered, correctly-shaped trap bounding boxes
-                first_frame_trap_mask = np.zeros(traps.shape)
-                for i,bbox in enumerate(trap_bboxes):
-                    first_frame_trap_mask[bbox[0]:bbox[2],bbox[1]:bbox[3]] = True
-
-                good_trap_labels = measure.label(first_frame_trap_mask)
-                good_trap_props = measure.regionprops(good_trap_labels)
-
-                # widen the traps to merge them into "trap regions" above and below the central trough
-                dilated_traps = morphology.dilation(first_frame_trap_mask, dilator)
-
-                if p['debug']:
-                    io.imshow(dilated_traps)
-                    plt.title('Dilated trap masks')
-                    plt.show()
-
-                dilated_trap_labels = measure.label(dilated_traps)
-                dilated_trap_props = measure.regionprops(dilated_trap_labels)
-                # filter merged trap regions by area
-                areas = [reg.area for reg in dilated_trap_props]
-                labels = [reg.label for reg in dilated_trap_props]
-
-                for idx,area in enumerate(areas):
-                    if area < p['compile']['merged_trap_region_area_threshold']:
-
-                        label = labels[idx]
-                        dilated_traps[dilated_trap_labels == label] = 0
-
-                dilated_trap_labels = measure.label(dilated_traps)
-                dilated_trap_props = measure.regionprops(dilated_trap_labels)
-
-                if p['debug']:
-                    io.imshow(dilated_traps)
-                    plt.title("Area-filtered dilated traps")
-                    plt.show()
-
-                # get centroids for each "trap region" identified in first frame
-                centroids = np.round(np.asarray([reg.centroid for reg in dilated_trap_props]))
-                if p['debug']:
-                    print(centroids)
-
-                # test whether we could crop a (512,512) square from each "trap region", with the centroids as the centers of the crops, withoug going out-of-bounds
-                top_test = centroids[:,0]-256 > 0
-                bottom_test = centroids[:,0]+256 < dilated_trap_labels.shape[0]
-                test_array = np.stack((top_test,bottom_test))
-
-                # get the index of the first identified "trap region" that we can get our (512,512) crop from, use that centroid for nucleus of cropping a stack of phase images with shape (frame_number,512,512,1) from all images in series
-                if p['debug']:
-                    print(test_array)
-                    print(np.all(test_array,axis=0))
-
-                good_trap_region_index = np.where(np.all(test_array, axis=0))[0][0]
-                centroid = centroids[good_trap_region_index,:].astype('uint16')
-                if p['debug']:
-                    print(centroid)
-
-                # get the (frame_number,512,512,1)-sized stack for image aligment
-                align_region_stack = np.zeros((trap_align_metadata['frame_count'],512,512,1), dtype='uint16')
-
-                for frame,fn in enumerate(fov_file_names):
-                    imgPath = os.path.join(p['experiment_directory'],p['image_directory'],fn)
-                    frame_img = io.imread(imgPath)
-                    # detect if there are multiple imaging channels, and rearrange image if necessary, keeping only the phase image
-                    frame_img = permute_image(frame_img, trap_align_metadata)
-                    align_region_stack[frame,:,:,0] = frame_img[centroid[0]-256:centroid[0]+256,
-                                                             centroid[1]-256:centroid[1]+256]
-
-                # if p['debug']:
-                #     colNum = 10
-                #     fig,ax = plt.subplots(ncols=colNum, figsize=(20,20))
-
-                #     for pltIdx in range(colNum):
-                #         ax[pltIdx].imshow(align_region_stack[pltIdx*10,:,:,0])
-
-                #     plt.title('Alignment stack images');
-                #     plt.show();
-
-                # run model on all frames
-                batch_size=p['compile']['channel_prediction_batch_size']
-                information("Predicting trap regions for (512,512) slice through all frames.")
-
-                data_gen_args = {'batch_size':batch_size,
-                         'n_channels':1,
-                         'normalize_to_one':True,
-                         'shuffle':False}
-                predict_gen_args = {'verbose':1,
-                        'use_multiprocessing':True,
-                        'workers':p['num_analyzers']}
-                # predict_gen_args = {'verbose':1,
-                #         'use_multiprocessing':False}
-
-                img_generator = TrapSegmentationDataGenerator(align_region_stack, **data_gen_args)
-
-                align_region_predictions = model.predict(img_generator, **predict_gen_args)
-                #align_region_stack = mm3.apply_median_filter_and_normalize(align_region_stack)
-                #align_region_predictions = model.predict(align_region_stack, batch_size=batch_size)
-                # reduce dimensionality such that the class predictions are now (frame_number,512,512), and each voxel is labelled as the predicted region, i.e., 0=trap, 1=central trough, 2=background.
-                align_region_class_predictions = np.argmax(align_region_predictions, axis=3)
-
-                # if p['debug']:
-                #     colNum = 10
-                #     fig,ax = plt.subplots(ncols=colNum, figsize=(20,20))
-
-                #     for pltIdx in range(colNum):
-                #         ax[pltIdx].imshow(align_region_class_predictions[pltIdx*10,:,:])
-
-                #     plt.title('Alignment stack predictions');
-                #     plt.show();
-
-                # get boolean array where trap predictions are True
-                align_traps = align_region_class_predictions == 0
-
-                # if p['debug']:
-                #     colNum = 10
-                #     fig,ax = plt.subplots(ncols=colNum, figsize=(20,20))
-
-                #     for pltIdx in range(colNum):
-                #         ax[pltIdx].imshow(align_traps[pltIdx*10,:,:])
-
-                #     plt.title('Alignment trap masks');
-                #     plt.show();
-
-                # allocate array to store filtered traps over time
-                align_trap_mask_stack = np.zeros(align_traps.shape)
-                for frame in range(trap_align_metadata['frame_count']):
-
-                    frame_trap_labels = measure.label(align_traps[frame,:,:])
-                    frame_trap_props = measure.regionprops(frame_trap_labels)
-
-                    trap_bboxes = get_frame_trap_bounding_boxes(frame_trap_labels,
-                                                                    frame_trap_props,
-                                                                    trapAreaThreshold=trap_area_threshold,
-                                                                    trapWidth=trap_align_metadata['trap_width'],
-                                                                    trapHeight=trap_align_metadata['trap_height'])
-
-                    for i,bbox in enumerate(trap_bboxes):
-                        align_trap_mask_stack[frame,bbox[0]:bbox[2],bbox[1]:bbox[3]] = True
-
-                # if p['debug']:
-                #     colNum = 10
-                #     fig,ax = plt.subplots(ncols=colNum, figsize=(20,20))
-
-                #     for pltIdx in range(colNum):
-                #         ax[pltIdx].imshow(align_trap_mask_stack[pltIdx*10,:,:])
-
-                #     plt.title('Filtered alignment trap masks');
-                #     plt.show();
-
-                labelled_align_trap_mask_stack = measure.label(align_trap_mask_stack)
-
-                trapTriggered = False
-                for frame in range(trap_align_metadata['frame_count']):
-                    anyTraps = np.any(labelled_align_trap_mask_stack[frame,:,:] > 0)
-                    # if anyTraps is False, that means no traps were detected for this frame. This usuall occurs due to a bug in our imaging system,
-                    #    which can cause it to miss the occasional frame. Should be fine to snag labels from prior frame.
-                    if not anyTraps:
-                        trapTriggered = True
-                        information("Frame at index {} has no detected traps. Borrowing labels from an adjacent frame.".format(frame))
-                        if frame > 0:
-                            labelled_align_trap_mask_stack[frame,:,:] = labelled_align_trap_mask_stack[frame-1,:,:]
-                        else:
-                            labelled_align_trap_mask_stack[frame,:,:] = labelled_align_trap_mask_stack[frame+1,:,:]
-
-                if trapTriggered:
-                    repaired_align_trap_mask_stack = labelled_align_trap_mask_stack > 0
-                    labelled_align_trap_mask_stack = measure.label(repaired_align_trap_mask_stack)
-
-                align_trap_props = measure.regionprops(labelled_align_trap_mask_stack)
-
-                areas = np.array([trap.area for trap in align_trap_props])
-                labels = [trap.label for trap in align_trap_props]
-                good_align_trap_props = []
-                bad_align_trap_props = []
-                #mode_area = stats.mode(areas)[0]
-                expected_area = trap_align_metadata['trap_width'] * trap_align_metadata['trap_height'] * trap_align_metadata['frame_count']
-
-                if p['debug']:
-                    pprint(areas)
-                    print(expected_area)
-
-                    if not expected_area in areas:
-                        print("No trap has expected total area. Saving labelled masks for debugging as labelled_align_trap_mask_stack.tif")
-                        io.imsave("labelled_align_trap_mask_stack.tif", labelled_align_trap_mask_stack.astype('uint8'))
-                        io.imsave("masks.tif", align_traps.astype('uint8'))
-                        # occasionally our microscope misses an image, resulting in no traps for a single frame. This obviously messes up image alignment here....
-
-                for trap in align_trap_props:
-                    if trap.area != expected_area:
-                        bad_align_trap_props.append(trap.label)
-                    else:
-                        good_align_trap_props.append(trap)
-
-                for label in bad_align_trap_props:
-                    labelled_align_trap_mask_stack[labelled_align_trap_mask_stack == label] = 0
-
-                align_centroids = []
-                for frame in range(trap_align_metadata['frame_count']):
-                    align_centroids.append([reg.centroid for reg in measure.regionprops(labelled_align_trap_mask_stack[frame,:,:])])
-
-                align_centroids = np.asarray(align_centroids)
-                shifts = np.mean(align_centroids - align_centroids[0,:,:], axis=1)
-                integer_shifts = np.round(shifts).astype('int16')
-
-                good_trap_bboxes_dict = {}
-                for trap in good_trap_props:
-                    good_trap_bboxes_dict[trap.label] = trap.bbox
-
-                # pprint(good_trap_bboxes_dict) # uncomment for debugging
-                bbox_shift_dict = shift_bounding_boxes(good_trap_bboxes_dict, integer_shifts, img.shape[0])
-                # pprint(bbox_shift_dict) # uncomment for debugging
-
-                trap_images_fov_dict, trap_closed_end_px_dict =crop_traps(fov_file_names, good_trap_props, good_trap_labels, bbox_shift_dict, trap_align_metadata)
-
-                for fn in fov_file_names:
-                    analyzed_imgs[fn]['channels'] = trap_closed_end_px_dict[fn]
-
-                if p['compile']['do_channel_masks']:
-                    fov_channel_masks = make_channel_masks_CNN(bbox_shift_dict)
-                    channel_masks[fov_id] = fov_channel_masks
-                    # pprint(channel_masks) # uncomment for debugging
-
-                if p['compile']['do_slicing']:
-
-                    if p['output'] == "TIFF":
-
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore")
-                            save_tiffs(trap_images_fov_dict, analyzed_imgs, fov_id)
-
-                    elif p['output'] == "HDF5":
-                        # Or write it to hdf5
-                        save_hdf5(trap_images_fov_dict, fov_file_names, analyzed_imgs, fov_id, channel_masks)
+        # get results from the pool and put them in a dictionary
+        for fn in analyzed_imgs.keys():
+            result = analyzed_imgs[fn]
+            if result.successful():
+                analyzed_imgs[fn] = result.get() # put the metadata in the dict if it's good
+            else:
+                analyzed_imgs[fn] = False # put a false there if it's bad
 
         # save metadata to a .pkl and a human readable txt file
         information('Saving metadata from analyzed images...')
@@ -5165,838 +3224,53 @@ def compile(params):
 
     elif p['compile']['do_channel_masks']:
 
-        if p['compile']['find_channels_method'] == 'peaks':
-            # only calculate channels masks from images before t_end in case it is specified
-            if t_start:
-                analyzed_imgs = {fn : i_metadata for fn, i_metadata in six.iteritems(analyzed_imgs) if i_metadata['t'] >= t_start}
-            if t_end:
-                analyzed_imgs = {fn : i_metadata for fn, i_metadata in six.iteritems(analyzed_imgs) if i_metadata['t'] <= t_end}
+        # only calculate channels masks from images before t_end in case it is specified
+        if t_start:
+            analyzed_imgs = {fn : i_metadata for fn, i_metadata in six.iteritems(analyzed_imgs) if i_metadata['t'] >= t_start}
+        if t_end:
+            analyzed_imgs = {fn : i_metadata for fn, i_metadata in six.iteritems(analyzed_imgs) if i_metadata['t'] <= t_end}
 
-            # Uses channelinformation from the already processed image data
-            channel_masks = make_masks(analyzed_imgs)
+        # Uses channelinformation from the already processed image data
+        channel_masks = make_masks(analyzed_imgs)
 
-        elif p['compile']['find_channels_method'] == 'Unet':
-
-            # save the channel mask dictionary to a pickle and a text file
-            with open(os.path.join(p['ana_dir'], 'channel_masks.pkl'), 'wb') as cmask_file:
-                pickle.dump(channel_masks, cmask_file, protocol=pickle.HIGHEST_PROTOCOL)
-            with open(os.path.join(p['ana_dir'], 'channel_masks.txt'), 'w') as cmask_file:
-                pprint(channel_masks, stream=cmask_file)
 
     ### Slice and write TIFF files into channels ###################################################
     if p['compile']['do_slicing']:
 
         information("Saving channel slices.")
-        if p['compile']['find_channels_method'] == 'peaks':
 
-            # do it by FOV. Not set up for multiprocessing
-            for fov, peaks in six.iteritems(channel_masks):
+        # do it by FOV. Not set up for multiprocessing
+        for fov, peaks in six.iteritems(channel_masks):
 
-                # skip fov if not in the group
-                if user_spec_fovs and fov not in user_spec_fovs:
-                    continue
+            # skip fov if not in the group
+            if user_spec_fovs and fov not in user_spec_fovs:
+                continue
 
-                information("Loading images for FOV %03d." % fov)
+            information("Loading images for FOV %03d." % fov)
 
-                # get filenames just for this fov along with the julian date of acquistion
-                send_to_write = [[k, v['t']] for k, v in six.iteritems(analyzed_imgs) if v['fov'] == fov]
+            # get filenames just for this fov along with the julian date of acquistion
+            send_to_write = [[k, v['t']] for k, v in six.iteritems(analyzed_imgs) if v['fov'] == fov]
 
-                # sort the filenames by jdn
-                send_to_write = sorted(send_to_write, key=lambda time: time[1])
+            # sort the filenames by jdn
+            send_to_write = sorted(send_to_write, key=lambda time: time[1])
 
-                if p['output'] == 'TIFF':
-                    #This is for loading the whole raw tiff stack and then slicing through it
-                    tiff_stack_slice_and_write(send_to_write, channel_masks, analyzed_imgs)
+            if p['output'] == 'TIFF':
+                #This is for loading the whole raw tiff stack and then slicing through it
+                tiff_stack_slice_and_write(send_to_write, channel_masks, analyzed_imgs)
 
-                elif p['output'] == 'HDF5':
-                    # Or write it to hdf5
-                    hdf5_stack_slice_and_write(send_to_write, channel_masks, analyzed_imgs)
+            elif p['output'] == 'HDF5':
+                # Or write it to hdf5
+                hdf5_stack_slice_and_write(send_to_write, channel_masks, analyzed_imgs)
 
-            information("Channel slices saved.")
-
-def fov_plot_channels(fov_id, crosscorrs, specs, outputdir='.', phase_plane='c1'):
-    '''
-    Creates a plot with the channels with guesses for empties and full channels.
-    The plot is saved in PDF format.
-
-    Parameters
-    fov_id : str
-        file name of the hdf5 file name in originals
-    crosscorrs : dictionary
-        dictionary for cross correlation values for all fovs.
-    specs: dictionary
-        dictionary for channal assignment (Analyze/Don't Analyze/Background).
-
-    '''
-
-    information("Plotting channels for FOV %d." % fov_id)
-
-    # set up figure for user assited choosing
-    n_peaks = len(specs[fov_id].keys())
-    axw=1
-    axh=4*axw
-    nrows=3
-    ncols=int(n_peaks)
-    fig = plt.figure(num='none', facecolor='w',figsize=(ncols*axw,nrows*axh))
-    gs = gridspec.GridSpec(nrows,ncols,wspace=0.5,hspace=0.1,top=0.90)
-
-    # plot the peaks peak by peak using sorted list
-    sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
-    npeaks = len(sorted_peaks)
-
-    for n, peak_id in enumerate(sorted_peaks):
-        if crosscorrs:
-            peak_xc = crosscorrs[fov_id][peak_id] # get cross corr data from dict
-
-        # load data for figure
-        image_data = load_stack(fov_id, peak_id, color=phase_plane)
-
-        first_img = rescale_intensity(image_data[0,:,:]) # phase image at t=0
-        last_img = rescale_intensity(image_data[-1,:,:]) # phase image at end
-
-        # append an axis handle to ax list while adding a subplot to the figure which has a
-        axhi = fig.add_subplot(gs[0,n])
-        axmid = fig.add_subplot(gs[1,n])
-        axlo = fig.add_subplot(gs[2,n])
-
-        # plot the first image in each channel in top row
-        ax=axhi
-        ax.imshow(first_img,cmap=plt.cm.gray, interpolation='nearest')
-        ax.axis('off')
-        ax.set_title(str(peak_id), fontsize = 12)
-        if n == 0:
-            ax.set_ylabel("first time point")
-
-        # plot middle row using last time point with highlighting for empty/full
-        ax=axmid
-        ax.axis('off')
-        #ax.imshow(last_img,cmap=plt.cm.gray, interpolation='nearest')
-        #H,W = last_img.shape
-        #img = np.zeros((H,W,3))
-        if specs[fov_id][peak_id] == 1: # 1 means analyze, show green
-            #img[:,:,1]=last_img
-            cmap=plt.cm.Greens_r
-        elif specs[fov_id][peak_id] == 0: # 0 means reference, show blue
-            #img[:,:,2]=last_img
-            cmap=plt.cm.Blues_r
-        else: # otherwise show red, means don't analyze
-            #img[:,:,0]=last_img
-            cmap=plt.cm.Reds_r
-        ax.imshow(last_img,cmap=cmap, interpolation='nearest')
-
-        # format
-        if n == 0:
-            ax.set_ylabel("last time point")
-
-        # finally plot the cross correlations a cross time
-        ax=axlo
-        if crosscorrs: # don't try to plot if it's not there.
-            ccs = peak_xc['ccs'] # list of cc values
-            ax.plot(ccs,range(len(ccs)))
-            ax.set_title('avg=%1.2f' % peak_xc['cc_avg'], fontsize = 8)
-        else:
-            ax.plot(np.zeros(10), range(10))
-
-        ax.get_xaxis().set_ticks([0.8,0.9,1.0])
-        ax.set_xlim((0.8,1))
-        ax.tick_params('x',labelsize=8)
-        if not n == 0:
-            ax.set_yticks([])
-        else:
-            ax.set_ylabel("time index, CC on X")
-
-
-    fig.suptitle("FOV {:d}".format(fov_id),fontsize=14)
-    fileout=os.path.join(outputdir,'fov_xy{:03d}.pdf'.format(fov_id))
-    fig.savefig(fileout,bbox_inches='tight',pad_inches=0)
-    plt.close('all')
-    information("Written FOV {}'s channels in {}".format(fov_id,fileout))
-
-    return specs
-
-def fov_cell_segger_plot_channels(fov_id, predictionDict, specs, outputdir='.', phase_plane='c1'):
-    '''
-    Creates a plot with the channels with guesses for empties and full channels.
-    The plot is saved in PDF format.
-
-    Parameters
-    fov_id : str
-        file name of the hdf5 file name in originals
-    predictionDict : dictionary
-        dictionary for cross correlation values for all fovs.
-    specs: dictionary
-        dictionary for channal assignment (Analyze/Don't Analyze/Background).
-
-    '''
-
-    information("Plotting channels for FOV %d." % fov_id)
-
-    # set up figure for user assited choosing
-    n_peaks = len(specs[fov_id].keys())
-    axw=1
-    axh=4*axw
-    nrows=3
-    ncols=int(n_peaks)
-    fig = plt.figure(num='none', facecolor='w',figsize=(ncols*axw,nrows*axh))
-    gs = gridspec.GridSpec(nrows,ncols,wspace=0.5,hspace=0.1,top=0.90)
-
-    # plot the peaks peak by peak using sorted list
-    sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
-    npeaks = len(sorted_peaks)
-
-    for n, peak_id in enumerate(sorted_peaks):
-        if predictionDict:
-            predictions = predictionDict[fov_id][peak_id] # get predictions array
-
-        # load data for figure
-        image_data = load_stack(fov_id, peak_id, color=phase_plane)
-
-        first_img = rescale_intensity(image_data[0,:,:]) # phase image at t=0
-        last_img = rescale_intensity(image_data[-1,:,:]) # phase image at end
-
-        # append an axis handle to ax list while adding a subplot to the figure which has a
-        axhi = fig.add_subplot(gs[0,n])
-        axmid = fig.add_subplot(gs[1,n])
-        axlo = fig.add_subplot(gs[2,n])
-
-        # plot the first image in each channel in top row
-        ax=axhi
-        ax.imshow(first_img,cmap=plt.cm.gray, interpolation='nearest')
-        ax.axis('off')
-        ax.set_title(str(peak_id), fontsize = 12)
-        if n == 0:
-            ax.set_ylabel("first time point")
-
-        # plot middle row using last time point with highlighting for empty/full
-        ax=axmid
-        ax.axis('off')
-        #ax.imshow(last_img,cmap=plt.cm.gray, interpolation='nearest')
-        #H,W = last_img.shape
-        #img = np.zeros((H,W,3))
-        if specs[fov_id][peak_id] == 1: # 1 means analyze, show green
-            #img[:,:,1]=last_img
-            cmap=plt.cm.Greens_r
-        elif specs[fov_id][peak_id] == 0: # 0 means reference, show blue
-            #img[:,:,2]=last_img
-            cmap=plt.cm.Blues_r
-        else: # otherwise show red, means don't analyze
-            #img[:,:,0]=last_img
-            cmap=plt.cm.Reds_r
-        ax.imshow(last_img,cmap=cmap, interpolation='nearest')
-
-        # format
-        if n == 0:
-            ax.set_ylabel("last time point")
-
-        # finally plot the prediction values as horizontal bar chart
-        ax=axlo
-        if predictionDict:
-            ax.barh(range(len(predictions)), predictions)
-            #ax.vlines(x=p['channel_picker']['channel_picking_threshold'], ymin=-1, ymax=5, linestyles='dashed',colors='red')
-            ax.set_title('cell count', fontsize = 8)
-        else:
-            ax.plot(np.zeros(10), range(10))
-
-        # ax.set_xlim((0,1)) # set limits to (0,1)
-        #ax.get_xaxis().set_ticks([])
-        if not n == 0:
-            ax.get_yaxis().set_ticks([])
-        else:
-            ax.set_yticklabels(labels=["","1","2","3","4","5"])
-            ax.set_ylabel("")
-
-    fig.suptitle("FOV {:d}".format(fov_id),fontsize=14)
-    fileout=os.path.join(outputdir,'fov_xy{:03d}.pdf'.format(fov_id))
-    fig.savefig(fileout,bbox_inches='tight',pad_inches=0)
-    plt.close('all')
-    information("Written FOV {}'s channels in {}".format(fov_id,fileout))
-
-    return specs
-
-# function which makes the UI plot
-def fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images):
-    '''Creates a plot with the channels with guesses for empties and full channels,
-    and requires the user to choose which channels to use for analysis and which to
-    average for empties and subtraction.
-
-    Parameters
-    fov_file : str
-        file name of the hdf5 file name in originals
-    fov_xcorrs : dictionary
-        dictionary for cross correlation values for all fovs.
-
-    Returns
-    bgdr_peaks : list
-        list of peak id's (int) of channels to be used for subtraction
-    spec_file_pkl : pickle file
-        saves the lists cell_peaks, bgrd_peaks, and drop_peaks to a pkl file
-
-    '''
-
-    information("Starting channel picking for FOV %d." % fov_id)
-
-    # define functions here so they have access to variables
-    # for UI. change specification of channel
-    def onclick_cells(event):
-        try:
-            peak_id = int(event.inaxes.get_title())
-        except AttributeError:
-            return
-
-        # reset image to be updated based on user clicks
-        ax_id = sorted_peaks.index(peak_id) * 3 + 1
-        new_img = last_imgs[sorted_peaks.index(peak_id)]
-        ax[ax_id].imshow(new_img, cmap=plt.cm.gray, interpolation='nearest')
-
-        # if it says analyze, change to empty
-        if specs[fov_id][peak_id] == 1:
-            specs[fov_id][peak_id] = 0
-            ax[ax_id].imshow(np.dstack((ones_array*0.1, ones_array*0.1, ones_array)), alpha=0.25)
-            #mm3.information("peak %d now set to empty." % peak_id)
-
-        # if it says empty, change to don't analyze
-        elif specs[fov_id][peak_id] == 0:
-            specs[fov_id][peak_id] = -1
-            ax[ax_id].imshow(np.dstack((ones_array, ones_array*0.1, ones_array*0.1)), alpha=0.25)
-            #mm3.information("peak %d now set to ignore." % peak_id)
-
-        # if it says don't analyze, change to analyze
-        elif specs[fov_id][peak_id] == -1:
-            specs[fov_id][peak_id] = 1
-            ax[ax_id].imshow(np.dstack((ones_array*0.1, ones_array, ones_array*0.1)), alpha=0.25)
-            #mm3.information("peak %d now set to analyze." % peak_id)
-
-        plt.draw()
-        return
-
-    # set up figure for user assited choosing
-    n_peaks = len(specs[fov_id].keys())
-    fig = plt.figure(figsize=(int(n_peaks/2), 12))
-    fig.set_size_inches(int(n_peaks/2),12)
-    ax = [] # for axis handles
-
-    # plot the peaks peak by peak using sorted list
-    sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
-    npeaks = len(sorted_peaks)
-    last_imgs = [] # list that holds last images for updating figure
-
-    for n, peak_id in enumerate(sorted_peaks, start=1):
-        if crosscorrs:
-            peak_xc = crosscorrs[fov_id][peak_id] # get cross corr data from dict
-
-        # load data for figure
-        # image_data = mm3.load_stack(fov_id, peak_id, color='c1')
-
-        # first_img = rescale_intensity(image_data[0,:,:]) # phase image at t=0
-        # last_img = rescale_intensity(image_data[-1,:,:]) # phase image at end
-        last_imgs.append(UI_images[fov_id][peak_id]['last']) # append for updating later
-        # del image_data # clear memory (maybe)
-
-        # append an axis handle to ax list while adding a subplot to the figure which has a
-        # column for each peak and 3 rows
-
-        # plot the first image in each channel in top row
-        ax.append(fig.add_subplot(3, npeaks, n))
-        ax[-1].imshow(UI_images[fov_id][peak_id]['first'],
-                      cmap=plt.cm.gray, interpolation='nearest')
-        ax = format_channel_plot(ax, peak_id) # format axis and title
-        if n == 1:
-            ax[-1].set_ylabel("first time point")
-
-        # plot middle row using last time point with highlighting for empty/full
-        ax.append(fig.add_subplot(3, npeaks, n + npeaks))
-        ax[-1].imshow(UI_images[fov_id][peak_id]['last'],
-                      cmap=plt.cm.gray, interpolation='nearest')
-
-        # color image based on if it is thought empty or full
-        ones_array = np.ones_like(UI_images[fov_id][peak_id]['last'])
-        if specs[fov_id][peak_id] == 1: # 1 means analyze, show green
-            ax[-1].imshow(np.dstack((ones_array*0.1, ones_array, ones_array*0.1)), alpha=0.25)
-        else: # otherwise show red, means don't analyze
-            ax[-1].imshow(np.dstack((ones_array, ones_array*0.1, ones_array*0.1)), alpha=0.25)
-
-        # format
-        ax = format_channel_plot(ax, peak_id)
-        if n == 1:
-            ax[-1].set_ylabel("last time point")
-
-        # finally plot the cross correlations a cross time
-        ax.append(fig.add_subplot(3, npeaks, n + 2*npeaks))
-        if crosscorrs: # don't try to plot if it's not there.
-            ccs = peak_xc['ccs'] # list of cc values
-            ax[-1].plot(ccs, range(len(ccs)))
-            ax[-1].set_title('avg=%1.2f' % peak_xc['cc_avg'], fontsize = 8)
-        else:
-            pass
-            # ax[-1].plot(np.zeros(10), range(10))
-
-        ax[-1].set_xlim((0.8,1))
-        ax[-1].get_xaxis().set_ticks([])
-        if not n == 1:
-            ax[-1].get_yaxis().set_ticks([])
-        else:
-            ax[-1].set_ylabel("time index, CC on X")
-
-    # show the plot finally
-    fig.suptitle("FOV %d" % fov_id)
-
-    # enter user input
-    # ask the user to correct cell/nocell calls
-    cells_handler = fig.canvas.mpl_connect('button_press_event', onclick_cells)
-    #plt.close() resolves the event loop running error but the window stops getting displayed
-    #https://stackoverflow.com/questions/27280777/pylab-show-qcoreapplicationexec-the-event-loop-is-already-running
-
-    # matplotlib has difefrent behavior for interactions in different versions.
-    if float(mpl.__version__[:3]) < 1.5: # check for verions less than 1.5
-        plt.show(block=False)
-        raw_input("Click colored channels to toggle between analyze (green), use for empty (blue), and ignore (red).\nPrees enter to go to the next FOV.")
-    else:
-        print("Click colored channels to toggle between analyze (green), use for empty (blue), and ignore (red).\nClose figure to go to the next FOV.")
-        plt.show(block=True)
-    fig.canvas.mpl_disconnect(cells_handler)
-    plt.close()
-
-    return specs
-
-def fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images, params):
-
-    if not os.path.isdir(params['channel_select_dir']):
-        os.mkdir(params['channel_select_dir'])
-
-    n_peaks = len(specs[fov_id].keys())
-    fig = plt.figure(figsize=(int(n_peaks/2), 9))
-    fig.set_size_inches(int(n_peaks/2),9)
-    ax=[]
-    # plot the peaks peak by peak using sorted list
-    sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
-    npeaks = len(sorted_peaks)
-    last_imgs = [] # list that holds last images for updating figure
-
-    for n, peak_id in enumerate(sorted_peaks, start=1):
-        if crosscorrs:
-            peak_xc = crosscorrs[fov_id][peak_id] # get cross corr data from dict
-
-        # load data for figure
-        # image_data = mm3.load_stack(fov_id, peak_id, color='c1')
-
-        # first_img = rescale_intensity(image_data[0,:,:]) # phase image at t=0
-        # last_img = rescale_intensity(image_data[-1,:,:]) # phase image at end
-        last_imgs.append(UI_images[fov_id][peak_id]['last']) # append for updating later
-        # del image_data # clear memory (maybe)
-
-        # append an axis handle to ax list while adding a subplot to the figure which has a
-        # column for each peak and 3 rows
-
-        # plot the first image in each channel in top row
-        ax.append(fig.add_subplot(3, npeaks, n))
-        ax[-1].imshow(UI_images[fov_id][peak_id]['first'],
-                      cmap=plt.cm.gray, interpolation='nearest')
-        ax = format_channel_plot(ax, peak_id) # format axis and title
-        if n == 1:
-            ax[-1].set_ylabel("first time point")
-
-        # plot middle row using last time point with highlighting for empty/full
-        ax.append(fig.add_subplot(3, npeaks, n + npeaks))
-        ax[-1].imshow(UI_images[fov_id][peak_id]['last'],
-                      cmap=plt.cm.gray, interpolation='nearest')
-
-        # # color image based on if it is thought empty or full
-        # ones_array = np.ones_like(UI_images[fov_id][peak_id]['last'])
-        # if specs[fov_id][peak_id] == 1: # 1 means analyze, show green
-        #     ax[-1].imshow(np.dstack((ones_array*0.1, ones_array, ones_array*0.1)), alpha=0.25)
-        # else: # otherwise show red, means don't analyze
-        #     ax[-1].imshow(np.dstack((ones_array, ones_array*0.1, ones_array*0.1)), alpha=0.25)
-
-        # format
-        ax = format_channel_plot(ax, peak_id)
-        if n == 1:
-            ax[-1].set_ylabel("last time point")
-
-        # finally plot the cross correlations a cross time
-        ax.append(fig.add_subplot(3, npeaks, n + 2*npeaks))
-        if crosscorrs: # don't try to plot if it's not there.
-            ccs = peak_xc['ccs'] # list of cc values
-            ax[-1].plot(ccs, range(len(ccs)))
-            ax[-1].set_title('avg=%1.2f' % peak_xc['cc_avg'], fontsize = 8)
-        else:
-            pass
-            # ax[-1].plot(np.zeros(10), range(10))
-
-        ax[-1].set_xlim((0.8,1))
-        ax[-1].get_xaxis().set_ticks([])
-        if not n == 1:
-            ax[-1].get_yaxis().set_ticks([])
-        else:
-            ax[-1].set_ylabel("time index, CC on X")
-
-    # show the plot finally
-    fig.suptitle("FOV %d" % fov_id)
-    plt.tight_layout(pad=0.2)
-    plt.savefig(os.path.join(params['channel_select_dir'],f"{fov_id}.png"))
-    plt.close()
-
-    information("Starting channel picking for FOV %d." % fov_id)
-    im=image.imread(os.path.join(params['channel_select_dir'],f"{fov_id}.png"))
-
-    tot=np.array(im)
-    napari.current_viewer().add_image(tot, name="Fov"+str(fov_id)+"_img", visible=False)
-    napari.current_viewer().add_points([], name="Fov"+str(fov_id)+"_pts", visible=False, face_color='r', size=20)
-    offset=43
-    # Add points in the points layer according to the cross-correlation value
-    namei="Fov"+str(fov_id)+"_img"
-    namep="Fov"+str(fov_id)+"_pts"
-    (max_height,max_width,_)=napari.current_viewer().layers[namei].data_raw.shape
-    width_per_peak=(max_width-offset)//npeaks
-
-    for i,peak_id in enumerate(sorted_peaks):
-
-        # Estimate the coordinates from peak id's index
-        x= offset+ width_per_peak*i + (4*width_per_peak)//5
-
-        # Adding the points at 1/3 height from bottom
-        # should be good enough for visualization
-        y1= (max_height)//2
-        y2= (max_height)//2 + 50
-
-        if specs[fov_id][peak_id]==0:
-            # empty(0) => 1 points in the peak partition
-            napari.current_viewer().layers[namep].add((y1, x))
-        elif specs[fov_id][peak_id]==-1:
-            # ignore(-1) => 2 points in the peak partition
-            napari.current_viewer().layers[namep].add((y1, x))
-            napari.current_viewer().layers[namep].add((y2, x))
-
-    return specs
-
-def channelProcessor(params):
-    ana_dir = params['ana_dir']
-    specs = yaml.safe_load(Path(ana_dir+'specs.yaml').read_text())
-
-    if params['FOV']:
-        if '-' in params['FOV']:
-            user_spec_fovs = range(int(params['FOV'].split("-")[0]),
-                                   int(params['FOV'].split("-")[1])+1)
-        else:
-            user_spec_fovs = [int(val) for val in params['FOV'].split(",")]
-    else:
-        user_spec_fovs = []
-
-    # load channel masks
-    channel_masks = load_channel_masks()
-
-    # make list of FOVs to process (keys of channel_mask file), but only if there are channels
-    fov_id_list = sorted([fov_id for fov_id, peaks in six.iteritems(channel_masks) if peaks])
-
-    # remove fovs if the user specified so
-    if (len(user_spec_fovs) > 0):
-        fov_id_list = [int(fov) for fov in fov_id_list if fov in user_spec_fovs]
-
-    # Mark all as analyze intitially
-    # The points layer analysis will take care later on
-    for fov_id in fov_id_list:
-        sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
-        for peak_id in sorted_peaks:
-            specs[fov_id][peak_id]=1
-
-    for fov_id in fov_id_list:
-        sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
-        npeaks = len(sorted_peaks)
-
-        namei="Fov"+str(fov_id)+"_img"
-        namep="Fov"+str(fov_id)+"_pts"
-        (_,max_width,_)=napari.current_viewer().layers[namei].data_raw.shape
-        pts=napari.current_viewer().layers[namep]._view_data
-        # print(f'{fov_id}', pts)
-        offset=43
-        width_per_peak=(max_width-offset)//npeaks
-
-        # analyze(1) => 0 points in the peak partition
-        # empty(0) => 1 points in the peak partition
-        # ignore(-1) => 2 points in the peak partititon
-
-        for pt in pts:
-            peak_id=sorted_peaks[max(0,min(int((pt[1]-offset)//width_per_peak), len(sorted_peaks)-1))]
-            specs[fov_id][peak_id]-=1
-
-    # Save out specs file in yaml format
-
-    with open(os.path.join(ana_dir, 'specs.yaml'), 'w') as specs_file:
-        yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
-    # print(specs)
-    print("Channel Picking Completed")
-
-# function for better formatting of channel plot
-def format_channel_plot(ax, peak_id):
-    '''Removes axis and puts peak as title from plot for channels'''
-    ax[-1].get_xaxis().set_ticks([])
-    ax[-1].get_yaxis().set_ticks([])
-    ax[-1].set_title(str(peak_id), fontsize = 8)
-    return ax
-
-# function to preload all images for all FOVs, hopefully saving time
-def preload_images(specs, fov_id_list):
-    '''This dictionary holds the first and last image
-    for all channels in all FOVS. It is passed to the UI so that the
-    figures can be populated much faster
-    '''
-
-    # Intialized the dicionary
-    UI_images = {}
-
-    for fov_id in fov_id_list:
-        information("Preloading images for FOV {}.".format(fov_id))
-        UI_images[fov_id] = {}
-        for peak_id in specs[fov_id].keys():
-            image_data = load_stack(fov_id, peak_id, color=params['phase_plane'])
-            UI_images[fov_id][peak_id] = {'first' : None, 'last' : None} # init dictionary
-             # phase image at t=0. Rescale intenstiy and also cut the size in half
-            first_image = params['channel_picker']['first_image']
-            UI_images[fov_id][peak_id]['first'] = image_data[first_image,::2,::2]
-            last_image = params['channel_picker']['last_image']
-            # phase image at end
-            UI_images[fov_id][peak_id]['last'] = image_data[last_image,::2,::2]
-
-    return UI_images
-
-### For when this script is run from the terminal ##################################
-def channelPicker(params):
-    '''mm3_ChannelPicker.py allows the user to identify full and empty channels.'''
-
-    # Load the project parameters file
-    information('Loading experiment parameters.')
-    p = params
-
-    if p['FOV']:
-        if '-' in p['FOV']:
-            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
-                                   int(p['FOV'].split("-")[1])+1)
-        else:
-            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
-    else:
-        user_spec_fovs = []
-
-    specfile = None
-
-    # set cross correlation calculation flag
-    # if namespace.saved_cross_correlations:
-    #     do_crosscorrs = False
-    # else:
-    do_crosscorrs = p['channel_picker']['do_crosscorrs']
-
-    do_CNN = p['channel_picker']['do_CNN']
-    do_seg = p['channel_picker']['do_seg']
-
-    # set interactive flag
-    # if namespace.noninteractive:
-    #     interactive = False
-    # else:
-    interactive = p['channel_picker']['interactive']
-
-    # assign shorthand directory names
-    ana_dir = os.path.join(p['experiment_directory'], p['analysis_directory'])
-    chnl_dir = os.path.join(p['experiment_directory'], p['analysis_directory'], 'channels')
-    hdf5_dir = os.path.join(p['experiment_directory'], p['analysis_directory'], 'hdf5')
-
-    # load channel masks
-    channel_masks = load_channel_masks()
-
-    # make list of FOVs to process (keys of channel_mask file), but only if there are channels
-    fov_id_list = sorted([fov_id for fov_id, peaks in six.iteritems(channel_masks) if peaks])
-
-    # remove fovs if the user specified so
-    if (len(user_spec_fovs) > 0):
-        fov_id_list = [int(fov) for fov in fov_id_list if fov in user_spec_fovs]
-
-    information("Found %d FOVs to process." % len(fov_id_list))
+        information("Channel slices saved.")
 
     ### Cross correlations ########################################################################
-    if do_CNN:
-        # a nested dict to hold predictions per channel per fov.
-        crosscorrs = None
-        predictionDict = {}
-
-        information('Loading model ....')
-
-        # read in model for inference of empty vs good traps
-        model_file_path = p['channel_picker']['channel_picker_model_file']
-        model = models.load_model(model_file_path)
-
-        information("Model loaded.")
-
-        for fov_id in fov_id_list:
-
-            predictionDict[fov_id] = {}
-
-            information('Inferring good, empty, and defective traps on fov_id {} using CNN.'.format(fov_id))
-
-            # get list of tiff file names
-            tiff_file_names = glob.glob(os.path.join(chnl_dir, "*xy{:0=3}*_c1.tif".format(fov_id)))
-            tiff_file_names.sort()
-            #print(len(tiff_file_names)) # uncomment for debugging
-
-            # parameters to pass to custom image generator class, TrapKymographPredictionDataGenerator
-            cnn_params = {'dim': (210,256),
-                      'batch_size': 40,
-                      'n_classes': 4,
-                      'n_channels': 1,
-                      'shuffle': False}
-            # set up the image data generator
-            channel_image_generator = TrapKymographPredictionDataGenerator(tiff_file_names, **cnn_params)
-
-            # run the model
-            predictions = model.predict(channel_image_generator)
-            #print(predictions.shape)
-            predictions = predictions[:len(tiff_file_names),:]
-            #print(predictions.shape)
-
-            # assign each prediction to the proper fov_id, peak_id in predictions dict
-            for i,peak_id in enumerate(sorted(channel_masks[fov_id].keys())):
-                # put prediction array into dictionary
-                #print(i, peak_id) # uncomment for debugging
-                predictionDict[fov_id][peak_id] = predictions[i,:]
-
-        # write predictions to pickle and text
-        information("Writing channel picking predictions file.")
-        with open(os.path.join(ana_dir,"channel_picker_CNN_results.pkl"), 'wb') as preds_file:
-            pickle.dump(predictionDict, preds_file, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(os.path.join(ana_dir,"channel_picker_CNN_results.txt"), 'w') as preds_file:
-            pprint(predictionDict, stream=preds_file)
-        information("Wrote channel picking predictions files.")
-
-    elif do_seg:
-        # a nested dict to hold predictions per channel per fov.
-        crosscorrs = None
-        predictionDict = {}
-
-        information('Loading model ....')
-
-        # read in model for inference of empty vs good traps
-        model_file_path = p['segment']['model_file']
-        model = models.load_model(model_file_path,
-                                  custom_objects={'bce_dice_loss': bce_dice_loss,
-                                                  'dice_loss': dice_loss})
-        unet_shape = (p['segment']['trained_model_image_height'],
-                      p['segment']['trained_model_image_width'])
-
-        cellClassThreshold = p['segment']['cell_class_threshold']
-        if cellClassThreshold == 'None': # yaml imports None as a string
-            cellClassThreshold = False
-        min_object_size = p['segment']['min_object_size']
-
-        information("Model loaded.")
-
-        # arguments to data generator
-        data_gen_args = {'batch_size':p['segment']['batch_size'],
-                         'n_channels':1,
-                         'normalize_to_one':True,
-                         'shuffle':False}
-        # arguments to predict_generator
-        predict_args = dict(use_multiprocessing=True,
-                            workers=p['num_analyzers'],
-                            verbose=1)
-
-        # predict_args = dict(use_multiprocessing=False,
-        #                     verbose=1)
-
-        for fov_id in fov_id_list:
-
-            predictionDict[fov_id] = {}
-
-            information('Inferring number of cells in five evenly spaced frames for each trap in fov {}.'.format(fov_id))
-
-            # assign each prediction to the proper fov_id, peak_id in predictions dict
-            counter = 0
-            peak_number = len(channel_masks[fov_id])
-            for i,peak_id in enumerate(sorted(channel_masks[fov_id].keys())):
-                # get list of tiff file names
-                tiff_file_name = glob.glob(os.path.join(chnl_dir, "*xy{:0=3}_p{:0=4}_c1.tif".format(fov_id, peak_id)))[0]
-
-                img_array = io.imread(tiff_file_name)
-                img_height = img_array.shape[1]
-                img_width = img_array.shape[2]
-                slice_increment = int(img_array.shape[0]/5)
-
-                # set up stack for images from all peaks
-                # this is a bit more complicated than just doing 5 images at a time, but it is much faster
-                #   because you don't have nearly as many data transfer steps
-                if i == 0:
-                    img_stack = np.zeros((5*peak_number,img_height,img_width),dtype='uint16')
-
-                # grab 5 images to load and run cell segmentation
-                for j in range(5):
-                    img_stack[counter,...] = img_array[slice_increment*j,...]
-                    counter += 1
-
-            pad_dict = get_pad_distances(unet_shape, img_height, img_width)
-
-            # pad image to correct size
-            if p['debug']:
-                print("Padding dictionary:", pad_dict)
-
-            img_stack = np.pad(img_stack,
-                               ((0,0),
-                               (pad_dict['top_pad'],pad_dict['bottom_pad']),
-                               (pad_dict['left_pad'],pad_dict['right_pad'])),
-                               mode='constant')
-            img_stack = np.expand_dims(img_stack, -1)
-
-            # set up image generator
-            image_generator = CellSegmentationDataGenerator(img_stack, **data_gen_args)
-            # run predictions
-            predictions = model.predict(image_generator, **predict_args)[:,:,:,0]
-            if p['debug']:
-                fig,ax = plt.subplots(ncols=5)
-                for i in range(5):
-                    ax[i].imshow(predictions[i,:,:])
-                plt.show()
-
-            # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
-            if cellClassThreshold:
-                predictions[predictions >= cellClassThreshold] = 1
-                predictions[predictions < cellClassThreshold] = 0
-                predictions = predictions.astype('uint8')
-
-                segmented_imgs = np.zeros(predictions.shape, dtype='uint8')
-                # process and label each frame of the channel
-                for frame in range(segmented_imgs.shape[0]):
-                    # get rid of small holes
-                    predictions[frame,:,:] = morphology.remove_small_holes(predictions[frame,:,:], min_object_size)
-                    # get rid of small objects.
-                    predictions[frame,:,:] = morphology.remove_small_objects(morphology.label(predictions[frame,:,:], connectivity=1), min_size=min_object_size)
-                    # remove labels which touch the boarder
-                    predictions[frame,:,:] = segmentation.clear_border(predictions[frame,:,:])
-                    # relabel now
-                    segmented_imgs[frame,:,:] = morphology.label(predictions[frame,:,:], connectivity=1)
-
-            else: # in this case you just want to scale the 0 to 1 float image to 0 to 255
-                information('Converting predictions to grayscale.')
-                segmented_imgs = np.around(predictions * 100)
-
-            # put number of cells detected into array for predictionDict
-            counter = 0
-            for i,peak_id in enumerate(sorted(channel_masks[fov_id].keys())):
-
-                cell_count_array = np.zeros(5, dtype='uint8')
-                for j in range(5):
-                    cell_count_array[j] = int(np.max(segmented_imgs[counter,:,:]))
-                    counter += 1
-
-                predictionDict[fov_id][peak_id] = cell_count_array
-
-        # write predictions to pickle and text
-        information("Writing channel picking predictions file.")
-        with open(os.path.join(ana_dir,"channel_picker_seg_results.pkl"), 'wb') as preds_file:
-            pickle.dump(predictionDict, preds_file, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(os.path.join(ana_dir,"channel_picker_seg_results.txt"), 'w') as preds_file:
-            pprint(predictionDict, stream=preds_file)
-        information("Wrote channel picking predictions files.")
-
-    elif do_crosscorrs:
+    if p['compile']['do_crosscorrs']:
         # a nested dict to hold cross corrs per channel per fov.
         crosscorrs = {}
 
         # for each fov find cross correlations (sending to pull)
-        for fov_id in fov_id_list:
+        for fov_id in user_spec_fovs:
             information("Calculating cross correlations for FOV %d." % fov_id)
 
             # nested dict keys are peak_ids and values are cross correlations
@@ -6022,7 +3296,7 @@ def channelPicker(params):
 
             information("Finished cross correlations for FOV %d." % fov_id)
 
-        # get results from the pool and put the results in the dictionary if succesful
+        #get results from the pool and put the results in the dictionary if succesful
         for fov_id, peaks in six.iteritems(crosscorrs):
             for peak_id, result in six.iteritems(peaks):
                 if result.successful():
@@ -6030,7 +3304,7 @@ def channelPicker(params):
                     # is full into the dictionary
                     crosscorrs[fov_id][peak_id] = {'ccs' : result.get(),
                                                    'cc_avg' : np.average(result.get()),
-                                                   'full' : np.average(result.get()) < p['channel_picker']['channel_picking_threshold']}
+                                                   'full' : np.average(result.get()) < p['compile']['channel_picking_threshold']}
                 else:
                     crosscorrs[fov_id][peak_id] = False # put a false there if it's bad
 
@@ -6040,13 +3314,13 @@ def channelPicker(params):
         #     for peak_id, result in six.iteritems(peaks):
         #         crosscorrs[fov_id][peak_id] = {'ccs' : result,
         #                                            'cc_avg' : np.average(result),
-        #                                            'full' : np.average(result) < p['channel_picker']['channel_picking_threshold']}
+        #                                            'full' : np.average(result) < p['compile']['channel_picking_threshold']}
 
         # write cross-correlations to pickle and text
         information("Writing cross correlations file.")
-        with open(os.path.join(ana_dir,"crosscorrs.pkl"), 'wb') as xcorrs_file:
+        with open(os.path.join(p['ana_dir'],"crosscorrs.pkl"), 'wb') as xcorrs_file:
             pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(os.path.join(ana_dir,"crosscorrs.txt"), 'w') as xcorrs_file:
+        with open(os.path.join(p['ana_dir'],"crosscorrs.txt"), 'w') as xcorrs_file:
             pprint(crosscorrs, stream=xcorrs_file)
         information("Wrote cross correlations files.")
 
@@ -6054,106 +3328,39 @@ def channelPicker(params):
     else:
         information('Loading precalculated cross-correlations.')
         try:
-            with open(os.path.join(ana_dir,'crosscorrs.pkl'), 'rb') as xcorrs_file:
+            with open(os.path.join(p['ana_dir'],'crosscorrs.pkl'), 'rb') as xcorrs_file:
                 crosscorrs = pickle.load(xcorrs_file)
         except:
             crosscorrs = None
             information('Could not load cross-correlations.')
 
     ### User selection (channel picking) #####################################################
-    if specfile == None:
-        information('Initializing specifications file.')
-        # nested dictionary of {fov : {peak : spec ...}) for if channel should
-        # be analyzed, used for empty, or ignored.
-        specs = {}
+    information('Initializing specifications file.')
+    # nested dictionary of {fov : {peak : spec ...}) for if channel should
+    # be analyzed, used for empty, or ignored.
+    specs = {}
 
-        # if there is cross corrs, use it. Otherwise, just make everything -1
-        if crosscorrs:
-            # update dictionary on initial guess from cross correlations
-            for fov_id, peaks in six.iteritems(crosscorrs):
-                specs[fov_id] = {}
-                for peak_id, xcorrs in six.iteritems(peaks):
-                    # update the guess incase the parameters file was changed
-                    xcorrs['full'] = xcorrs['cc_avg'] < p['channel_picker']['channel_picking_threshold']
+    # if there is cross corrs, use it. Otherwise, just make everything -1
+    if crosscorrs:
+        # update dictionary on initial guess from cross correlations
+        for fov_id, peaks in six.iteritems(crosscorrs):
+            specs[fov_id] = {}
+            for peak_id, xcorrs in six.iteritems(peaks):
+                # update the guess incase the parameters file was changed
+                xcorrs['full'] = xcorrs['cc_avg'] < p['compile']['channel_picking_threshold']
 
-                    if xcorrs['full'] == True:
-                        specs[fov_id][peak_id] = 1
-                    else: # default to don't analyze
-                        specs[fov_id][peak_id] = -1
-        elif do_CNN:
+                if xcorrs['full'] == True:
+                    specs[fov_id][peak_id] = 1
+                else: # default to don't analyze
+                    specs[fov_id][peak_id] = -1
+        #pprint(specs) # uncomment for debugging
 
-            # update dictionary with inference from CNN
-
-            for fov_id, peakPredictionsDict in six.iteritems(predictionDict):
-                fov_id = int(fov_id)
-                specs[fov_id] = {}
-                for peak_id, predictions in six.iteritems(peakPredictionsDict):
-
-                    if predictions[0] > p['channel_picker']['channel_picking_threshold']:
-                        specs[fov_id][peak_id] = 1
-                    else:
-                        specs[fov_id][peak_id] = -1
-
-            #pprint(specs) # uncomment for debugging
-
-        elif do_seg:
-
-            # update dictionary with inference from cell segmentation based decision
-
-            for fov_id, peakPredictionsDict in six.iteritems(predictionDict):
-                fov_id = int(fov_id)
-                specs[fov_id] = {}
-                for peak_id, predictions in six.iteritems(peakPredictionsDict):
-
-                    # if there was at least one cell in any of the frames checked, keep the trap
-                    if np.max(predictions) > 0:
-                        specs[fov_id][peak_id] = 1
-                    else:
-                        specs[fov_id][peak_id] = -1
-
-        else: # just set everything to 1 and go forward.
-            for fov_id, peaks in six.iteritems(channel_masks):
-                specs[fov_id] = {peak_id: -1 for peak_id in peaks.keys()}
-
-    else:
-        information('Loading supplied specifiication file.')
-        with open(specfile, 'r') as fin:
-            specs = yaml.load(fin)
-
-    if interactive:
-        # preload the images
-        information('Preloading images.')
-        UI_images = preload_images(specs, fov_id_list)
-
-        information('Starting channel picking.')
-        # go through the fovs again, same as above
-        for fov_id in fov_id_list:
-
-            if do_CNN:
-                specs = fov_CNN_choose_channels_UI(fov_id, predictionDict, specs, UI_images)
-            elif do_seg:
-                specs = fov_cell_segger_choose_channels_UI(fov_id, predictionDict, specs, UI_images)
-            else: # crosscorrs == None will default to just picking with no help.
-                #specs = fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images)
-                specs=fov_choose_channels_UI_II(fov_id, crosscorrs, specs, UI_images, params)
-
-    else:
-        outputdir = os.path.join(ana_dir, "fovs")
-        if not os.path.isdir(outputdir):
-            os.makedirs(outputdir)
-        for fov_id in fov_id_list:
-            if crosscorrs:
-                specs = fov_plot_channels(fov_id, crosscorrs, specs,
-                                          outputdir=outputdir, phase_plane=p['phase_plane'])
-            elif do_CNN:
-                specs = fov_CNN_plot_channels(fov_id, predictionDict, specs,
-                                              outputdir=outputdir, phase_plane=p['phase_plane'])
-            elif do_seg:
-                specs = fov_cell_segger_plot_channels(fov_id, predictionDict, specs,
-                                              outputdir=outputdir, phase_plane=p['phase_plane'])
+    else: # just set everything to 1 and go forward.
+        for fov_id, peaks in six.iteritems(channel_masks):
+            specs[fov_id] = {peak_id: -1 for peak_id in peaks.keys()}
 
     # Save out specs file in yaml format
-    with open(os.path.join(ana_dir, 'specs.yaml'), 'w') as specs_file:
+    with open(os.path.join(p['ana_dir'], 'specs.yaml'), 'w') as specs_file:
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
 
     information('Finished.')
@@ -6166,6 +3373,10 @@ def subtract(params):
     #p = mm3_.init_mm3_helpers() # initialized the helper library
     p=params
 
+    viewer = napari.current_viewer()
+    viewer.grid.enabled = True
+    viewer.grid.shape = (2,20)
+
     if p['FOV']:
         if '-' in p['FOV']:
             user_spec_fovs = range(int(p['FOV'].split("-")[0]),
@@ -6175,16 +3386,16 @@ def subtract(params):
     else:
         user_spec_fovs = []
 
-    information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
+    # information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
     sub_plane = 'c1'
 
     # Create folders for subtracted info if they don't exist
-    if p['output'] == 'TIFF':
-        if not os.path.exists(p['empty_dir']):
-            os.makedirs(p['empty_dir'])
-        if not os.path.exists(p['sub_dir']):
-            os.makedirs(p['sub_dir'])
+    # if p['output'] == 'TIFF':
+    if not os.path.exists(p['empty_dir']):
+        os.makedirs(p['empty_dir'])
+    if not os.path.exists(p['sub_dir']):
+        os.makedirs(p['sub_dir'])
 
     # load specs file
     specs = load_specs()
@@ -6238,12 +3449,216 @@ def subtract(params):
                                                         color=sub_plane, method=sub_method)
         information("Finished subtraction.")
 
+        viewer = napari.current_viewer()
+        
+
     # Else just end, they only wanted to do empty averaging.
     else:
         information("Skipping subtraction.")
         pass
+    
 
 def segmentUNet(params):
+    import tensorflow as tf
+    from tensorflow.keras.preprocessing.image import ImageDataGenerator
+    from tensorflow.keras import models, losses
+    from tensorflow.keras import backend as K
+
+
+    def segment_fov_unet(fov_id, specs, model, color=None):
+        '''
+        Segments the channels from one fov using the U-net CNN model.
+
+        Parameters
+        ----------
+        fov_id : int
+        specs : dict
+        model : TensorFlow model
+        '''
+
+        information('Segmenting FOV {} with U-net.'.format(fov_id))
+
+        if color is None:
+            color = params['phase_plane']
+
+        # load segmentation parameters
+        unet_shape = (params['segment']['trained_model_image_height'],
+                    params['segment']['trained_model_image_width'])
+
+        ### determine stitching of images.
+        # need channel shape, specifically the width. load first for example
+        # this assumes that all channels are the same size for this FOV, which they should
+        for peak_id, spec in six.iteritems(specs[fov_id]):
+            if spec == 1:
+                break # just break out with the current peak_id
+
+        img_stack = load_stack(fov_id, peak_id, color=color)
+        img_height = img_stack.shape[1]
+        img_width = img_stack.shape[2]
+
+        pad_dict = get_pad_distances(unet_shape, img_height, img_width)
+
+        # dermine how many channels we have to analyze for this FOV
+        ana_peak_ids = []
+        for peak_id, spec in six.iteritems(specs[fov_id]):
+            if spec == 1:
+                ana_peak_ids.append(peak_id)
+        ana_peak_ids.sort() # sort for repeatability
+
+        segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model)
+
+        information("Finished segmentation for FOV {}.".format(fov_id))
+
+        return
+    
+    def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model):
+
+        @magicgui(auto_call=True,threshold={"widget_type": "FloatSlider", "max": 1})
+        def DebugUnet(image_input:ImageData, threshold= 0.6)->LabelsData:
+            image_out = np.copy(image_input)
+            image_out[image_out >= threshold] = 1
+            image_out[image_out < threshold] = 0
+
+
+            image_out = image_out.astype(bool)
+
+            return image_out
+
+
+        batch_size = params['segment']['batch_size']
+        cellClassThreshold = params['segment']['cell_class_threshold']
+        if cellClassThreshold == 'None': # yaml imports None as a string
+            cellClassThreshold = False
+        min_object_size = params['segment']['min_object_size']
+
+        # arguments to data generator
+        # data_gen_args = {'batch_size':batch_size,
+        #                  'n_channels':1,
+        #                  'normalize_to_one':False,
+        #                  'shuffle':False}
+
+        #arguments to predict
+        predict_args = dict(use_multiprocessing=True,
+                            workers=params['num_analyzers'],
+                            verbose=1)
+
+        # predict_args = dict(use_multiprocessing=False,
+        #                     verbose=1)
+
+        for peak_id in ana_peak_ids:
+            information('Segmenting peak {}.'.format(peak_id))
+
+            img_stack = load_stack(fov_id, peak_id, color=params['phase_plane'])
+
+            if params['segment']['normalize_to_one']:
+                med_stack = np.zeros(img_stack.shape)
+                selem = morphology.disk(1)
+
+                for frame_idx in range(img_stack.shape[0]):
+                    tmpImg = img_stack[frame_idx,...]
+                    med_stack[frame_idx,...] = median(tmpImg, selem)
+
+                # robust normalization of peak's image stack to 1
+                max_val = np.max(med_stack)
+                img_stack = img_stack/max_val
+                img_stack[img_stack > 1] = 1
+
+            # trim and pad image to correct size
+            img_stack = img_stack[:, :unet_shape[0], :unet_shape[1]]
+            img_stack = np.pad(img_stack,
+                            ((0,0),
+                            (pad_dict['top_pad'],pad_dict['bottom_pad']),
+                            (pad_dict['left_pad'],pad_dict['right_pad'])),
+                            mode='constant')
+            img_stack = np.expand_dims(img_stack, -1) # TF expects images to be 4D
+            # set up image generator
+            # image_generator = CellSegmentationDataGenerator(img_stack, **data_gen_args)
+            image_datagen = ImageDataGenerator()
+            image_generator = image_datagen.flow(x=img_stack,
+                                                batch_size=batch_size,
+                                                shuffle=False) # keep same order
+
+            # predict cell locations. This has multiprocessing built in but I need to mess with the parameters to see how to best utilize it. ***
+            predictions = model.predict(image_generator, **predict_args)
+
+            # post processing
+            # remove padding including the added last dimension
+            predictions = predictions[:, pad_dict['top_pad']:unet_shape[0]-pad_dict['bottom_pad'],
+                                        pad_dict['left_pad']:unet_shape[1]-pad_dict['right_pad'], 0]
+
+            # pad back incase the image had been trimmed
+            predictions = np.pad(predictions,
+                                ((0,0),
+                                (0,pad_dict['bottom_trim']),
+                                (0,pad_dict['right_trim'])),
+                                mode='constant')
+
+            if params['segment']['save_predictions']:
+                pred_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, params['pred_img'])
+                if not os.path.isdir(params['pred_dir']):
+                    os.makedirs(params['pred_dir'])
+                int_preds = (predictions * 255).astype('uint8')
+                tiff.imsave(os.path.join(params['pred_dir'], pred_filename),
+                                int_preds, compress=4)
+
+            if params['interactive']:
+                viewer = napari.current_viewer()
+                viewer.layers.clear()
+                viewer.add_image(predictions,name='Predictions')
+                viewer.window.add_dock_widget(DebugUnet)
+                return
+                
+
+            # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
+            if cellClassThreshold:
+                predictions[predictions >= cellClassThreshold] = 1
+                predictions[predictions < cellClassThreshold] = 0
+                predictions = predictions.astype('uint8')
+
+                segmented_imgs = np.zeros(predictions.shape, dtype='uint8')
+                # process and label each frame of the channel
+                for frame in range(segmented_imgs.shape[0]):
+                    # get rid of small holes
+                    predictions[frame,:,:] = morphology.remove_small_holes(predictions[frame,:,:], min_object_size)
+                    # get rid of small objects.
+                    predictions[frame,:,:] = morphology.remove_small_objects(morphology.label(predictions[frame,:,:], connectivity=1), min_size=min_object_size)
+                    # remove labels which touch the boarder
+                    predictions[frame,:,:] = segmentation.clear_border(predictions[frame,:,:])
+                    # relabel now
+                    segmented_imgs[frame,:,:] = morphology.label(predictions[frame,:,:], connectivity=1)
+
+            else: # in this case you just want to scale the 0 to 1 float image to 0 to 255
+                information('Converting predictions to grayscale.')
+                segmented_imgs = np.around(predictions * 100)
+
+            # both binary and grayscale should be 8bit. This may be ensured above and is unneccesary
+            segmented_imgs = segmented_imgs.astype('uint8')
+
+            # save out the segmented stacks
+            if params['output'] == 'TIFF':
+                seg_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, params['seg_img'])
+                tiff.imsave(os.path.join(params['seg_dir'], seg_filename),
+                                segmented_imgs, compress=4)
+
+                out_counter = 0
+                while out_counter < 10:
+                    napari.current_viewer().add_image(segmented_imgs, name='Segmented' + '_xy1_p'+str(peak_id)+'_'+str(params['seg_img'])+'.tif', visible=True)
+                    out_counter +=1
+
+            if params['output'] == 'HDF5':
+                h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
+                # put segmented channel in correct group
+                h5g = h5f['channel_%04d' % peak_id]
+                # delete the dataset if it exists (important for debug)
+                if 'p%04d_%s' % (peak_id, params['seg_img']) in h5g:
+                    del h5g['p%04d_%s' % (peak_id, params['seg_img'])]
+
+                h5ds = h5g.create_dataset(u'p%04d_%s' % (peak_id, params['seg_img']),
+                                    data=segmented_imgs,
+                                    chunks=(1, segmented_imgs.shape[1], segmented_imgs.shape[2]),
+                                    maxshape=(None, segmented_imgs.shape[1], segmented_imgs.shape[2]),
+                                    compression="gzip", shuffle=True, fletcher32=True)
+                h5f.close()
 
     information('Loading experiment parameters.')
     p=params
@@ -6288,10 +3703,8 @@ def segmentUNet(params):
     # load model to pass to algorithm
     information("Loading model...")
 
-    # if namespace.modelfile:
-    #     model_file_path = namespace.modelfile
-    # else:
     model_file_path = p['segment']['model_file']
+
     # *** Need parameter for weights
     seg_model = models.load_model(model_file_path,
                               custom_objects={'bce_dice_loss': bce_dice_loss,
@@ -6356,7 +3769,7 @@ def segmentOTSU(params):
 
     information("Finished segmentation.")
 
-def Track(params):
+def Track_Cells(params):
 
     # Load the project parameters file
     information('Loading experiment parameters.')
@@ -6517,15 +3930,6 @@ def plot_lineage_images(Cells, fov_id, peak_id, Cells2=None, bgcolor='c1', fgcol
 
         ax[i].set_title(str(i + t_adj), color='white')
 
-    # save just the segmented images
-    # lin_dir = params['experiment_directory'] + params['analysis_directory'] + 'lineages/'
-    # if not os.path.exists(lin_dir):
-    #     os.makedirs(lin_dir)
-    # lin_filename = params['experiment_name'] + '_xy%03d_p%04d_nolin.png' % (fov_id, peak_id)
-    # lin_filepath = lin_dir + lin_filename
-    # fig.savefig(lin_filepath, dpi=75)
-    # plt.close()
-
     # Annotate each cell with information
     if plot_tracks:
         for cell_id in Cells:
@@ -6670,12 +4074,6 @@ def plot_lineage_images(Cells, fov_id, peak_id, Cells2=None, bgcolor='c1', fgcol
                     except:
                         pass
 
-            # this is for putting cell id on first time cell appears and when it divides
-            # this is broken, need to translate coordinates to correct location on figure.
-            # if n == 0 or n == len(Cells[cell_id].times)-1:
-            #     print(x/100.0, y/100.0, cell_id[9:])
-            #     ax[t].text(x/100.0, y/100.0, cell_id[9:], color='red', size=10, ha='center', va='center')
-
     return fig, ax
 
 def find_cells_of_birth_label(Cells, label_num=1):
@@ -6695,7 +4093,7 @@ def find_cells_of_birth_label(Cells, label_num=1):
 
     return fCells
 
-def Lineage(params,numSamples=10):
+def Lineage(params):
     # plotting lineage trees for complete cells
     # load specs file
     with open(os.path.join(params['ana_dir'], 'specs.yaml'), 'r') as specs_file:
@@ -6711,39 +4109,54 @@ def Lineage(params,numSamples=10):
     if not os.path.exists(lin_dir):
         os.makedirs(lin_dir)
 
-    # determine number of lineages to make
-    no_samples = numSamples
-    # list contains tuples of (fov_id, peak_id, timepoint)
-    sample_ids = []
-    for fov_id in specs.keys():
-        for peak_id, spec in specs[fov_id].items():
-            if spec == 1:
-                # now put the fov, peak, and a random timepoint in a tuple
-                sample_ids.append((fov_id, peak_id))
+    for fov_id in sorted(specs.keys()):
+        fov_id_d = fov_id
+        # determine which peaks are to be analyzed (those which have been subtracted)
+        for peak_id, spec in six.iteritems(specs[fov_id]):
+            if spec == 1: # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
+                peak_id_d = peak_id
+                sample_img = load_stack(fov_id,peak_id)
+                peak_len = np.shape(sample_img)[0]
 
-    # choose a random subset of these and sort them
-    sample_indicies = np.random.choice(len(sample_ids), no_samples)
-    sample_ids = sorted([sample_ids[i] for i in sample_indicies])
+                break
+        break
 
-    for sample in sample_ids:
-        fov_id, peak_id = sample
-        fig, ax = plot_lineage_images(Cells, fov_id, peak_id, Cells2,
-                                                bgcolor=params['phase_plane'])
-        lin_filename = params['experiment_name'] + '_xy%03d_p%04d_lin.png' % (fov_id, peak_id)
-        lin_filepath = os.path.join(lin_dir, lin_filename)
-        fig.savefig(lin_filepath, dpi=75)
-        img = image.imread(lin_filepath)
-        napari.current_viewer().add_image(img, name=lin_filename, visible=False)
-        plt.close(fig)
+    viewer = napari.current_viewer()
+    viewer.layers.clear()
+    # need this to avoid vispy bug for some reason
+    # related to https://github.com/napari/napari/issues/2584
+    viewer.add_image(np.zeros((1,1)))
+    viewer.layers.clear()
+    
+    fig, ax = plot_lineage_images(Cells, fov_id_d, peak_id_d, Cells2,
+                                            bgcolor=params['phase_plane'])
+    lin_filename = params['experiment_name'] + '_xy%03d_p%04d_lin.png' % (fov_id, peak_id)
+    lin_filepath = os.path.join(lin_dir, lin_filename)
+    fig.savefig(lin_filepath, dpi=75)
+    plt.close(fig)
+
+    img = io.imread(lin_filepath)
+    viewer = napari.current_viewer()
+    imgs = []
+    # get height of image
+    
+    # get the length of each peak
+    for i in range(0,len(img[0]),int(len(img[0])/peak_len)+1):
+        crop_img = img[:,i:i+300,:]
+        if len(crop_img[0]) == 300:
+            imgs.append(crop_img)
+
+    img_stack = np.stack(imgs, axis=0)
+
+    viewer.add_image(img_stack, name=lin_filename)
 
     information("Completed Plotting")
 
-def Compile(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
-output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', image_start : int=1, number_of_rows :int = 1, tiff_compress:int=5,
-do_metadata: bool=True, do_time_table: bool=True, do_channel_masks: bool=True, do_slicing:bool=True, find_channels_method:str='peaks',
-image_orientation : str= 'up', channel_width : int=10, channel_separation : int=45, channel_detection_snr : int=1, channel_length_pad : int=10,
-channel_width_pad : int=10, trap_crop_height: int=256, trap_crop_width: int=27, trap_area_threshold_1000X: float=2, channel_prediction_batch_size: int=15,
-merged_trap_region_area_threshold_1000X: float=400):
+@magic_factory(experiment_directory={'mode': 'd'},image_format = {"choices":['nd2','TIFF_from_elements','TIFF_from_nd2']})
+def Compile(experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'),experiment_name: str='20201008_sj1536', 
+image_directory:str='TIFF/', analysis_directory:str= 'analysis/', FOV:str='1', image_format:str='nd2',
+inspect:bool= True, phase_plane: str ='c1', image_start : int=1, image_end: int=80,
+ channel_width : int=10, channel_separation : int=45,xcorr_threshold: float=0.99):
     """Performs Mother Machine Analysis"""
 
     global params
@@ -6753,40 +4166,33 @@ merged_trap_region_area_threshold_1000X: float=400):
     params['image_directory']=image_directory
     params['analysis_directory']=analysis_directory
     params['FOV']=FOV
-    params['TIFF_source']=TIFF_source
-    params['output']=output
-    params['debug']=debug
+    params['TIFF_source']= image_format
+    params['output'] = 'TIFF'
+    params['inspect']=inspect
     params['phase_plane']=phase_plane
-    params['pxl2um']=pxl2um
     params['nd2ToTIFF']=dict()
     params['nd2ToTIFF']['image_start']=image_start
-    params['nd2ToTIFF']['image_end']=None
-    params['nd2ToTIFF']['number_of_rows']=number_of_rows
+    params['nd2ToTIFF']['image_end']=image_end
+    params['nd2ToTIFF']['number_of_rows']=1
     params['nd2ToTIFF']['crop_ymin']=None
     params['nd2ToTIFF']['crop_ymax']=None
     params['nd2ToTIFF']['2row_crop']=None
-    params['nd2ToTIFF']['tiff_compress']=tiff_compress
-    params['nd2ToTIFF']['external_directory']=external_directory
+    params['nd2ToTIFF']['tiff_compress']=5
     params['compile']=dict()
-    params['compile']['do_metadata' ]=do_metadata
-    params['compile']['do_time_table']=do_time_table
-    params['compile']['do_channel_masks']=do_channel_masks
-    params['compile']['do_slicing']=do_slicing
+    params['compile']['do_metadata' ]=True
+    params['compile']['do_time_table']=True
+    params['compile']['do_channel_masks']=True
+    params['compile']['do_slicing']=True
     params['compile']['t_end']=None
-    params['compile']['find_channels_method']=find_channels_method
-    #model_file_traps: str='/Users/sharan/Desktop/Physics/mm3-latest/weights/feature_weights_512x512_normed.hdf5',
-    params['compile']['model_file_traps']='/Users/sharan/Desktop/Physics/mm3-latest/weights/feature_weights_512x512_normed.hdf5'
-    params['compile']['image_orientation']=image_orientation
+    params['compile']['image_orientation']='auto'
     params['compile']['channel_width']=channel_width
     params['compile']['channel_separation']=channel_separation
-    params['compile']['channel_detection_snr']=channel_detection_snr
-    params['compile']['channel_length_pad']=channel_length_pad
-    params['compile']['channel_width_pad']=channel_width_pad
-    params['compile']['trap_crop_height']=trap_crop_height
-    params['compile']['trap_crop_width']=trap_crop_width
-    params['compile']['trap_area_threshold']=int(trap_area_threshold_1000X*1000)
-    params['compile']['channel_prediction_batch_size']=channel_prediction_batch_size
-    params['compile']['merged_trap_region_area_threshold']=int(merged_trap_region_area_threshold_1000X*1000)
+    params['compile']['channel_detection_snr']=1
+    params['compile']['channel_length_pad']=10
+    params['compile']['channel_width_pad']=10
+    params['compile']['do_crosscorrs'] = True
+    params['compile']['channel_picking_threshold'] = xcorr_threshold
+    params['compile']['alignment_pad'] = 10
 
     params['num_analyzers'] = multiprocessing.cpu_count()
 
@@ -6799,26 +4205,26 @@ merged_trap_region_area_threshold_1000X: float=400):
     params['sub_dir'] = os.path.join(params['ana_dir'], 'subtracted')
     params['seg_dir'] = os.path.join(params['ana_dir'], 'segmented')
     params['pred_dir'] = os.path.join(params['ana_dir'], 'predictions')
-    params['foci_seg_dir'] = os.path.join(params['ana_dir'], 'segmented_foci')
-    params['foci_pred_dir'] = os.path.join(params['ana_dir'], 'predictions_foci')
     params['cell_dir'] = os.path.join(params['ana_dir'], 'cell_data')
     params['track_dir'] = os.path.join(params['ana_dir'], 'tracking')
-    params['foci_track_dir'] = os.path.join(params['ana_dir'], 'tracking_foci')
 
     # use jd time in image metadata to make time table. Set to false if no jd time
-    if params['TIFF_source'] == 'elements' or params['TIFF_source'] == 'nd2ToTIFF':
+    if params['TIFF_source'] in {'nd2','TIFF_from_elements','TIFF_from_nd2'}:
         params['use_jd'] = True
     else:
         params['use_jd'] = False
 
-    nd2ToTIFF(params)
-    compile(params)
+    if params['TIFF_source']=='nd2':
+        nd2ToTIFF(params)
+        compile(params)
+    elif params['TIFF_source'] in {'TIFF_from_elements', 'TIFF_from_nd2'}:
+        compile(params)
     return
 
-def ChannelPicker(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory: str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
-output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_crosscorrs:bool=True, do_CNN:bool=False, interactive:bool=True, do_seg:bool=False,
-first_image: int=1, channel_picking_threshold: float =0.99, channel_picker_model_file='/Users/sharan/Desktop/Physics/mm3-latest/weights/empties_weights.hdf5', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, selection_done:bool=False):
-    """Performs Mother Machine Analysis"""
+@magic_factory(experiment_directory={'mode': 'd'},)
+def Subtract(experiment_name:str='20201008_sj1536',experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'), 
+    image_directory:str='TIFF/',  analysis_directory:str= 'analysis/', 
+    FOV:str='1-5', phase_plane: str ='c1', alignment_pad: int=10):
 
     global params
     params=dict()
@@ -6826,25 +4232,14 @@ first_image: int=1, channel_picking_threshold: float =0.99, channel_picker_model
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
     params['analysis_directory']=analysis_directory
+    params['output'] = 'TIFF'
     params['FOV']=FOV
-    params['TIFF_source']=TIFF_source
-    params['output']=output
-    params['debug']=debug
     params['phase_plane']=phase_plane
-    params['pxl2um']=pxl2um
+
     params['subtract']=dict()
-    params['subtract']['do_empties']=do_empties
-    params['subtract']['do_subtraction']=do_subtraction
+    params['subtract']['do_empties']=True
+    params['subtract']['do_subtraction']=True
     params['subtract']['alignment_pad']=alignment_pad
-    params['channel_picker']=dict()
-    params['channel_picker']['do_crosscorrs']=do_crosscorrs
-    params['channel_picker']['do_CNN']=do_CNN
-    params['channel_picker']['interactive']=interactive
-    params['channel_picker']['do_seg']=do_seg
-    params['channel_picker']['first_image']=first_image
-    params['channel_picker']['last_image']=-1
-    params['channel_picker']['channel_picking_threshold']=channel_picking_threshold
-    params['channel_picker']['channel_picker_model_file']=channel_picker_model_file
 
     params['num_analyzers'] = multiprocessing.cpu_count()
 
@@ -6856,31 +4251,15 @@ first_image: int=1, channel_picking_threshold: float =0.99, channel_picker_model
     params['empty_dir'] = os.path.join(params['ana_dir'], 'empties')
     params['sub_dir'] = os.path.join(params['ana_dir'], 'subtracted')
     params['seg_dir'] = os.path.join(params['ana_dir'], 'segmented')
-    params['pred_dir'] = os.path.join(params['ana_dir'], 'predictions')
-    params['foci_seg_dir'] = os.path.join(params['ana_dir'], 'segmented_foci')
-    params['foci_pred_dir'] = os.path.join(params['ana_dir'], 'predictions_foci')
     params['cell_dir'] = os.path.join(params['ana_dir'], 'cell_data')
     params['track_dir'] = os.path.join(params['ana_dir'], 'tracking')
-    params['foci_track_dir'] = os.path.join(params['ana_dir'], 'tracking_foci')
-    params['channel_select_dir']= os.path.join(params['ana_dir'], 'channel_picker')
 
-    # use jd time in image metadata to make time table. Set to false if no jd time
-    if params['TIFF_source'] == 'elements' or params['TIFF_source'] == 'nd2ToTIFF':
-        params['use_jd'] = True
-    else:
-        params['use_jd'] = False
+    subtract(params)
 
-    if selection_done:
-        channelProcessor(params)
-    else:
-        channelPicker(params)
-    return
-
-def Segment(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', model_file: str='/Users/sharan/Desktop/exp1/20200921_MG1655_256x32.hdf5', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
-output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', do_empties:bool=True, do_subtraction: bool=True, alignment_pad: int=10, do_segmentation=True, do_lineages=True,  OTSU_threshold: float= 1.0, first_opening_size: int=2,
-distance_threshold: int=2, second_opening_size: int=1, min_object_size:int= 25, trained_model_image_height: int=256, trained_model_image_width: int=32,
-batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= False, save_predictions:bool=False, OTSU :bool=True, UNet: bool=False):
-    """Performs Mother Machine Analysis"""
+@magic_factory(experiment_directory={'mode': 'd'})
+def SegmentOtsu(experiment_name:str='20201008_sj1536',experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'), image_directory:str='TIFF/',  analysis_directory:str= 'analysis/', 
+    FOV:str='1-5',interactive:bool=False, phase_plane: str ='c1',
+    OTSU_threshold = 1.0, first_opening_size: int=2, distance_threshold: int=2, second_opening_size: int=1, min_object_size:int= 25):
 
     global params
     params=dict()
@@ -6888,31 +4267,131 @@ batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= F
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
     params['analysis_directory']=analysis_directory
-    params['external_directory']=external_directory
+    params['output'] = 'TIFF'
     params['FOV']=FOV
-    params['TIFF_source']=TIFF_source
-    params['output']=output
-    params['debug']=debug
+    params['interactive']=interactive
     params['phase_plane']=phase_plane
-    params['pxl2um']=pxl2um
-    params['subtract']=dict()
-    params['subtract']['do_empties']=do_empties
-    params['subtract']['do_subtraction']=do_subtraction
-    params['subtract']['alignment_pad']=alignment_pad
+    
     params['segment']=dict()
-    params['segment']['do_segmentation']=do_segmentation
-    params['segment']['do_lineages']=do_lineages
     params['segment']['OTSU_threshold']=OTSU_threshold
     params['segment']['first_opening_size']=first_opening_size
     params['segment']['distance_threshold']=distance_threshold
     params['segment']['second_opening_size']=second_opening_size
     params['segment']['min_object_size']=min_object_size
+    params['num_analyzers'] = multiprocessing.cpu_count()
+
+    # useful folder shorthands for opening files
+    params['TIFF_dir'] = os.path.join(params['experiment_directory'], params['image_directory'])
+    params['ana_dir'] = os.path.join(params['experiment_directory'], params['analysis_directory'])
+    params['hdf5_dir'] = os.path.join(params['ana_dir'], 'hdf5')
+    params['chnl_dir'] = os.path.join(params['ana_dir'], 'channels')
+    params['empty_dir'] = os.path.join(params['ana_dir'], 'empties')
+    params['sub_dir'] = os.path.join(params['ana_dir'], 'subtracted')
+    params['seg_dir'] = os.path.join(params['ana_dir'], 'segmented')
+    params['cell_dir'] = os.path.join(params['ana_dir'], 'cell_data')
+    params['track_dir'] = os.path.join(params['ana_dir'], 'tracking')
+
+
+    ## if debug is checked, clicking run will launch this new widget. need to pass fov & peak
+    if params['interactive']:
+        viewer = napari.current_viewer()
+        viewer.window.add_dock_widget(DebugOtsu,name='debugotsu')
+    else:
+        segmentOTSU(params)
+
+    return
+
+@magicgui(auto_call=True,first_opening_size = dict(widget_type='SpinBox',step=1),
+    OTSU_threshold= dict(widget_type="FloatSpinBox",min=0,max=2,step=0.01))
+def DebugOtsu(OTSU_threshold = 1.0, first_opening_size: int=2, 
+    distance_threshold: int=2, second_opening_size: int=1, min_object_size:int= 25):
+
+    warnings.filterwarnings("ignore", 'The probability range is outside [0, 1]')
+    
+    params['segment']['OTSU_threshold']=OTSU_threshold
+    params['segment']['first_opening_size']=first_opening_size
+    params['segment']['distance_threshold']=distance_threshold
+    params['segment']['second_opening_size']=second_opening_size
+    params['segment']['min_object_size']=min_object_size
+
+    p=params
+
+    if p['FOV']:
+        if '-' in p['FOV']:
+            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
+                                   int(p['FOV'].split("-")[1])+1)
+        else:
+            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
+    else:
+        user_spec_fovs = []
+
+    # set segmentation image name for saving and loading segmented images
+    p['seg_img'] = 'seg_otsu'
+
+    # load specs file
+    specs = load_specs()
+
+    # make list of FOVs to process (keys of channel_mask file)
+    fov_id_list = sorted([fov_id for fov_id in specs.keys()])
+
+    # remove fovs if the user specified so
+    if user_spec_fovs:
+        fov_id_list[:] = [fov for fov in fov_id_list if fov in user_spec_fovs]
+
+
+    ### Do Segmentation by FOV and then peak #######################################################
+
+    for fov_id in fov_id_list:
+        fov_id_d = fov_id
+        # determine which peaks are to be analyzed (those which have been subtracted)
+        for peak_id, spec in six.iteritems(specs[fov_id]):
+            if spec == 1: # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
+                peak_id_d = peak_id
+                break
+        break
+
+    ## pull out first fov & peak id with cells
+    sub_stack = load_stack(fov_id_d, peak_id_d, color='sub_{}'.format(params['phase_plane']))
+
+    # image by image for debug
+    segmented_imgs = []
+    for sub_image in sub_stack:
+        segmented_imgs.append(segment_image(sub_image))
+
+    # stack them up along a time axis
+    segmented_imgs = np.stack(segmented_imgs, axis=0)
+    segmented_imgs = segmented_imgs.astype('uint8')
+
+    viewer = napari.current_viewer()
+    viewer.layers.clear()
+    viewer.add_labels(segmented_imgs,name='Labels')
+
+    return
+
+@magic_factory(experiment_directory={'mode': 'd'},model_file = {"mode":"r"},cell_class_threshold={"widget_type": "FloatSlider", "max": 1})
+def SegmentUnet(experiment_name: str='20201008_sj1536',experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'),
+     model_file = Path('/Users/ryan/models/20200921_MG1655_256x32.hdf5'),
+ image_directory:str='TIFF/',  analysis_directory:str= 'analysis/', FOV:str='1', interactive:bool=False, phase_plane: str ='c1', min_object_size:int= 25, 
+ batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= False, image_height: int=256,image_width: int=32):
+    global params
+    params=dict()
+    params['experiment_name']=experiment_name
+    params['experiment_directory']=experiment_directory
+    params['image_directory']=image_directory
+    params['analysis_directory']=analysis_directory
+    params['output'] = 'TIFF'
+    params['FOV']=FOV
+    params['interactive']=interactive
+    params['phase_plane']=phase_plane
+    params['subtract']=dict()
+    params['segment']=dict()
     params['segment']['model_file']=model_file
-    params['segment']['trained_model_image_height']=trained_model_image_height
-    params['segment']['trained_model_image_width']=trained_model_image_width
+    params['segment']['trained_model_image_height']=image_height
+    params['segment']['trained_model_image_width']=image_width
     params['segment']['batch_size']=batch_size
     params['segment']['cell_class_threshold']=cell_class_threshold
-    params['segment']['save_predictions']=save_predictions
+    params['segment']['save_predictions']=False
+    params['segment']['min_object_size']=min_object_size
     params['segment']['normalize_to_one']=normalize_to_one
     params['num_analyzers'] = multiprocessing.cpu_count()
 
@@ -6930,28 +4409,15 @@ batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= F
     params['cell_dir'] = os.path.join(params['ana_dir'], 'cell_data')
     params['track_dir'] = os.path.join(params['ana_dir'], 'tracking')
     params['foci_track_dir'] = os.path.join(params['ana_dir'], 'tracking_foci')
-
-    # use jd time in image metadata to make time table. Set to false if no jd time
-    if params['TIFF_source'] == 'elements' or params['TIFF_source'] == 'nd2ToTIFF':
-        params['use_jd'] = True
-    else:
-        params['use_jd'] = False
-
-    subtract(params)
-
-    if OTSU:
-        params['seg_img'] = 'seg_otsu'
-        segmentOTSU(params)
-
-    if UNet:
-        params['seg_img'] = 'seg_unet'
-        params['pred_img'] = 'pred_unet'
-        segmentUNet(params)
+    
+    segmentUNet(params)
 
     return
 
-def Track_Standard(experiment_name: str='exp1', experiment_directory: str= '/Users/sharan/Desktop/exp1/', image_directory:str='TIFF/', external_directory:str= '/Users/sharan/Desktop/exp1/',  analysis_directory:str= 'analysis/', FOV:str='1-5', TIFF_source:str='nd2ToTIFF',
-output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1', lost_cell_time:int= 3, new_cell_y_cutoff:int= 150, new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, max_growth_area:float= 1.5, min_growth_area:float= 0.7 , numSamples:int=10, seg_img :str='seg_otsu'):
+@magic_factory(experiment_directory={"label":"data directory"},seg_img = {"choices":['Otsu','U-net']})
+def Track(experiment_name: str='20201008_sj1536', experiment_directory: str= '/Users/ryan/data/test/20201008_sj1536', image_directory:str='TIFF/',
+analysis_directory:str= 'analysis/', FOV:str='1',pxl2um:float= 0.11, phase_plane: str ='c1', lost_cell_time:int= 3, new_cell_y_cutoff:int= 150,
+ new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, seg_img='Otsu'):
     """Performs Mother Machine Analysis"""
 
     global params
@@ -6960,13 +4426,10 @@ output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1',
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
     params['analysis_directory']=analysis_directory
-    params['external_directory']=external_directory
     params['FOV']=FOV
-    params['TIFF_source']=TIFF_source
-    params['output']=output
-    params['debug']=debug
     params['phase_plane']=phase_plane
     params['pxl2um']=pxl2um
+    params['output'] = 'TIFF'
     params['num_analyzers'] = multiprocessing.cpu_count()
     params['track']=dict()
     params['track']['lost_cell_time']= lost_cell_time
@@ -6974,9 +4437,12 @@ output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1',
     params['track']['new_cell_region_cutoff']= new_cell_region_cutoff
     params['track']['max_growth_length']= max_growth_length
     params['track']['min_growth_length']= min_growth_length
-    params['track']['max_growth_area']= max_growth_area
-    params['track']['min_growth_area']= min_growth_area
-    params['track']['seg_img']=seg_img
+    params['track']['max_growth_area']= max_growth_length
+    params['track']['min_growth_area']= min_growth_length
+    if seg_img == 'Otsu':
+        params['track']['seg_img'] = 'seg_otsu'
+    elif seg_img == 'U-net':
+        params['track']['seg_img'] = 'seg_unet'
 
     # useful folder shorthands for opening files
     params['TIFF_dir'] = os.path.join(params['experiment_directory'], params['image_directory'])
@@ -6986,13 +4452,9 @@ output:str='TIFF', debug:str= False, pxl2um:float= 0.11, phase_plane: str ='c1',
     params['empty_dir'] = os.path.join(params['ana_dir'], 'empties')
     params['sub_dir'] = os.path.join(params['ana_dir'], 'subtracted')
     params['seg_dir'] = os.path.join(params['ana_dir'], 'segmented')
-    params['pred_dir'] = os.path.join(params['ana_dir'], 'predictions')
-    params['foci_seg_dir'] = os.path.join(params['ana_dir'], 'segmented_foci')
-    params['foci_pred_dir'] = os.path.join(params['ana_dir'], 'predictions_foci')
     params['cell_dir'] = os.path.join(params['ana_dir'], 'cell_data')
     params['track_dir'] = os.path.join(params['ana_dir'], 'tracking')
-    params['foci_track_dir'] = os.path.join(params['ana_dir'], 'tracking_foci')
 
-    Track(params)
-    Lineage(params, numSamples)
+    Track_Cells(params)
+    Lineage(params)
     return

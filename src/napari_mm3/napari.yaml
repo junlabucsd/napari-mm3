@@ -5,15 +5,27 @@ contributions:
   - id: napari-mm3.Compile
     title: Performs Mother Machine Analysis
     python_name: napari_mm3._function:Compile
+  - id: napari-mm3.Subtract
+    title: Performs Mother Machine Analysis
+    python_name: napari_mm3._function:Subtract
+  - id: napari-mm3.SegmentOtsu
+    title: Performs Mother Machine Analysis
+    python_name: napari_mm3._function:SegmentOtsu
+  - id: napari-mm3.SegmentUnet
+    title: Performs Mother Machine Analysis
+    python_name: napari_mm3._function:SegmentUnet
+  - id: napari-mm3.Track
+    title: Performs Mother Machine Analysis
+    python_name: napari_mm3._function:Track
+  - id: napari-mm3.Annotate
+    title: Annotate training data
+    python_name: napari_mm3._dock_widget:Annotate
   - id: napari-mm3.ChannelPicker
-    title: Performs Mother Machine Analysis
-    python_name: napari_mm3._function:ChannelPicker
-  - id: napari-mm3.Segment
-    title: Performs Mother Machine Analysis
-    python_name: napari_mm3._function:Segment
-  - id: napari-mm3.Track_Standard
-    title: Performs Mother Machine Analysis
-    python_name: napari_mm3._function:Track_Standard
+    title: Sort channels
+    python_name: napari_mm3._dock_widget:ChannelPicker
+  # - id: napari-mm3.DebugOtsu
+  #   title: Performs Mother Machine analysis
+  #   python_name: napari_mm3._function:DebugOtsu
   - id: napari-mm3.get_reader
     title: Get Reader
     python_name: napari_mm3._reader:napari_get_reader
@@ -34,13 +46,25 @@ contributions:
   widgets:
   - command: napari-mm3.Compile
     display_name: Compile
-    autogenerate: true
+    autogenerate: False
   - command: napari-mm3.ChannelPicker
-    display_name: ChannelPicker
-    autogenerate: true
-  - command: napari-mm3.Segment
-    display_name: Segment
-    autogenerate: true
-  - command: napari-mm3.Track_Standard
-    display_name: Track Standard
-    autogenerate: true
+    display_name: SortChannels
+    autogenerate: False
+  - command: napari-mm3.Subtract
+    display_name: Subtract
+    autogenerate: False
+  - command: napari-mm3.SegmentOtsu
+    display_name: SegmentOtsu
+    autogenerate: False
+  - command: napari-mm3.SegmentUnet
+    display_name: SegmentUnet
+    autogenerate: False
+  - command: napari-mm3.Track
+    display_name: Track
+    autogenerate: False
+  - command: napari-mm3.Annotate
+    display_name: Annotate
+    autogenerate: False
+  # - command: napari-mm3.DebugOtsu
+  #   display_name: DebugOtsu
+  #   autogenerate: False
