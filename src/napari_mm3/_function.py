@@ -325,7 +325,7 @@ def get_tif_params(image_filename, find_channels=True):
                 image_metadata = get_tif_metadata_elements(tif)
             elif params['TIFF_source'] == 'nd2' or 'TIFF_from_nd2':
                 image_metadata = get_tif_metadata_nd2ToTIFF(tif)
-            else:
+            elif params['TIFF_source'] == 'TIFF':
                 image_metadata = get_tif_metadata_filename(tif)
 
         # look for channels if flagged
@@ -583,7 +583,7 @@ def make_time_table(analyzed_imgs):
             # convert jd time to elapsed time in seconds
             t_in_seconds = np.around((idata['jd'] - first_time) * 24*60*60, decimals=0).astype('uint32')
         else:
-            t_in_seconds = np.around((idata['t'] - first_time) * params['moviemaker']['seconds_per_time_index'], decimals=0).astype('uint32')
+            t_in_seconds = np.around((idata['t'] - first_time) * params['seconds_per_time_index'], decimals=0).astype('uint32')
 
         time_table[int(idata['fov'])][int(idata['t'])] = int(t_in_seconds)
 
@@ -2195,8 +2195,14 @@ class Cell():
                        (4/3) * np.pi * (width_tmp/2)**3]
 
         # angle of the fit elipsoid and centroid location
-        self.orientations = [region.orientation]
+        if region.orientation > 0:
+            self.orientations = [-(np.pi / 2 - region.orientation)]
+        else:
+            self.orientations = [np.pi / 2 + region.orientation]
+
+
         self.centroids = [region.centroid]
+        
 
         # these are special datatype, as they include information from the daugthers for division
         # computed upon division
@@ -2235,7 +2241,12 @@ class Cell():
         self.volumes.append((length_tmp - width_tmp) * np.pi * (width_tmp/2)**2 +
                             (4/3) * np.pi * (width_tmp/2)**3)
 
-        self.orientations.append(region.orientation)
+        if region.orientation > 0:
+            ori = -(np.pi / 2 - region.orientation)
+        else:
+            ori = np.pi / 2 + region.orientation
+            
+        self.orientations.append(ori)
         self.centroids.append(region.centroid)
 
     def die(self, region, t):
@@ -2350,9 +2361,9 @@ def feretdiameter(region):
     ## orientation is now measured in RC coordinates - quick fix to convert
     ## back to xy
     if region.orientation > 0:
-        ori1 = np.pi / 2 - region.orientation
+        ori1 = - np.pi / 2 + region.orientation
     else:
-        ori1 = - np.pi / 2 - region.orientation
+        ori1 = np.pi / 2 + region.orientation
     cosorient = np.cos(ori1)
     sinorient = np.sin(ori1)
 
@@ -2881,7 +2892,6 @@ def nd2ToTIFF(params):
 
     # Load the project parameters file
     information('Loading experiment parameters.')
-    print("ND2TOTIFF")
     p=params
 
     if p['FOV']:
@@ -2917,7 +2927,7 @@ def nd2ToTIFF(params):
         os.makedirs(p['TIFF_dir'])
 
     # Load ND2 files into a list for processing
-    information("Experiment directory: {:s}".format(p['experiment_directory']))
+    information("Experiment directory: "+str((p['experiment_directory'])))
     nd2files = glob.glob(os.path.join(p['experiment_directory'], "*.nd2"))
     information("Found %d files to analyze in experiment directory." % len(nd2files))
 
@@ -3082,8 +3092,8 @@ def compile(params):
             # Stack into one large dask.array
             stack = da.stack(dask_arrays, axis=0)
             
-            # viewer.add_image(stack,name='FOV %02d' % fov_id,contrast_limits=[90,250])
-            viewer.add_image(stack,name='FOV %02d' % fov_id)
+            viewer.add_image(stack,name='FOV %02d' % fov_id,contrast_limits=[90,250])
+            # viewer.add_image(stack,name='FOV %02d' % fov_id)
 
         viewer.grid.enabled = True
         grid_w = int(len(fov_id_list)/17)+1
@@ -3436,6 +3446,10 @@ def subtract(params):
 
         # deal with those problem FOVs without empties
         have_empty = list(set(fov_id_list).difference(set(need_empty))) # fovs with empties
+        if not have_empty:
+            warning('No empty channels found. Return to channel selection')
+            return
+
         for fov_id in need_empty:
             from_fov = min(have_empty, key=lambda x: abs(x-fov_id)) # find closest FOV with an empty
             copy_result = copy_empty_stack(from_fov, fov_id, color=sub_plane)
@@ -3916,7 +3930,7 @@ def plot_lineage_images(Cells, fov_id, peak_id, Cells2=None, bgcolor='c1', fgcol
         ttl.set_position([0.5, 0.05])
 
     for i in image_indicies:
-        ax[i].imshow(image_data_bg[i], cmap=plt.cm.gray, aspect='equal')
+        # ax[i].imshow(image_data_bg[i], cmap=plt.cm.gray, aspect='equal')
 
         if fgcolor:
             # make a new version of the segmented image where the
@@ -3926,7 +3940,7 @@ def plot_lineage_images(Cells, fov_id, peak_id, Cells2=None, bgcolor='c1', fgcol
             for region in regions_by_time[i]:
                 rescaled_color_index = region.centroid[0]/image_data_seg.shape[1] * vmax
                 seg_relabeled[seg_relabeled == region.label] = int(rescaled_color_index)-0.1 # subtract small value to make it so there is not overlabeling
-            ax[i].imshow(seg_relabeled, cmap=cmap, alpha=0.5, vmin=vmin, vmax=vmax)
+            ax[i].imshow(seg_relabeled, cmap=cmap, alpha=1, vmin=vmin, vmax=vmax)
 
         ax[i].set_title(str(i + t_adj), color='white')
 
@@ -4152,11 +4166,14 @@ def Lineage(params):
 
     information("Completed Plotting")
 
-@magic_factory(experiment_directory={'mode': 'd'},image_format = {"choices":['nd2','TIFF_from_elements','TIFF_from_nd2']})
+@magic_factory(experiment_directory={'mode': 'd'},
+    image_format = {"choices":['TIFF','nd2','TIFF_from_elements','TIFF_from_nd2']},
+    phase_plane={"choices":["c1","c2","c3"]},
+    xcorr_threshold= {"widget_type":"FloatSpinBox", 'min':0, 'max':1, 'step':0.01})
 def Compile(experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'),experiment_name: str='20201008_sj1536', 
-image_directory:str='TIFF/', analysis_directory:str= 'analysis/', FOV:str='1', image_format:str='nd2',
-inspect:bool= True, phase_plane: str ='c1', image_start : int=1, image_end: int=80,
- channel_width : int=10, channel_separation : int=45,xcorr_threshold: float=0.99):
+image_directory:str='TIFF/', FOV:str='1', image_format:str='nd2',
+inspect:bool= True, phase_plane = "c1", image_start : int=1, image_end: int=50,seconds_per_frame: int=150,
+ channel_width : int=10, channel_separation : int=45,xcorr_threshold =0.99):
     """Performs Mother Machine Analysis"""
 
     global params
@@ -4164,12 +4181,13 @@ inspect:bool= True, phase_plane: str ='c1', image_start : int=1, image_end: int=
     params['experiment_name']=experiment_name
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
-    params['analysis_directory']=analysis_directory
+    params['analysis_directory']='analysis'
     params['FOV']=FOV
     params['TIFF_source']= image_format
     params['output'] = 'TIFF'
     params['inspect']=inspect
     params['phase_plane']=phase_plane
+    params['seconds_per_time_index'] = seconds_per_frame
     params['nd2ToTIFF']=dict()
     params['nd2ToTIFF']['image_start']=image_start
     params['nd2ToTIFF']['image_end']=image_end
@@ -4217,21 +4235,21 @@ inspect:bool= True, phase_plane: str ='c1', image_start : int=1, image_end: int=
     if params['TIFF_source']=='nd2':
         nd2ToTIFF(params)
         compile(params)
-    elif params['TIFF_source'] in {'TIFF_from_elements', 'TIFF_from_nd2'}:
+    elif params['TIFF_source'] in {'TIFF_from_elements', 'TIFF_from_nd2','TIFF'}:
         compile(params)
     return
 
-@magic_factory(experiment_directory={'mode': 'd'},)
+@magic_factory(experiment_directory={'mode': 'd'},phase_plane = {"choices": ["c1","c2","c3"]})
 def Subtract(experiment_name:str='20201008_sj1536',experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'), 
-    image_directory:str='TIFF/',  analysis_directory:str= 'analysis/', 
-    FOV:str='1-5', phase_plane: str ='c1', alignment_pad: int=10):
+    image_directory:str='TIFF/', 
+    FOV:str='1-5', phase_plane = "c1", alignment_pad: int=10):
 
     global params
     params=dict()
     params['experiment_name']=experiment_name
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
-    params['analysis_directory']=analysis_directory
+    params['analysis_directory']='analysis'
     params['output'] = 'TIFF'
     params['FOV']=FOV
     params['phase_plane']=phase_plane
@@ -4256,9 +4274,10 @@ def Subtract(experiment_name:str='20201008_sj1536',experiment_directory= Path('/
 
     subtract(params)
 
-@magic_factory(experiment_directory={'mode': 'd'})
-def SegmentOtsu(experiment_name:str='20201008_sj1536',experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'), image_directory:str='TIFF/',  analysis_directory:str= 'analysis/', 
-    FOV:str='1-5',interactive:bool=False, phase_plane: str ='c1',
+@magic_factory(experiment_directory={'mode': 'd'},phase_plane={"choices":["c1","c2","c3"]})
+def SegmentOtsu(experiment_name:str='20201008_sj1536',
+    experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'), image_directory:str='TIFF/', 
+    FOV:str='1-5',interactive:bool=False, phase_plane = "c1",
     OTSU_threshold = 1.0, first_opening_size: int=2, distance_threshold: int=2, second_opening_size: int=1, min_object_size:int= 25):
 
     global params
@@ -4266,7 +4285,7 @@ def SegmentOtsu(experiment_name:str='20201008_sj1536',experiment_directory= Path
     params['experiment_name']=experiment_name
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
-    params['analysis_directory']=analysis_directory
+    params['analysis_directory']='analysis'
     params['output'] = 'TIFF'
     params['FOV']=FOV
     params['interactive']=interactive
@@ -4368,17 +4387,18 @@ def DebugOtsu(OTSU_threshold = 1.0, first_opening_size: int=2,
 
     return
 
-@magic_factory(experiment_directory={'mode': 'd'},model_file = {"mode":"r"},cell_class_threshold={"widget_type": "FloatSlider", "max": 1})
+@magic_factory(experiment_directory={'mode': 'd'},phase_plane={"choices":["c1","c2","c3"]},
+    model_file = {"mode":"r"},cell_class_threshold={"widget_type": "FloatSlider", "max": 1})
 def SegmentUnet(experiment_name: str='20201008_sj1536',experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'),
      model_file = Path('/Users/ryan/models/20200921_MG1655_256x32.hdf5'),
- image_directory:str='TIFF/',  analysis_directory:str= 'analysis/', FOV:str='1', interactive:bool=False, phase_plane: str ='c1', min_object_size:int= 25, 
+ image_directory:str='TIFF/', FOV:str='1', interactive:bool=False, phase_plane = "c1", min_object_size:int= 25, 
  batch_size: int=210, cell_class_threshold: float= 0.60, normalize_to_one:bool= False, image_height: int=256,image_width: int=32):
     global params
     params=dict()
     params['experiment_name']=experiment_name
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
-    params['analysis_directory']=analysis_directory
+    params['analysis_directory']='analysis'
     params['output'] = 'TIFF'
     params['FOV']=FOV
     params['interactive']=interactive
@@ -4414,10 +4434,10 @@ def SegmentUnet(experiment_name: str='20201008_sj1536',experiment_directory= Pat
 
     return
 
-@magic_factory(experiment_directory={"label":"data directory"},seg_img = {"choices":['Otsu','U-net']})
+@magic_factory(experiment_directory={"label":"data directory"},seg_img = {"choices":['Otsu','U-net']},phase_plane={"choices":["c1","c2","c3"]})
 def Track(experiment_name: str='20201008_sj1536', experiment_directory: str= '/Users/ryan/data/test/20201008_sj1536', image_directory:str='TIFF/',
-analysis_directory:str= 'analysis/', FOV:str='1',pxl2um:float= 0.11, phase_plane: str ='c1', lost_cell_time:int= 3, new_cell_y_cutoff:int= 150,
- new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, seg_img='Otsu'):
+    FOV:str='1',pxl2um:float= 0.11, phase_plane = "c1", lost_cell_time:int= 3, new_cell_y_cutoff:int= 150,
+    new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, seg_img='Otsu'):
     """Performs Mother Machine Analysis"""
 
     global params
@@ -4425,7 +4445,7 @@ analysis_directory:str= 'analysis/', FOV:str='1',pxl2um:float= 0.11, phase_plane
     params['experiment_name']=experiment_name
     params['experiment_directory']=experiment_directory
     params['image_directory']=image_directory
-    params['analysis_directory']=analysis_directory
+    params['analysis_directory']='analysis'
     params['FOV']=FOV
     params['phase_plane']=phase_plane
     params['pxl2um']=pxl2um
