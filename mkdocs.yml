@@ -1,6 +1,6 @@
 site_name: napari-mm3
 site_description: a plugin for mother machine image analysis
-site_author: Gursharan Ahir
+site_author: Gursharan Ahir, Ryan Thiermann
 
 theme: readthedocs
 
