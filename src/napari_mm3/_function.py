@@ -4434,8 +4434,8 @@ def SegmentUnet(experiment_name: str='20201008_sj1536',experiment_directory= Pat
 
     return
 
-@magic_factory(experiment_directory={"label":"data directory"},seg_img = {"choices":['Otsu','U-net']},phase_plane={"choices":["c1","c2","c3"]})
-def Track(experiment_name: str='20201008_sj1536', experiment_directory: str= '/Users/ryan/data/test/20201008_sj1536', image_directory:str='TIFF/',
+@magic_factory(experiment_directory={'mode': 'd'},seg_img = {"choices":['Otsu','U-net']},phase_plane={"choices":["c1","c2","c3"]})
+def Track(experiment_name: str='20201008_sj1536', experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'), image_directory:str='TIFF/',
     FOV:str='1',pxl2um:float= 0.11, phase_plane = "c1", lost_cell_time:int= 3, new_cell_y_cutoff:int= 150,
     new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, seg_img='Otsu'):
     """Performs Mother Machine Analysis"""
