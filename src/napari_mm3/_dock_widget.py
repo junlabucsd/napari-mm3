@@ -276,35 +276,30 @@ class ChannelPicker(QWidget):
         coords = [[[0,p-20],[height,p+20]]for p in self.sorted_peaks]
         ## add list of colors for each rectangle
 
-        def spec_to_color(n):
-            if n==-1:
-                return 'red'
-            if n==0:
-                return 'blue'
-            if n==1:
-                return 'green'
+        spec_to_color = {
+            -1: 'red',
+            0: 'blue',
+            1: 'green',
+        }
 
-        curr_colors = [spec_to_color(n) for n in self.sorted_specs]
+        curr_colors = [spec_to_color[n] for n in self.sorted_specs]
         shapes_layer = self.viewer.add_shapes(coords,shape_type='rectangle',face_color=curr_colors,properties = self.sorted_peaks,opacity=.25)
-        @shapes_layer.mouse_double_click_callbacks.append
+        @shapes_layer.mouse_drag_callbacks.append
         def update_classification(shapes_layer,event):
-            #get the selected shape
-            try:
-                shape_i = next(iter(shapes_layer.selected_data))
-            except:
-                print('Select a channel from shapes layer using the selection tool')
+            cursor_data_coordinates = shapes_layer.world_to_data(event.position)
+            shapes_under_cursor = shapes_layer.get_value(cursor_data_coordinates)
+            if shapes_under_cursor is None:
+                print("Nothing found under cursor.")
                 return
+            shape_i = shapes_under_cursor[0]
             
-            #permute the channel value
-            if self.sorted_specs[shape_i] == -1:
-                self.sorted_specs[shape_i] = 0
-            elif self.sorted_specs[shape_i] == 0:
-                self.sorted_specs[shape_i] = 1
-            elif self.sorted_specs[shape_i] == 1:
-                self.sorted_specs[shape_i] = -1
+            # Would be nice to do this with modulo, but sadly we chose -1 0 1 as our convention instead of 0 1 2
+            next_color = {-1: 0, 0: 1, 1:-1}
+            # Switch to the next color!
+            self.sorted_specs[shape_i] = next_color[self.sorted_specs[shape_i]]
 
             ## update the shape color accordingly
-            curr_colors[shape_i] = spec_to_color(self.sorted_specs[shape_i])        
+            curr_colors[shape_i] = spec_to_color[self.sorted_specs[shape_i]]
 
             # clear existing shapes
             self.viewer.layers['Shapes'].data=[]
