@@ -1,40 +1,16 @@
+from multiprocessing import Process, Queue
+import magicgui
 from qtpy.QtWidgets import QWidget, QPushButton, QVBoxLayout, QLineEdit, QLabel, QFileDialog, QHBoxLayout
 from qtpy.QtCore import Qt
 from magicgui import magic_factory
+from pathlib import Path
 
+import napari
 import numpy as np
 import tifffile as tiff
 import yaml
 import os
 import glob
-
-class ExampleQWidget(QWidget):
-    # your QWidget.__init__ can optionally request the napari viewer instance
-    # in one of two ways:
-    # 1. use a parameter called `napari_viewer`, as done here
-    # 2. use a type annotation of 'napari.viewer.Viewer' for any parameter
-    def __init__(self, napari_viewer):
-        super().__init__()
-        self.viewer = napari_viewer
-
-        btn = QPushButton("Click me!")
-        btn.clicked.connect(self._on_click)
-
-        self.setLayout(QHBoxLayout())
-        self.layout().addWidget(btn)
-
-    def _on_click(self):
-        print("napari has", len(self.viewer.layers), "layers")
-
-
-@magic_factory
-def example_magic_widget(img_layer: "napari.layers.Image"):
-    print(f"you have selected {img_layer}")
-
-def napari_experimental_provide_dock_widget():
-    # you can return either a single widget, or a sequence of widgets
-    #return [ExampleQWidget, example_magic_widget]
-    return []
 
 class Annotate(QWidget):
 
@@ -178,147 +154,129 @@ class Annotate(QWidget):
     def open_directory(self):
         self.expDir = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
 
-class ChannelPicker(QWidget):
-    def __init__(self, napari_viewer):
-        super().__init__()
-        self.viewer = napari_viewer
+def load_fov(data_directory, fov_id):
+    print("getting files")
+    found_files = glob.glob(os.path.join(data_directory,'TIFF/', '*xy%02d.tif' % (fov_id)))# get all tiffs
+    found_files = [filepath.split('/')[-1] for filepath in found_files] # remove pre-path
+    print("sorting files")
+    found_files = sorted(found_files) # should sort by timepoint
 
-        expDirLabel = QLabel('Data directory')
-        expNameLabel = QLabel('Experiment name')
+    if len(found_files) == 0:
+        print('No data found for FOV '+ str(fov_id))
+        return
 
-        advanceFOVButton = QPushButton("Next FOV")
-        advanceFOVButton.clicked.connect(self.next_fov)
+    image_fov_stack = []
 
-        priorFOVButton = QPushButton("Prior FOV")
-        priorFOVButton.clicked.connect(self.prior_fov)
+    # go through list of images and get the file path
+    print("Loading files")
+    for img_filename in found_files:
+        with tiff.TiffFile(os.path.join(data_directory,'TIFF/',img_filename)) as tif:
+            image_fov_stack.append(tif.asarray())
 
-        saveOutButton = QPushButton("Save Out")
-        saveOutButton.clicked.connect(self.save_out)
+    print("numpying files")
+    return np.array(image_fov_stack)
 
-        self.expDir = QLineEdit('/Users/ryan/Data/test/20200911_sj1536/')
-        self.expName = QLineEdit('20200911_sj1536')
+def load_fov_write_to_queue(queue, data_directory, fov_id):
+    queue.put(load_fov(data_directory, fov_id))
 
-        loadDataButton = QPushButton("Load data")
-        loadDataButton.clicked.connect(self.load_data)
+expected_fov_id = -1
+p = None
+q = Queue()
+def load_fov_multiproc(data_directory, fov_id):
+    """
+    Experimental; use at your own risk. Preloads the FOV after the current one.
+    """
+    global expected_fov_id, p, q
+    image_fov_stack = None
+    if fov_id == expected_fov_id and p != None:
+        # If the right image is in the queue, then we can go ahead and grab it
+        image_fov_stack = q.get()
+        p.join()
+        print("Successfully multiprocessed!")
+    else:
+        # If the wrong image is in the queue, we should load from scratch.
+        image_fov_stack = load_fov(data_directory, fov_id)
 
-        self.setLayout(QVBoxLayout())
+    # Start loading our predicted next image
+    expected_fov_id = fov_id + 1
+    p = Process(target = load_fov_write_to_queue, args=(q, data_directory, expected_fov_id))
+    p.start()
+    print("Launched our background process")
 
-        self.layout().addWidget(expDirLabel)
-        self.layout().addWidget(self.expDir)
-        self.layout().addWidget(expNameLabel)
-        self.layout().addWidget(self.expName)
-
-        self.layout().addWidget(loadDataButton)
-        self.layout().addWidget(advanceFOVButton)
-        self.layout().addWidget(priorFOVButton)
-        self.layout().addWidget(saveOutButton)
+    return image_fov_stack
 
 
-    def load_data(self):
-        try:
-            self.exp_dir
-        except AttributeError:
-            self.exp_dir = self.expDir.text()
-        try:
-            self.exp_name
-        except AttributeError:
-            self.exp_name = self.expName.text()
-        try:
-            self.specs
-        except AttributeError:
-            with open(os.path.join(self.exp_dir, 'analysis/specs.yaml'), 'r') as specs_file:
-                self.specs = yaml.safe_load(specs_file)
+@magicgui.magic_factory(auto_call=True, data_directory={"mode": "d"})
+def ChannelPicker(viewer: napari.Viewer, data_directory = Path("~"), cur_fov = 0):
+    specs = None
+    with open(os.path.join(data_directory, 'analysis/specs.yaml'), 'r') as specs_file:
+        specs = yaml.safe_load(specs_file)
+    if specs == None:
+        print("Error: No specs file")
+        return
 
-        self.fov_id_list = [fov_id for fov_id in self.specs.keys()]
+    fov_id_list = [fov_id for fov_id in specs.keys()]
+    try:
+        fov_id = fov_id_list[cur_fov]
+    except IndexError:
+        print('Error: FOV not found')
+        return
 
-        try:
-            self.fovIndex
-        except AttributeError:
-            self.fovIndex = 0
+    image_fov_stack = load_fov(data_directory, fov_id)
 
-        try:
-            self.fov_id = self.fov_id_list[self.fovIndex]
-        except IndexError:
-            print('FOV not found')
+    print("Rendering image")
+    viewer.layers.clear()
+    viewer.grid.enabled = False
+    images = viewer.add_image(np.array(image_fov_stack))
+    sorted_peaks = sorted([peak_id for peak_id in specs[fov_id].keys()])
+    sorted_specs = [specs[fov_id][p] for p in sorted_peaks]
+    images.reset_contrast_limits()
+
+    ## get height of fov stack
+    height = len(image_fov_stack[0,0,:,0])
+
+    ## get tiff height and width
+    coords = [[[0,p-20],[height,p+20]]for p in sorted_peaks]
+
+    ## add list of colors for each rectangle... this should really be an enum
+    spec_to_color = {
+        -1: 'red',
+        0: 'blue',
+        1: 'green',
+    }
+
+    curr_colors = [spec_to_color[n] for n in sorted_specs]
+    shapes_layer = viewer.add_shapes(coords,shape_type='rectangle',face_color=curr_colors,properties = sorted_peaks,opacity=.25)
+
+    @shapes_layer.mouse_drag_callbacks.append
+    def update_classification(shapes_layer,event):
+        cursor_data_coordinates = shapes_layer.world_to_data(event.position)
+        shapes_under_cursor = shapes_layer.get_value(cursor_data_coordinates)
+        if shapes_under_cursor is None:
+            # Nothing found under cursor
+            return
+        shape_i = shapes_under_cursor[0]
+        if shape_i == None:
+            # Image under cursor, but no channel
             return
 
-        self.peak_id_list_in_fov = [peak_id for peak_id in self.specs[self.fov_id].keys() if self.specs[self.fov_id][peak_id] == 1]
+        # Would be nice to do this with modulo, but sadly we chose -1 0 1 as our convention instead of 0 1 2
+        next_color = {-1: 0, 0: 1, 1:-1}
+        # Switch to the next color!
+        sorted_specs[shape_i] = next_color[sorted_specs[shape_i]]
 
-        found_files = glob.glob(os.path.join(self.exp_dir,'TIFF/', '*xy%02d.tif' % (self.fov_id)))# get all tiffs
-        found_files = [filepath.split('/')[-1] for filepath in found_files] # remove pre-path
-        found_files = sorted(found_files) # should sort by timepoint
+        ## update the shape color accordingly
+        curr_colors[shape_i] = spec_to_color[sorted_specs[shape_i]]
 
-        if len(found_files) == 0:
-            print('No data found for FOV '+ str(self.fov_id))
-            return
+        # clear existing shapes
+        viewer.layers['Shapes'].data=[]
 
-        image_fov_stack = []
+        # redraw with updated colors
+        shapes_layer.add(coords,shape_type='rectangle',face_color=curr_colors)
 
-        # go through list of images and get the file path
-        for img_filename in found_files:
-            with tiff.TiffFile(os.path.join(self.exp_dir,'TIFF/',img_filename)) as tif:
-                image_fov_stack.append(tif.asarray())
+        # update specs
+        specs[fov_id][sorted_peaks[shape_i]] = sorted_specs[shape_i]
 
-        image_fov_stack = np.array(image_fov_stack)
-
-        self.viewer.layers.clear()
-        self.viewer.grid.enabled = False
-        # self.viewer.add_image(np.array(image_fov_stack),contrast_limits=[90,250])
-        self.viewer.add_image(np.array(image_fov_stack))
-        self.sorted_peaks = sorted([peak_id for peak_id in self.specs[self.fov_id].keys()])
-        self.sorted_specs = [self.specs[self.fov_id][p] for p in self.sorted_peaks]
-
-        ## get height of fov stack
-        height = len(image_fov_stack[0,0,:,0])
-
-        ## get tiff height and width
-
-        coords = [[[0,p-20],[height,p+20]]for p in self.sorted_peaks]
-        ## add list of colors for each rectangle
-
-        spec_to_color = {
-            -1: 'red',
-            0: 'blue',
-            1: 'green',
-        }
-
-        curr_colors = [spec_to_color[n] for n in self.sorted_specs]
-        shapes_layer = self.viewer.add_shapes(coords,shape_type='rectangle',face_color=curr_colors,properties = self.sorted_peaks,opacity=.25)
-        @shapes_layer.mouse_drag_callbacks.append
-        def update_classification(shapes_layer,event):
-            cursor_data_coordinates = shapes_layer.world_to_data(event.position)
-            shapes_under_cursor = shapes_layer.get_value(cursor_data_coordinates)
-            if shapes_under_cursor is None:
-                print("Nothing found under cursor.")
-                return
-            shape_i = shapes_under_cursor[0]
-            
-            # Would be nice to do this with modulo, but sadly we chose -1 0 1 as our convention instead of 0 1 2
-            next_color = {-1: 0, 0: 1, 1:-1}
-            # Switch to the next color!
-            self.sorted_specs[shape_i] = next_color[self.sorted_specs[shape_i]]
-
-            ## update the shape color accordingly
-            curr_colors[shape_i] = spec_to_color[self.sorted_specs[shape_i]]
-
-            # clear existing shapes
-            self.viewer.layers['Shapes'].data=[]
-
-            # redraw with updated colors
-            shapes_layer.add(coords,shape_type='rectangle',face_color=curr_colors)
-
-            # update specs
-            self.specs[self.fov_id][self.sorted_peaks[shape_i]] = self.sorted_specs[shape_i]
-
-    def next_fov(self):
-        self.fovIndex+=1
-        self.load_data()
-    
-    def prior_fov(self):
-        self.fovIndex-=1
-        self.load_data()
-
-    def save_out(self):
-        with open(os.path.join(self.exp_dir, 'analysis/specs.yaml'), 'w') as specs_file:
-            yaml.dump(data=self.specs, stream=specs_file, default_flow_style=False, tags=None)
+        with open(os.path.join(data_directory, 'analysis/specs.yaml'), 'w') as specs_file:
+            yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
         print('Saved channel classifications to specs file')
