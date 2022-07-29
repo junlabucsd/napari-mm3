@@ -1,5 +1,6 @@
 from multiprocessing import Process, Queue
 import magicgui
+from magicgui.widgets import FileEdit, Slider, Container, SpinBox, LineEdit, PushButton
 from qtpy.QtWidgets import QWidget, QPushButton, QVBoxLayout, QLineEdit, QLabel, QFileDialog, QHBoxLayout
 from qtpy.QtCore import Qt
 from magicgui import magic_factory
@@ -12,87 +13,55 @@ import yaml
 import os
 import glob
 
-class Annotate(QWidget):
 
+class Annotate(Container):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
+        self.data_directory_widget = FileEdit(mode='d', label='data directory')
+        # TODO: Make this auto-inferred from a function type signature.
+        self.experiment_name_widget = LineEdit(label='experiment name')
+        self.next_peak_widget = PushButton(label = "next peak")
+        self.prior_peak_widget = PushButton(label = "prior_peak")
+        self.FOV_id_widget = SpinBox(label = "FOV")
 
-        expDirLabel = QLabel('Data directory')
-        expNameLabel = QLabel('Experiment name')
+        self.peak_id = 0
+        # Need this to detect *changes* in the FOV_id_widget.
+        self.FOV_id = 0
 
-        self.expDir = QLineEdit('/Users/ryan/Data/test/20200911_sj1536/')
-        self.expName = QLineEdit('20200911_sj1536')
+        self.data_directory_widget.changed.connect(self.load_data)
+        self.next_peak_widget.clicked.connect(self.next_peak)
+        self.prior_peak_widget.clicked.connect(self.prior_peak)
+        self.FOV_id_widget.changed.connect(self.FOV_id_changed)
 
-        advancePeakButton = QPushButton("Next peak")
-        advancePeakButton.setShortcut("Ctrl+P")
-        advancePeakButton.clicked.connect(self.next_peak)
+        self.insert(0, self.data_directory_widget)
+        self.insert(1, self.experiment_name_widget)
+        self.insert(2, self.next_peak_widget)
+        self.insert(3, self.prior_peak_widget)
+        self.insert(4, self.FOV_id_widget)
 
-        priorPeakButton = QPushButton("Prior peak")
-        priorPeakButton.clicked.connect(self.prior_peak)
+    def load_specs(self):
+        with open(os.path.join(self.data_directory_widget.value, 'analysis/specs.yaml'), 'r') as specs_file:
+            return yaml.safe_load(specs_file)
 
-        advanceFOVButton = QPushButton("Next FOV")
-        advanceFOVButton.clicked.connect(self.next_fov)
+    def get_cur_fov(self, specs):
+        return list(specs.keys())[self.FOV_id]
 
-        priorFOVButton = QPushButton("Prior FOV")
-        priorFOVButton.clicked.connect(self.prior_fov)
-
-        loadDataButton = QPushButton("Load data")
-        loadDataButton.clicked.connect(self.load_data)
-
-
-        saveButton = QPushButton("Save and next frame")
-        saveButton.setShortcut("Ctrl+S")
-        saveButton.clicked.connect(self.save_out)
-
-        self.setLayout(QVBoxLayout())
-
-        self.layout().addWidget(expDirLabel)
-        self.layout().addWidget(self.expDir)
-        self.layout().addWidget(expNameLabel)
-        self.layout().addWidget(self.expName)
-
-        self.layout().addWidget(advancePeakButton)
-        self.layout().addWidget(priorPeakButton)
-
-        
-        self.layout().addWidget(advanceFOVButton)
-        self.layout().addWidget(priorFOVButton)
-
-        self.layout().addWidget(loadDataButton)
+    def get_cur_peak(self, specs):
+        fov = self.get_cur_fov(specs)
+        peak_list_in_fov = [peak for peak in specs[fov].keys() if specs[fov][peak] == 1]
+        return peak_list_in_fov[self.peak_id]
 
     def load_data(self):
+        specs = self.load_specs()
+        fov = self.get_cur_fov(specs)
+        peak = self.get_cur_peak(specs)
 
-        try:
-            self.exp_dir
-        except AttributeError:
-            self.exp_dir = self.expDir.text()
-        try:
-            self.exp_name
-        except AttributeError:
-            self.exp_name = self.expName.text()
-        try:
-            self.specs
-        except AttributeError:
-            with open(os.path.join(self.exp_dir, 'analysis/specs.yaml'), 'r') as specs_file:
-                self.specs = yaml.safe_load(specs_file)
-        try:
-            self.fovIndex
-        except AttributeError:
-            self.fovIndex = 0
-        try:
-            self.peakIndex
-        except AttributeError:
-            self.peakIndex = 0
+        data_directory = self.data_directory_widget.value
+        experiment_name = self.experiment_name_widget.value
 
-        self.fov_id_list = [fov_id for fov_id in self.specs.keys()]
-        self.fov_id = self.fov_id_list[self.fovIndex]
-        self.peak_id_list_in_fov = [peak_id for peak_id in self.specs[self.fov_id].keys() if self.specs[self.fov_id][peak_id] == 1]
-
-        self.peak_id = self.peak_id_list_in_fov[self.peakIndex]
-
-        img_filename = os.path.join(self.exp_dir,'analysis/channels/',self.exp_name +'_xy%03d_p%04d_c1.tif' % (self.fov_id, self.peak_id))
-        mask_filename = os.path.join(self.exp_dir,'analysis/segmented/',self.exp_name+'_xy%03d_p%04d_seg_unet.tif' % (self.fov_id, self.peak_id))
+        img_filename = data_directory / 'analysis' / 'channels' / f'{experiment_name}_xy{fov:03d}_p{peak:04d}_c1.tif'
+        mask_filename = data_directory / 'analysis' / 'segmented' / f'{experiment_name}_xy{fov:03d}_p{peak:04d}_seg_unet.tif'
 
         with tiff.TiffFile(mask_filename) as tif:
             mask_stack = tif.asarray()
@@ -113,46 +82,33 @@ class Annotate(QWidget):
             empty = np.zeros(np.shape(img_stack),dtype=int)
             self.viewer.add_labels(empty,name="Labels")
 
-    def next_fov(self):
+    def next_peak(self):
         self.save_out()
-        self.fovIndex += 1
-        self.fov_id = self.fov_id_list[self.fovIndex]
-        self.peak_id_list_in_fov = [peak_id for peak_id in self.specs[self.fovIndex].keys() if self.specs[self.fov_id][peak_id] == 1]
+        self.peak_id += 1
         self.load_data()
     
-    def prior_fov(self):
-        self.save_out()
-        self.fovIndex -= 1
-        self.fov_id = self.fov_id_list[self.fovIndex]
-        self.peak_id_list_in_fov = [peak_id for peak_id in self.specs[self.fovIndex].keys() if self.specs[self.fov_id][peak_id] == 1]
-        self.load_data()
-
-    def next_peak(self):
-        self.peakIndex+=1
-        try:
-            self.peak_id = self.peak_id_list_in_fov[self.peakIndex]
-        except IndexError:
-            print('No more peaks in this FOV')
-        self.load_data()
-
     def prior_peak(self):
-        self.peakIndex-=1
-        try:
-            self.peak_id = self.peak_id_list_in_fov[self.peakIndex]
-        except IndexError:
-            print('No earlier peaks in this FOV')
+        self.save_out()
+        self.peak_id -= 1
+        self.load_data()
+
+    def FOV_id_changed(self):
+        self.save_out()
+        self.FOV_id = self.FOV_id_widget.value
         self.load_data()
 
     def save_out(self):
-        labels = self.viewer.layers[1].data.astype(np.uint8)
-        ## need to get current fov
-        for peak_id in self.specs[self.fov_id].keys():
-            fileout_name = os.path.join(self.trainingDir,self.exp_name+'_xy%03d_p%04d_seg.tif' % (self.fov_id, self.peak_id))
-            tiff.imsave(fileout_name,labels)
-        print('Training data saved')
+        specs = self.load_specs()
+        fov = self.get_cur_fov(specs)
+        peak = self.get_cur_peak(specs)
+        training_dir = self.data_directory_widget.value / "training_data"
+        if not os.path.isdir(training_dir):
+            os.mkdir(training_dir)
 
-    def open_directory(self):
-        self.expDir = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
+        labels = self.viewer.layers[1].data.astype(np.uint8)
+        fileout_name = training_dir / f'{self.experiment_name_widget.value}_xy{fov:03d}_p{peak:04d}_seg.tif'
+        tiff.imsave(fileout_name,labels)
+        print('Training data saved')
 
 def load_fov(data_directory, fov_id):
     print("getting files")
@@ -167,7 +123,6 @@ def load_fov(data_directory, fov_id):
 
     image_fov_stack = []
 
-    # go through list of images and get the file path
     print("Loading files")
     for img_filename in found_files:
         with tiff.TiffFile(os.path.join(data_directory,'TIFF/',img_filename)) as tif:
@@ -175,36 +130,6 @@ def load_fov(data_directory, fov_id):
 
     print("numpying files")
     return np.array(image_fov_stack)
-
-def load_fov_write_to_queue(queue, data_directory, fov_id):
-    queue.put(load_fov(data_directory, fov_id))
-
-expected_fov_id = -1
-p = None
-q = Queue()
-def load_fov_multiproc(data_directory, fov_id):
-    """
-    Experimental; use at your own risk. Preloads the FOV after the current one.
-    """
-    global expected_fov_id, p, q
-    image_fov_stack = None
-    if fov_id == expected_fov_id and p != None:
-        # If the right image is in the queue, then we can go ahead and grab it
-        image_fov_stack = q.get()
-        p.join()
-        print("Successfully multiprocessed!")
-    else:
-        # If the wrong image is in the queue, we should load from scratch.
-        image_fov_stack = load_fov(data_directory, fov_id)
-
-    # Start loading our predicted next image
-    expected_fov_id = fov_id + 1
-    p = Process(target = load_fov_write_to_queue, args=(q, data_directory, expected_fov_id))
-    p.start()
-    print("Launched our background process")
-
-    return image_fov_stack
-
 
 @magicgui.magic_factory(auto_call=True, data_directory={"mode": "d"})
 def ChannelPicker(viewer: napari.Viewer, data_directory = Path("~"), cur_fov = 0):
