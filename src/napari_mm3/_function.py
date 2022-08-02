@@ -1,4 +1,5 @@
 from __future__ import print_function, division
+import re
 import copy
 import datetime
 import glob
@@ -21,7 +22,6 @@ except:
 from pprint import pprint
 import pandas as pd
 from pathlib import Path
-import pims_nd2
 import re
 from scipy import ndimage as ndi
 from scipy.signal import find_peaks_cwt
@@ -37,10 +37,10 @@ import six
 import struct
 import sys
 import time
-import tifffile as tiff
 import traceback
 import warnings
 import yaml
+import tifffile as tiff
 
 import matplotlib as mpl
 from matplotlib.patches import Ellipse
@@ -2885,175 +2885,6 @@ def gaussian1d(x, height, mean, sigma):
     '''
     return height * np.exp(-(x-mean)**2 / (2*sigma**2))
 
-def nd2ToTIFF(params):
-    '''
-    This script converts a Nikon Elements .nd2 file to individual TIFF files per time point. Multiple color planes are stacked in each time point to make a multipage TIFF.
-    '''
-
-    # Load the project parameters file
-    information('Loading experiment parameters.')
-    p=params
-
-    if p['FOV']:
-        if '-' in p['FOV']:
-            user_spec_fovs = range(int(p['FOV'].split("-")[0]),
-                                   int(p['FOV'].split("-")[1])+1)
-        else:
-            user_spec_fovs = [int(val) for val in p['FOV'].split(",")]
-    else:
-        user_spec_fovs = []
-
-    # number of rows of channels. Used for cropping.
-    number_of_rows = p['nd2ToTIFF']['number_of_rows']
-
-    # cropping
-    vertical_crop = False
-    if number_of_rows == 1 and p['nd2ToTIFF']['crop_ymin'] and p['nd2ToTIFF']['crop_ymax']:
-        try:
-            # This is for percentage crop
-            vertical_crop = [p['nd2ToTIFF']['crop_ymin'], p['nd2ToTIFF']['crop_ymax']]
-        except KeyError:
-            pass
-    elif number_of_rows == 2:
-        # if there is more than one row, make a list of pairs
-        # [[y1_min, y1_max], [y2_min, y2_max]]
-        vertical_crop = p['nd2ToTIFF']['2row_crop']
-
-    # number between 0 and 9, 0 is no compression, 9 is most compression.
-    tif_compress = p['nd2ToTIFF']['tiff_compress']
-
-    # set up image and analysis folders if they do not already exist
-    if not os.path.exists(p['TIFF_dir']):
-        os.makedirs(p['TIFF_dir'])
-
-    # Load ND2 files into a list for processing
-    information("Experiment directory: "+str((p['experiment_directory'])))
-    nd2files = glob.glob(os.path.join(p['experiment_directory'], "*.nd2"))
-    information("Found %d files to analyze in experiment directory." % len(nd2files))
-
-    for nd2_file in nd2files:
-        file_prefix = os.path.split(os.path.splitext(nd2_file)[0])[1]
-        information('Extracting %s ...' % file_prefix)
-
-        # load the nd2. the nd2f file object has lots of information thanks to pims
-        with pims_nd2.ND2_Reader(nd2_file) as nd2f:
-            try:
-                starttime = nd2f.metadata['time_start_jdn'] # starttime is jd
-                information('Starttime got from nd2 metadata.')
-            except ValueError:
-                # problem with the date
-                jdn = julian_day_number()
-                nd2f._lim_metadata_desc.dTimeStart = jdn
-                starttime = nd2f.metadata['time_start_jdn'] # starttime is jd
-                information('Starttime found from lim.')
-
-            # get the color names out. Kinda roundabout way.
-            planes = [nd2f.metadata[md]['name'] for md in nd2f.metadata if md[0:6] == u'plane_' and not md == u'plane_count']
-
-            # this insures all colors will be saved when saving tiff
-            if len(planes) > 1:
-                nd2f.bundle_axes = [u'c', u'y', u'x']
-
-            # extraction range is the time points that will be taken out. Note the indexing,
-            # it is zero indexed to grab from nd2, but TIFF naming starts at 1.
-            # if there is more than one FOV (len(nd2f) != 1), make sure the user input
-            # last time index is before the actual time index. Ignore it.
-            if (p['nd2ToTIFF']['image_start'] < 1):
-                p['nd2ToTIFF']['image_start'] = 1
-            if p['nd2ToTIFF']['image_end'] == 'None':
-                p['nd2ToTIFF']['image_end'] = False
-            if p['nd2ToTIFF']['image_end']:
-                if len(nd2f) > 1 and len(nd2f) < p['nd2ToTIFF']['image_end']:
-                    p['nd2ToTIFF']['image_end'] = len(nd2f)
-            else:
-                p['nd2ToTIFF']['image_end'] = len(nd2f)
-            extraction_range = range(p['nd2ToTIFF']['image_start'],
-                                     p['nd2ToTIFF']['image_end']+1)
-
-            # loop through time points
-            for t in extraction_range:
-                # timepoint output name (1 indexed rather than 0 indexed)
-                t_id = t - 1
-                # set counter for FOV output name
-                #fov = fov_naming_start
-
-                for fov_id in range(0, nd2f.sizes[u'm']): # for every FOV
-                    # fov_id is the fov index according to elements, fov is the output fov ID
-                    fov = fov_id + 1
-
-                    # skip FOVs as specified above
-                    if len(user_spec_fovs) > 0 and not (fov in user_spec_fovs):
-                        continue
-
-                    # set the FOV we are working on in the nd2 file object
-                    nd2f.default_coords[u'm'] = fov_id
-
-                    # get time picture was taken
-                    seconds = copy.deepcopy(nd2f[t_id].metadata['t_ms']) / 1000.
-                    minutes = seconds / 60.
-                    hours = minutes / 60.
-                    days = hours / 24.
-                    acq_time = starttime + days
-
-                    # get physical location FOV on stage
-                    x_um = nd2f[t_id].metadata['x_um']
-                    y_um = nd2f[t_id].metadata['y_um']
-
-                    # make dictionary which will be the metdata for this TIFF
-                    metadata_t = { 'fov': fov,
-                                   't' : t,
-                                   'jd': acq_time,
-                                   'x': x_um,
-                                   'y': y_um,
-                                   'planes': planes}
-                    metadata_json = json.dumps(metadata_t)
-
-                    # get the pixel information
-                    image_data = nd2f[t_id]
-
-                    # crop tiff if specified. Lots of flags for if there are double rows or  multiple colors
-                    if vertical_crop:
-                        # add extra axis to make below slicing simpler.
-                        if len(image_data.shape) < 3:
-                            image_data = np.expand_dims(image_data, axis=0)
-
-                        # for just a simple crop
-                        if number_of_rows == 1:
-
-                            nc, H, W = image_data.shape
-                            ylo = int(vertical_crop[0]*H)
-                            yhi = int(vertical_crop[1]*H)
-                            image_data = image_data[:, ylo:yhi, :]
-
-                            # save the tiff
-                            tif_filename = file_prefix + "_t%04dxy%02d.tif" % (t, fov)
-                            information('Saving %s.' % tif_filename)
-                            tiff.imsave(os.path.join(p['TIFF_dir'], tif_filename), image_data, description=metadata_json, compress=tif_compress, photometric='minisblack')
-
-                        # for dealing with two rows of channel
-                        elif number_of_rows == 2:
-                            # cut and save top row
-                            image_data_one = image_data[:,vertical_crop[0][0]:vertical_crop[0][1],:]
-                            tif_filename = file_prefix + "_t%04dxy%02d_1.tif" % (t, fov)
-                            information('Saving %s.' % tif_filename)
-                            tiff.imsave(os.path.join(p['TIFF_dir'], tif_filename), image_data_one, description=metadata_json, compress=tif_compress, photometric='minisblack')
-
-                            # cut and save bottom row
-                            metadata_t['fov'] = fov # update metdata
-                            metadata_json = json.dumps(metadata_t)
-                            image_data_two = image_data[:,vertical_crop[1][0]:vertical_crop[1][1],:]
-                            tif_filename = file_prefix + "_t%04dxy%02d_2.tif" % (t, fov)
-                            information('Saving %s.' % tif_filename)
-                            tiff.imsave(os.path.join(p['TIFF_dir'], tif_filename), image_data_two, description=metadata_json, compress=tif_compress, photometric='minisblack')
-
-                    else: # just save the image if no cropping was done.
-                        tif_filename = file_prefix + "_t%04dxy%02d.tif" % (t, fov)
-                        information('Saving %s.' % tif_filename)
-                        tiff.imsave(os.path.join(p['TIFF_dir'], tif_filename), image_data, description=metadata_json, compress=tif_compress, photometric='minisblack')
-
-                    # increase FOV counter
-                    fov += 1
-
 def compile(params):
     '''mm3_Compile.py locates and slices out mother machine channels into image stacks.'''
 
@@ -4166,13 +3997,25 @@ def Lineage(params):
 
     information("Completed Plotting")
 
+def range_string_to_indices(range_string):
+    range_string = range_string.replace(" ", "")
+    split = range_string.split(',')
+    indices = []
+    for fovs in split:
+        if "-" in fovs:
+            limits = list(map(int, fovs.split("-")))
+            # Make it an inclusive range, as users would expect
+            limits[1] += 1
+            indices += list(range(limits[0], limits[1]))
+    return indices
+
 @magic_factory(experiment_directory={'mode': 'd'},
     image_format = {"choices":['TIFF','nd2','TIFF_from_elements','TIFF_from_nd2']},
     phase_plane={"choices":["c1","c2","c3"]},
     xcorr_threshold= {"widget_type":"FloatSpinBox", 'min':0, 'max':1, 'step':0.01})
 def Compile(experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'),experiment_name: str='20201008_sj1536', 
 image_directory:str='TIFF/', FOV:str='1', image_format:str='nd2',
-inspect:bool= True, phase_plane = "c1", image_start : int=1, image_end: int=50,seconds_per_frame: int=150,
+inspect:bool= True, phase_plane = "c1", seconds_per_frame: int=150,
  channel_width : int=10, channel_separation : int=45,xcorr_threshold =0.99):
     """Performs Mother Machine Analysis"""
 
@@ -4188,14 +4031,7 @@ inspect:bool= True, phase_plane = "c1", image_start : int=1, image_end: int=50,s
     params['inspect']=inspect
     params['phase_plane']=phase_plane
     params['seconds_per_time_index'] = seconds_per_frame
-    params['nd2ToTIFF']=dict()
-    params['nd2ToTIFF']['image_start']=image_start
-    params['nd2ToTIFF']['image_end']=image_end
-    params['nd2ToTIFF']['number_of_rows']=1
-    params['nd2ToTIFF']['crop_ymin']=None
-    params['nd2ToTIFF']['crop_ymax']=None
-    params['nd2ToTIFF']['2row_crop']=None
-    params['nd2ToTIFF']['tiff_compress']=5
+
     params['compile']=dict()
     params['compile']['do_metadata' ]=True
     params['compile']['do_time_table']=True
@@ -4233,7 +4069,6 @@ inspect:bool= True, phase_plane = "c1", image_start : int=1, image_end: int=50,s
         params['use_jd'] = False
 
     if params['TIFF_source']=='nd2':
-        nd2ToTIFF(params)
         compile(params)
     elif params['TIFF_source'] in {'TIFF_from_elements', 'TIFF_from_nd2','TIFF'}:
         compile(params)
@@ -4434,8 +4269,8 @@ def SegmentUnet(experiment_name: str='20201008_sj1536',experiment_directory= Pat
 
     return
 
-@magic_factory(experiment_directory={"label":"d"},seg_img = {"choices":['Otsu','U-net']},phase_plane={"choices":["c1","c2","c3"]})
-def Track(experiment_name: str='20201008_sj1536', experiment_directory = Path('/Users/ryan/data/test/20201008_sj1536'), image_directory:str='TIFF/',
+@magic_factory(experiment_directory={"mode": "d"},seg_img = {"choices":['Otsu','U-net']},phase_plane={"choices":["c1","c2","c3"]})
+def Track(experiment_name: str='20201008_sj1536', experiment_directory= Path(''), image_directory:str='TIFF/',
     FOV:str='1',pxl2um:float= 0.11, phase_plane = "c1", lost_cell_time:int= 3, new_cell_y_cutoff:int= 150,
     new_cell_region_cutoff:float= 4, max_growth_length:float= 1.5, min_growth_length:float= 0.7, seg_img='Otsu'):
     """Performs Mother Machine Analysis"""
