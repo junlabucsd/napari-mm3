@@ -99,7 +99,7 @@ def get_time(filepath):
         return None
 
 # loads and image stack from TIFF or HDF5 using mm3 conventions
-def load_stack(fov_id, peak_id, color='c1', image_return_number=None):
+def load_stack(params, fov_id, peak_id, color='c1', image_return_number=None):
     '''
     Loads an image stack.
 
@@ -190,7 +190,7 @@ def load_time_table():
     return
 
 # function for loading the channel masks
-def load_channel_masks():
+def load_channel_masks(params):
     '''Load channel masks dictionary. Should be .yaml but try pickle too.
     '''
     information("Loading channel masks dictionary.")
@@ -292,7 +292,7 @@ def get_initial_tif_params(image_filename):
         return {'filepath': os.path.join(params['TIFF_dir'],image_filename), 'analyze_success': False}
 
 # get params is the major function which processes raw TIFF images
-def get_tif_params(image_filename, find_channels=True):
+def get_tif_params(params, image_filename, find_channels=True):
     '''This is a damn important function for getting the information
     out of an image. It loads a tiff file, pulls out the image data, and the metadata,
     including the location of the channels if flagged.
@@ -331,7 +331,7 @@ def get_tif_params(image_filename, find_channels=True):
         # look for channels if flagged
         if find_channels:
             # fix the image orientation and get the number of planes
-            image_data = fix_orientation(image_data)
+            image_data = fix_orientation(params, image_data)
 
             # if the image data has more than 1 plane restrict image_data to phase,
             # which should have highest mean pixel data
@@ -344,7 +344,7 @@ def get_tif_params(image_filename, find_channels=True):
             img_shape = [image_data.shape[0], image_data.shape[1]]
 
             # find channels on the processed image
-            chnl_loc_dict = find_channel_locs(image_data)
+            chnl_loc_dict = find_channel_locs(params, image_data)
 
         information('Analyzed %s' % image_filename)
 
@@ -540,7 +540,7 @@ def get_tif_metadata_filename(tif):
     return idata
 
 # make a lookup time table for converting nominal time to elapsed time in seconds
-def make_time_table(analyzed_imgs):
+def make_time_table(params, analyzed_imgs):
     '''
     Loops through the analyzed images and uses the jd time in the metadata to find the elapsed
     time in seconds that each picture was taken. This is later used for more accurate elongation
@@ -619,7 +619,7 @@ def save_tiffs(imgDict, analyzed_imgs, fov_id):
             io.imsave(channel_filename, img[:,:,:,int(planeNumber)-1])
 
 # slice_and_write cuts up the image files one at a time and writes them out to tiff stacks
-def tiff_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
+def tiff_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_imgs):
     '''Writes out 4D stacks of TIFF images per channel.
     Loads all tiffs from and FOV into memory and then slices all time points at once.
 
@@ -646,7 +646,7 @@ def tiff_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
             image_data = tif.asarray()
 
         # channel finding was also done on images after orientation was fixed
-        image_data = fix_orientation(image_data)
+        image_data = fix_orientation(params, image_data)
 
         # add additional axis if the image is flat
         if len(image_data.shape) == 2:
@@ -771,7 +771,7 @@ def save_hdf5(imgDict, img_names, analyzed_imgs, fov_id, channel_masks):
     return
 
 # same thing as tiff_stack_slice_and_write but do it for hdf5
-def hdf5_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
+def hdf5_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_imgs):
     '''Writes out 4D stacks of TIFF images to an HDF5 file.
 
     Called by
@@ -813,7 +813,7 @@ def hdf5_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
             image_data = tif.asarray()
 
         # channel finding was also done on images after orientation was fixed
-        image_data = fix_orientation(image_data)
+        image_data = fix_orientation(params, image_data)
 
         # add additional axis if the image is flat
         if len(image_data.shape) == 2:
@@ -891,7 +891,7 @@ def hdf5_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
     return
 
 # finds the location of channels in a tif
-def find_channel_locs(image_data):
+def find_channel_locs(params, image_data):
     '''Finds the location of channels from a phase contrast image. The channels are returned in
     a dictionary where the key is the x position of the channel in pixel and the value is a
     dicionary with the open and closed end in pixels in y.
@@ -970,7 +970,7 @@ def find_channel_locs(image_data):
     return chnl_loc_dict
 
 # make masks from initial set of images (same images as clusters)
-def make_masks(analyzed_imgs):
+def make_masks(params, analyzed_imgs):
     '''
     Make masks goes through the channel locations in the image metadata and builds a consensus
     Mask for each image per fov, which it returns as dictionary named channel_masks.
@@ -1137,7 +1137,7 @@ def make_masks(analyzed_imgs):
 ### functions about trimming, padding, and manipulating images
 
 # define function for flipping the images on an FOV by FOV basis
-def fix_orientation(image_data):
+def fix_orientation(params, image_data):
     '''
     Fix the orientation. The standard direction for channels to open to is down.
 
@@ -1235,7 +1235,7 @@ def cut_slice(image_data, channel_loc):
     return channel_slice
 
 # calculate cross correlation between pixels in channel stack
-def channel_xcorr(fov_id, peak_id):
+def channel_xcorr(params, fov_id, peak_id):
     '''
     Function calculates the cross correlation of images in a
     stack to the first image in the stack. The output is an
@@ -1251,7 +1251,7 @@ def channel_xcorr(fov_id, peak_id):
     number_of_images = 20
 
     # load the phase contrast images
-    image_data = load_stack(fov_id, peak_id, color=params['phase_plane'])
+    image_data = load_stack(params, fov_id, peak_id, color=params['phase_plane'])
 
     # if there are more images than number_of_images, use number_of_images images evenly
     # spaced across the range
@@ -1318,7 +1318,7 @@ def average_empties_stack(fov_id, specs, color='c1', align=True):
         information("One empty channel (%d) designated for FOV %d." % (peak_id, fov_id))
 
         # load the one phase contrast as the empties
-        avg_empty_stack = load_stack(fov_id, peak_id, color=color)
+        avg_empty_stack = load_stack(params, fov_id, peak_id, color=color)
 
     # but if there is more than one empty you need to align and average them per timepoint
     elif len(empty_peak_ids) > 1:
@@ -1326,7 +1326,7 @@ def average_empties_stack(fov_id, specs, color='c1', align=True):
         empty_stacks = [] # list which holds phase image stacks of designated empties
         for peak_id in empty_peak_ids:
             # load data and append to list
-            image_data = load_stack(fov_id, peak_id, color=color)
+            image_data = load_stack(params, fov_id, peak_id, color=color)
 
             empty_stacks.append(image_data)
 
@@ -1435,7 +1435,7 @@ def copy_empty_stack(from_fov, to_fov, color='c1'):
 
     # load empty stack from one FOV
     information('Loading empty stack from FOV {} to save for FOV {}.'.format(from_fov, to_fov))
-    avg_empty_stack = load_stack(from_fov, 0, color='empty_{}'.format(color))
+    avg_empty_stack = load_stack(params, from_fov, 0, color='empty_{}'.format(color))
 
     # save out data
     if params['output'] == 'TIFF':
@@ -1485,7 +1485,7 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
     information('Subtracting peaks for FOV %d.' % fov_id)
 
     # load empty stack feed dummy peak number to get empty
-    avg_empty_stack = load_stack(fov_id, 0, color='empty_{}'.format(color))
+    avg_empty_stack = load_stack(params, fov_id, 0, color='empty_{}'.format(color))
 
     # determine which peaks are to be analyzed
     ana_peak_ids = []
@@ -1504,7 +1504,7 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
     for peak_id in ana_peak_ids:
         information('Subtracting peak %d.' % peak_id)
 
-        image_data = load_stack(fov_id, peak_id, color=color)
+        image_data = load_stack(params, fov_id, peak_id, color=color)
 
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
@@ -1674,7 +1674,7 @@ def segment_chnl_stack(fov_id, peak_id):
     information('Segmenting FOV %d, channel %d.' % (fov_id, peak_id))
 
     # load subtracted images
-    sub_stack = load_stack(fov_id, peak_id, color='sub_{}'.format(params['phase_plane']))
+    sub_stack = load_stack(params, fov_id, peak_id, color='sub_{}'.format(params['phase_plane']))
 
     # # set up multiprocessing pool to do segmentation. Will do everything before going on.
     # pool = Pool(processes=params['num_analyzers'])
@@ -1974,8 +1974,8 @@ def make_lineage_chnl_stack(fov_and_peak_id):
     information('Creating lineage for FOV %d, channel %d.' % (fov_id, peak_id))
 
     # load segmented data
-    image_data_seg = load_stack(fov_id, peak_id, color=params['track']['seg_img'])
-    # image_data_seg = load_stack(fov_id, peak_id, color='seg')
+    image_data_seg = load_stack(params, fov_id, peak_id, color=params['track']['seg_img'])
+    # image_data_seg = load_stack(params, fov_id, peak_id, color='seg')
 
     # Calculate all data for all time points.
     # this list will be length of the number of time points
@@ -2669,7 +2669,7 @@ def find_all_cell_intensities(Cells,
 
             print("Quantifying channel {} fluorescence in cells in fov {}, peak {}.".format(channel_name, fov_id, peak_id))
             # Load fluorescent images and segmented images for this channel
-            fl_stack = load_stack(fov_id, peak_id, color=channel_name)
+            fl_stack = load_stack(params, fov_id, peak_id, color=channel_name)
             corrected_stack = np.zeros(fl_stack.shape)
 
             for frame in range(fl_stack.shape[0]):
@@ -2686,7 +2686,7 @@ def find_all_cell_intensities(Cells,
                 else:
                     corrected_stack[frame,:,:] = median_filtered
 
-            seg_stack = load_stack(fov_id, peak_id, color='seg_unet')
+            seg_stack = load_stack(params, fov_id, peak_id, color='seg_unet')
 
             # evaluate whether each cell is in this fov/peak combination
             for cell_id,cell in Cells.items():
@@ -2730,8 +2730,8 @@ def find_cell_intensities_worker(fov_id, peak_id, Cells, midline=True, channel='
     '''
     information('Processing peak {} in FOV {}'.format(peak_id, fov_id))
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(fov_id, peak_id, color=channel)
-    seg_stack = load_stack(fov_id, peak_id, color='seg_otsu')
+    fl_stack = load_stack(params, fov_id, peak_id, color=channel)
+    seg_stack = load_stack(params, fov_id, peak_id, color='seg_otsu')
 
     # determine absolute time index
     time_table = params['time_table']
@@ -2788,8 +2788,8 @@ def find_cell_intensities(fov_id, peak_id, Cells, midline=False, channel_name='s
     '''
 
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(fov_id, peak_id, color=channel_name)
-    seg_stack = load_stack(fov_id, peak_id, color='seg_unet')
+    fl_stack = load_stack(params, fov_id, peak_id, color=channel_name)
+    seg_stack = load_stack(params, fov_id, peak_id, color='seg_unet')
 
     # determine absolute time index
     times_all = []
@@ -2900,38 +2900,6 @@ def compile(params):
     else:
         user_spec_fovs = []
 
-    if p['inspect']:
-        viewer = napari.current_viewer()
-        viewer.layers.clear()
-        fov_id_list = sorted(user_spec_fovs)
-
-        # remove fovs if the user specified so
-        for fov_id in fov_id_list:
-            found_files = glob.glob(os.path.join(p['TIFF_dir'], '*xy%02d.tif' % fov_id))# get all tiffs
-
-            # found_files = [filepath.split('/')[-1] for filepath in found_files] # remove pre-path
-            found_files = sorted(found_files) # should sort by timepoint
-
-            sample = io.imread(found_files[0])
-
-            lazy_imread = delayed(io.imread)  # lazy reader
-            lazy_arrays = [lazy_imread(fn) for fn in found_files]
-            dask_arrays = [
-                da.from_delayed(delayed_reader, shape=sample.shape, dtype=sample.dtype)
-                for delayed_reader in lazy_arrays
-            ]
-            # Stack into one large dask.array
-            stack = da.stack(dask_arrays, axis=0)
-            
-            viewer.add_image(stack,name='FOV %02d' % fov_id,contrast_limits=[90,250])
-            # viewer.add_image(stack,name='FOV %02d' % fov_id)
-
-        viewer.grid.enabled = True
-        grid_w = int(len(fov_id_list)/17)+1
-        grid_h = int(len(fov_id_list)/grid_w)+1
-        viewer.grid.shape = (grid_h,grid_w)
-        return
-
     information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
     # only analyze images up until this t point. Put in None otherwise
@@ -3028,7 +2996,7 @@ def compile(params):
             # analyzed_imgs[fn] = get_tif_params(fn, True)
 
             # Parallelized
-            analyzed_imgs[fn] = pool.apply_async(get_tif_params, args=(fn, True))
+            analyzed_imgs[fn] = pool.apply_async(get_tif_params, args=(params, fn, True))
 
         information('Waiting for image analysis pool to be finished.')
 
@@ -3057,11 +3025,11 @@ def compile(params):
     if not p['compile']['do_time_table']:
        information('Skipping time table creation.')
     else:
-        time_table = make_time_table(analyzed_imgs)
+        time_table = make_time_table(params, analyzed_imgs)
 
     ### Make consensus channel masks and get other shared metadata #################################
     if not p['compile']['do_channel_masks'] and p['compile']['do_slicing']:
-        channel_masks = load_channel_masks()
+        channel_masks = load_channel_masks(params)
 
     elif p['compile']['do_channel_masks']:
 
@@ -3072,7 +3040,7 @@ def compile(params):
             analyzed_imgs = {fn : i_metadata for fn, i_metadata in six.iteritems(analyzed_imgs) if i_metadata['t'] <= t_end}
 
         # Uses channelinformation from the already processed image data
-        channel_masks = make_masks(analyzed_imgs)
+        channel_masks = make_masks(params, analyzed_imgs)
 
 
     ### Slice and write TIFF files into channels ###################################################
@@ -3097,11 +3065,11 @@ def compile(params):
 
             if p['output'] == 'TIFF':
                 #This is for loading the whole raw tiff stack and then slicing through it
-                tiff_stack_slice_and_write(send_to_write, channel_masks, analyzed_imgs)
+                tiff_stack_slice_and_write(params, send_to_write, channel_masks, analyzed_imgs)
 
             elif p['output'] == 'HDF5':
                 # Or write it to hdf5
-                hdf5_stack_slice_and_write(send_to_write, channel_masks, analyzed_imgs)
+                hdf5_stack_slice_and_write(params, send_to_write, channel_masks, analyzed_imgs)
 
         information("Channel slices saved.")
 
@@ -3128,7 +3096,7 @@ def compile(params):
                 # crosscorrs[fov_id][peak_id] = channel_xcorr(fov_id, peak_id)
 
                 # multiprocessing verion
-                crosscorrs[fov_id][peak_id] = pool.apply_async(channel_xcorr, args=(fov_id, peak_id,))
+                crosscorrs[fov_id][peak_id] = pool.apply_async(channel_xcorr, args=(params, fov_id, peak_id,))
 
             information('Waiting for cross correlation pool to finish for FOV %d.' % fov_id)
 
@@ -3337,7 +3305,7 @@ def segmentUNet(params):
             if spec == 1:
                 break # just break out with the current peak_id
 
-        img_stack = load_stack(fov_id, peak_id, color=color)
+        img_stack = load_stack(params, fov_id, peak_id, color=color)
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
 
@@ -3393,7 +3361,7 @@ def segmentUNet(params):
         for peak_id in ana_peak_ids:
             information('Segmenting peak {}.'.format(peak_id))
 
-            img_stack = load_stack(fov_id, peak_id, color=params['phase_plane'])
+            img_stack = load_stack(params, fov_id, peak_id, color=params['phase_plane'])
 
             if params['segment']['normalize_to_one']:
                 med_stack = np.zeros(img_stack.shape)
@@ -3718,10 +3686,10 @@ def plot_lineage_images(Cells, fov_id, peak_id, Cells2=None, bgcolor='c1', fgcol
     Cells = find_cells_of_fov_and_peak(Cells, fov_id, peak_id)
 
     # load subtracted and segmented data
-    image_data_bg = load_stack(fov_id, peak_id, color=bgcolor)
+    image_data_bg = load_stack(params, fov_id, peak_id, color=bgcolor)
 
     if fgcolor:
-        image_data_seg = load_stack(fov_id, peak_id, color=fgcolor)
+        image_data_seg = load_stack(params, fov_id, peak_id, color=fgcolor)
 
     if trim_time:
         image_data_bg = image_data_bg[time_set[0]:time_set[1]]
@@ -3960,7 +3928,7 @@ def Lineage(params):
         for peak_id, spec in six.iteritems(specs[fov_id]):
             if spec == 1: # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
                 peak_id_d = peak_id
-                sample_img = load_stack(fov_id,peak_id)
+                sample_img = load_stack(params, fov_id,peak_id)
                 peak_len = np.shape(sample_img)[0]
 
                 break
@@ -4009,17 +3977,8 @@ def range_string_to_indices(range_string):
             indices += list(range(limits[0], limits[1]))
     return indices
 
-@magic_factory(experiment_directory={'mode': 'd'},
-    image_format = {"choices":['TIFF','nd2','TIFF_from_elements','TIFF_from_nd2']},
-    phase_plane={"choices":["c1","c2","c3"]},
-    xcorr_threshold= {"widget_type":"FloatSpinBox", 'min':0, 'max':1, 'step':0.01})
-def Compile(experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'),experiment_name: str='20201008_sj1536', 
-image_directory:str='TIFF/', FOV:str='1', image_format:str='nd2',
-inspect:bool= True, phase_plane = "c1", seconds_per_frame: int=150,
- channel_width : int=10, channel_separation : int=45,xcorr_threshold =0.99):
-    """Performs Mother Machine Analysis"""
-
-    global params
+def compile_gen_params(experiment_name, experiment_directory, image_directory, FOV, image_format, inspect, phase_plane, seconds_per_frame, channel_width, channel_separation, xcorr_threshold):
+    # global params
     params=dict()
     params['experiment_name']=experiment_name
     params['experiment_directory']=experiment_directory
@@ -4068,11 +4027,32 @@ inspect:bool= True, phase_plane = "c1", seconds_per_frame: int=150,
     else:
         params['use_jd'] = False
 
-    if params['TIFF_source']=='nd2':
-        compile(params)
-    elif params['TIFF_source'] in {'TIFF_from_elements', 'TIFF_from_nd2','TIFF'}:
-        compile(params)
-    return
+    return params
+
+
+@magic_factory(experiment_directory={'mode': 'd'},
+    image_format = {"choices":['TIFF','nd2','TIFF_from_elements','TIFF_from_nd2']},
+    phase_plane={"choices":["c1","c2","c3"]},
+    xcorr_threshold= {"widget_type":"FloatSpinBox", 'min':0, 'max':1, 'step':0.01})
+def Compile(experiment_directory= Path(),experiment_name: str='20201008_sj1536', 
+image_directory:str='TIFF/', FOV:str='1', image_format:str='nd2',
+inspect:bool= True, phase_plane = "c1", seconds_per_frame: int=150,
+ channel_width : int=10, channel_separation : int=45,xcorr_threshold =0.99):
+    """Performs Mother Machine Analysis"""
+    params = compile_gen_params(
+        experiment_name, 
+        experiment_directory, 
+        image_directory, 
+        FOV, 
+        image_format, 
+        inspect, 
+        phase_plane, 
+        seconds_per_frame, 
+        channel_width, 
+        channel_separation, 
+        xcorr_threshold)
+
+    compile(params)
 
 @magic_factory(experiment_directory={'mode': 'd'},phase_plane = {"choices": ["c1","c2","c3"]})
 def Subtract(experiment_name:str='20201008_sj1536',experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'), 
@@ -4205,7 +4185,7 @@ def DebugOtsu(OTSU_threshold = 1.0, first_opening_size: int=2,
         break
 
     ## pull out first fov & peak id with cells
-    sub_stack = load_stack(fov_id_d, peak_id_d, color='sub_{}'.format(params['phase_plane']))
+    sub_stack = load_stack(params, fov_id_d, peak_id_d, color='sub_{}'.format(params['phase_plane']))
 
     # image by image for debug
     segmented_imgs = []
