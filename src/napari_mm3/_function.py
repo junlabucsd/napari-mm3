@@ -1,6 +1,8 @@
 from __future__ import print_function, division
 import re
 import datetime
+import tensorflow as tf
+import tensorflow.keras.losses as losses
 import h5py
 import multiprocessing
 from multiprocessing import Pool
@@ -175,7 +177,7 @@ def load_time_table():
 
     return
 # function for loading the specs file
-def load_specs():
+def load_specs(params):
     '''Load specs file which indicates which channels should be analyzed, used as empties, or ignored.'''
 
     try:
@@ -194,7 +196,7 @@ def load_specs():
 ### functions about subtraction
 
 # average empty channels from stacks, making another TIFF stack
-def average_empties_stack(fov_id, specs, color='c1', align=True):
+def average_empties_stack(params, fov_id, specs, color='c1', align=True):
     '''Takes the fov file name and the peak names of the designated empties,
     averages them and saves the image
 
@@ -257,7 +259,7 @@ def average_empties_stack(fov_id, specs, color='c1', align=True):
         for t in time_points:
             # get images from one timepoint at a time and send to alignment and averaging
             imgs = [stack[t] for stack in empty_stacks]
-            avg_empty = average_empties(imgs, align=align) # function is in mm3
+            avg_empty = average_empties(params, imgs, align=align) # function is in mm3
             avg_empty_stack.append(avg_empty)
 
         # concatenate list and then save out to tiff stack
@@ -292,7 +294,7 @@ def average_empties_stack(fov_id, specs, color='c1', align=True):
     return True
 
 # averages a list of empty channels
-def average_empties(imgs, align=True):
+def average_empties(params, imgs, align=True):
     '''
     This function averages a set of images (empty channels) and returns a single image
     of the same size. It first aligns the images to the first image before averaging.
@@ -349,7 +351,7 @@ def average_empties(imgs, align=True):
     return avg_empty
 
 # this function is used when one FOV doesn't have an empty
-def copy_empty_stack(from_fov, to_fov, color='c1'):
+def copy_empty_stack(params, from_fov, to_fov, color='c1'):
     '''Copy an empty stack from one FOV to another'''
 
     # load empty stack from one FOV
@@ -383,7 +385,7 @@ def copy_empty_stack(from_fov, to_fov, color='c1'):
     information("Saved empty channel for FOV %d." % to_fov)
 
 # Do subtraction for an fov over many timepoints
-def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
+def subtract_fov_stack(params, fov_id, specs, color='c1', method='phase'):
     '''
     For a given FOV, loads the precomputed empty stack and does subtraction on
     all peaks in the FOV designated to be analyzed
@@ -433,9 +435,11 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
         pool = Pool(processes=params['num_analyzers'])
 
         if method == 'phase':
-            subtracted_imgs = pool.map(subtract_phase, subtract_pairs, chunksize=10)
+            subtract_args = [(params, pair) for pair in subtract_pairs]
+            subtracted_imgs = pool.map(subtract_phase, subtract_args, chunksize=10)
         elif method == 'fluor':
-            subtracted_imgs = pool.map(subtract_fluor, subtract_pairs, chunksize=10)
+            subtract_args = [(params, pair) for pair in subtract_pairs]
+            subtracted_imgs = pool.map(subtract_fluor, subtract_args, chunksize=10)
 
         pool.close() # tells the process nothing more will be added.
         pool.join() # blocks script until everything has been processed and workers exit
@@ -480,7 +484,7 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
     return True
 
 # subtracts one phase contrast image from another.
-def subtract_phase(image_pair):
+def subtract_phase(params_image_pair):
     '''subtract_phase aligns and subtracts a .
     Modified from subtract_phase_only by jt on 20160511
     The subtracted image returned is the same size as the image given. It may however include
@@ -498,6 +502,9 @@ def subtract_phase(image_pair):
     Called by
     subtract_fov_stack
     '''
+    params = params_image_pair[0]
+    image_pair = params_image_pair[1]
+
     # get out data and pad
     cropped_channel, empty_channel = image_pair # [channel slice, empty slice]
 
@@ -531,7 +538,7 @@ def subtract_phase(image_pair):
     return channel_subtracted
 
 # subtract one fluorescence image from another.
-def subtract_fluor(image_pair):
+def subtract_fluor(params_image_pair):
     ''' subtract_fluor does a simple subtraction of one image to another. Unlike subtract_phase,
     there is no alignment. Also, the empty channel is subtracted from the full channel.
 
@@ -545,6 +552,9 @@ def subtract_fluor(image_pair):
     Called by
     subtract_fov_stack
     '''
+    params = params_image_pair[0]
+    image_pair = params_image_pair[1]
+
     # get out data and pad
     cropped_channel, empty_channel = image_pair # [channel slice, empty slice]
 
@@ -1672,7 +1682,7 @@ def subtract(params):
         os.makedirs(p['sub_dir'])
 
     # load specs file
-    specs = load_specs()
+    specs = load_specs(params)
 
     # make list of FOVs to process (keys of specs file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
@@ -1702,7 +1712,7 @@ def subtract(params):
         need_empty = [] # list holds fov_ids of fov's that did not have empties
         for fov_id in fov_id_list:
             # send to function which will create empty stack for each fov.
-            averaging_result = average_empties_stack(fov_id, specs,
+            averaging_result = average_empties_stack(params, fov_id, specs,
                                                          color=sub_plane, align=align)
             # add to list for FOVs that need to be given empties from other FOvs
             if not averaging_result:
@@ -1716,14 +1726,14 @@ def subtract(params):
 
         for fov_id in need_empty:
             from_fov = min(have_empty, key=lambda x: abs(x-fov_id)) # find closest FOV with an empty
-            copy_result = copy_empty_stack(from_fov, fov_id, color=sub_plane)
+            copy_result = copy_empty_stack(params, from_fov, fov_id, color=sub_plane)
 
     ### Subtract ##################################################################################
     if p['subtract']['do_subtraction']:
         information("Subtracting channels for channel {}.".format(sub_plane))
         for fov_id in fov_id_list:
             # send to function which will create empty stack for each fov.
-            subtraction_result = subtract_fov_stack(fov_id, specs,
+            subtraction_result = subtract_fov_stack(params, fov_id, specs,
                                                         color=sub_plane, method=sub_method)
         information("Finished subtraction.")
 
@@ -1963,7 +1973,7 @@ def segmentUNet(params):
     p['pred_img'] = 'pred_unet'
 
     # load specs file
-    specs = load_specs()
+    specs = load_specs(params)
     # print(specs) # for debugging
 
     # make list of FOVs to process (keys of channel_mask file)
@@ -2019,7 +2029,7 @@ def segmentOTSU(params):
     p['seg_img'] = 'seg_otsu'
 
     # load specs file
-    specs = load_specs()
+    specs = load_specs(params)
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
@@ -2073,7 +2083,7 @@ def Track_Cells(params):
         os.makedirs(p['cell_dir'])
 
     # load specs file
-    specs = load_specs()
+    specs = load_specs(params)
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
@@ -2443,13 +2453,8 @@ def range_string_to_indices(range_string):
     return indices
 
 
-
-@magic_factory(experiment_directory={'mode': 'd'},phase_plane = {"choices": ["c1","c2","c3"]})
-def Subtract(experiment_name:str='20201008_sj1536',experiment_directory= Path('/Users/ryan/data/test/20201008_sj1536'), 
-    image_directory:str='TIFF/', 
-    FOV:str='1-5', phase_plane = "c1", alignment_pad: int=10):
-
-    global params
+def subtract_prepare_params(experiment_name, experiment_directory, image_directory, FOV, phase_plane, alignment_pad):
+    # global params
     params=dict()
     params['experiment_name']=experiment_name
     params['experiment_directory']=experiment_directory
@@ -2477,6 +2482,14 @@ def Subtract(experiment_name:str='20201008_sj1536',experiment_directory= Path('/
     params['cell_dir'] = os.path.join(params['ana_dir'], 'cell_data')
     params['track_dir'] = os.path.join(params['ana_dir'], 'tracking')
 
+    return params
+
+@magic_factory(experiment_directory={'mode': 'd'},phase_plane = {"choices": ["c1","c2","c3"]})
+def Subtract(experiment_name:str='',experiment_directory= Path(), 
+    image_directory:str='TIFF/', 
+    FOV:str='1-5', phase_plane = "c1", alignment_pad: int=10):
+
+    params = subtract_prepare_params(experiment_name, experiment_directory, image_directory, FOV, phase_plane, alignment_pad)
     subtract(params)
 
 @magic_factory(experiment_directory={'mode': 'd'},phase_plane={"choices":["c1","c2","c3"]})
@@ -2553,7 +2566,7 @@ def DebugOtsu(OTSU_threshold = 1.0, first_opening_size: int=2,
     p['seg_img'] = 'seg_otsu'
 
     # load specs file
-    specs = load_specs()
+    specs = load_specs(params)
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
