@@ -10,7 +10,7 @@ contributions:
     python_name: napari_mm3._compile:Compile
   - id: napari-mm3.Subtract
     title: Performs Mother Machine Analysis
-    python_name: napari_mm3._function:Subtract
+    python_name: napari_mm3._subtract:Subtract
   - id: napari-mm3.SegmentOtsu
     title: Performs Mother Machine Analysis
     python_name: napari_mm3._function:SegmentOtsu
