@@ -7,7 +7,7 @@ contributions:
     python_name: napari_mm3._nd2_to_tiff:Nd2ToTIFF
   - id: napari-mm3.Compile
     title: Performs Mother Machine Analysis
-    python_name: napari_mm3._function:Compile
+    python_name: napari_mm3._compile:Compile
   - id: napari-mm3.Subtract
     title: Performs Mother Machine Analysis
     python_name: napari_mm3._function:Subtract
