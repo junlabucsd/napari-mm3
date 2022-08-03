@@ -1,43 +1,29 @@
 from __future__ import print_function, division
 import re
-import copy
 import datetime
-import glob
 import h5py
-import json
-import os
 import multiprocessing
 from multiprocessing import Pool
 import numpy as np
 import napari
 from magicgui import magic_factory, magicgui
 from napari.types import ImageData, LabelsData
-from dask import delayed
-import dask.array as da
 import os
 try:
     import cPickle as pickle
 except:
     import pickle
-from pprint import pprint
-import pandas as pd
 from pathlib import Path
 import re
 from scipy import ndimage as ndi
-from scipy.signal import find_peaks_cwt
-from scipy.optimize import curve_fit, leastsq
-from skimage import io, segmentation, filters, morphology, measure
-from skimage.transform import rotate
-from skimage.feature import match_template, blob_log
+from skimage import io, segmentation, filters, morphology
+from skimage.feature import match_template
 from skimage.filters import threshold_otsu, median
-from skimage.measure import regionprops, profile_line
-from skimage.exposure import rescale_intensity
+from skimage.measure import regionprops
 
 import six
-import struct
 import sys
 import time
-import traceback
 import warnings
 import yaml
 import tifffile as tiff
@@ -203,114 +189,6 @@ def load_specs():
             warning('Could not load specs file.')
 
     return specs
-
-### functions for dealing with raw TIFF images
-
-
-# saves traps sliced via Unet
-def save_tiffs(imgDict, analyzed_imgs, fov_id):
-
-    savePath = os.path.join(params['experiment_directory'],
-                            params['analysis_directory'],
-                            params['chnl_dir'])
-    img_names = [key for key in analyzed_imgs.keys()]
-    image_params = analyzed_imgs[img_names[0]]
-
-    for peak,img in six.iteritems(imgDict):
-
-        img = img.astype('uint16')
-        if not os.path.isdir(savePath):
-            os.mkdir(savePath)
-
-        for planeNumber in image_params['planes']:
-
-            channel_filename = os.path.join(savePath, params['experiment_name'] + '_xy{0:0=3}_p{1:0=4}_c{2}.tif'.format(fov_id, peak, planeNumber))
-            io.imsave(channel_filename, img[:,:,:,int(planeNumber)-1])
-
-# saves traps sliced via Unet to an hdf5 file
-def save_hdf5(imgDict, img_names, analyzed_imgs, fov_id, channel_masks):
-    '''Writes out 4D stacks of images to an HDF5 file.
-
-    Called by
-    mm3_Compile.py
-    '''
-
-    savePath = params['hdf5_dir']
-
-    if not os.path.isdir(savePath):
-        os.mkdir(savePath)
-
-    img_times = [analyzed_imgs[key]['t'] for key in img_names]
-    img_jds = [analyzed_imgs[key]['jd'] for key in img_names]
-    fov_ids = [analyzed_imgs[key]['fov'] for key in img_names]
-
-    # get image_params from first image from current fov
-    image_params = analyzed_imgs[img_names[0]]
-
-    # establish some variables for hdf5 attributes
-    fov_id = image_params['fov']
-    x_loc = image_params['x']
-    y_loc = image_params['y']
-    image_shape = image_params['shape']
-    image_planes = image_params['planes']
-
-    fov_channel_masks = channel_masks[fov_id]
-
-    with h5py.File(os.path.join(savePath,'{}_xy{:0=2}.hdf5'.format(params['experiment_name'],fov_id)), 'w', libver='earliest') as h5f:
-
-        # add in metadata for this FOV
-        # these attributes should be common for all channel
-        h5f.attrs.create('fov_id', fov_id)
-        h5f.attrs.create('stage_x_loc', x_loc)
-        h5f.attrs.create('stage_y_loc', y_loc)
-        h5f.attrs.create('image_shape', image_shape)
-        # encoding is because HDF5 has problems with numpy unicode
-        h5f.attrs.create('planes', [plane.encode('utf8') for plane in image_planes])
-        h5f.attrs.create('peaks', sorted([key for key in imgDict.keys()]))
-
-        # this is for things that change across time, for these create a dataset
-        img_names = np.asarray(img_names)
-        img_names = np.expand_dims(img_names, 1)
-        img_names = img_names.astype('S100')
-        h5ds = h5f.create_dataset(u'filenames', data=img_names,
-                                  chunks=True, maxshape=(None, 1), dtype='S100',
-                                  compression="gzip", shuffle=True, fletcher32=True)
-        h5ds = h5f.create_dataset(u'times', data=np.expand_dims(img_times, 1),
-                                  chunks=True, maxshape=(None, 1),
-                                  compression="gzip", shuffle=True, fletcher32=True)
-        h5ds = h5f.create_dataset(u'times_jd', data=np.expand_dims(img_jds, 1),
-                                  chunks=True, maxshape=(None, 1),
-                                  compression="gzip", shuffle=True, fletcher32=True)
-
-        # cut out the channels as per channel masks for this fov
-        for peak,channel_stack in six.iteritems(imgDict):
-
-            channel_stack = channel_stack.astype('uint16')
-            # create group for this trap
-            h5g = h5f.create_group('channel_%04d' % peak)
-
-            # add attribute for peak_id, channel location
-            # add attribute for peak_id, channel location
-            h5g.attrs.create('peak_id', peak)
-            channel_loc = fov_channel_masks[peak]
-            h5g.attrs.create('channel_loc', channel_loc)
-
-            # save a different dataset for all colors
-            for color_index in range(channel_stack.shape[3]):
-
-                # create the dataset for the image. Review docs for these options.
-                h5ds = h5g.create_dataset(u'p%04d_c%1d' % (peak, color_index+1),
-                                data=channel_stack[:,:,:,color_index],
-                                chunks=(1, channel_stack.shape[1], channel_stack.shape[2]),
-                                maxshape=(None, channel_stack.shape[1], channel_stack.shape[2]),
-                                compression="gzip", shuffle=True, fletcher32=True)
-
-                # h5ds.attrs.create('plane', image_planes[color_index].encode('utf8'))
-
-                # write the data even though we have more to write (free up memory)
-                h5f.flush()
-
-    return
 
 
 ### functions about subtraction
@@ -1760,171 +1638,6 @@ def find_all_cell_intensities(Cells,
     # The cell objects in the original dictionary will be updated,
     # no need to return anything specifically.
     return
-
-def find_cell_intensities_worker(fov_id, peak_id, Cells, midline=True, channel='sub_c3'):
-    '''
-    Finds fluorescenct information for cells. All the cells in Cells
-    should be from one fov/peak. See the function
-    organize_cells_by_channel()
-    This version is the same as find_cell_intensities but return the Cells object for collection by the pool.
-    The original find_cell_intensities is kept for compatibility.
-    '''
-    information('Processing peak {} in FOV {}'.format(peak_id, fov_id))
-    # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(params, fov_id, peak_id, color=channel)
-    seg_stack = load_stack(params, fov_id, peak_id, color='seg_otsu')
-
-    # determine absolute time index
-    time_table = params['time_table']
-    times_all = []
-    for fov in params['time_table']:
-        times_all = np.append(times_all, [int(x) for x in time_table[fov].keys()])
-    times_all = np.unique(times_all)
-    times_all = np.sort(times_all)
-    times_all = np.array(times_all,np.int_)
-    t0 = times_all[0] # first time index
-
-    # Loop through cells
-    for Cell in Cells.values():
-        # give this cell two lists to hold new information
-        Cell.fl_tots = [] # total fluorescence per time point
-        Cell.fl_area_avgs = [] # avg fluorescence per unit area by timepoint
-        Cell.fl_vol_avgs = [] # avg fluorescence per unit volume by timepoint
-
-        if midline:
-            Cell.mid_fl = [] # avg fluorescence of midline
-
-        # and the time points that make up this cell's life
-        for n, t in enumerate(Cell.times):
-            # create fluorescent image only for this cell and timepoint.
-            fl_image_masked = np.copy(fl_stack[t-t0])
-            fl_image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
-
-            # append total flourescent image
-            Cell.fl_tots.append(np.sum(fl_image_masked))
-            # and the average fluorescence
-            Cell.fl_area_avgs.append(np.sum(fl_image_masked) / Cell.areas[n])
-            Cell.fl_vol_avgs.append(np.sum(fl_image_masked) / Cell.volumes[n])
-
-            if midline:
-                # add the midline average by first applying morphology transform
-                bin_mask = np.copy(seg_stack[t-t0])
-                bin_mask[bin_mask != Cell.labels[n]] = 0
-                med_mask, _ = morphology.medial_axis(bin_mask, return_distance=True)
-                # med_mask[med_dist < np.floor(cap_radius/2)] = 0
-                # print(img_fluo[med_mask])
-                if (np.shape(fl_image_masked[med_mask])[0] > 0):
-                    Cell.mid_fl.append(np.nanmean(fl_image_masked[med_mask]))
-                else:
-                    Cell.mid_fl.append(0)
-
-    # return the cell object to the pool initiated by mm3_Colors.
-    return Cells
-
-def find_cell_intensities(fov_id, peak_id, Cells, midline=False, channel_name='sub_c2'):
-    '''
-    Finds fluorescenct information for cells. All the cells in Cells
-    should be from one fov/peak. See the function
-    organize_cells_by_channel()
-    '''
-
-    # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(params, fov_id, peak_id, color=channel_name)
-    seg_stack = load_stack(params, fov_id, peak_id, color='seg_unet')
-
-    # determine absolute time index
-    times_all = []
-    for fov in params['time_table']:
-        times_all = np.append(times_all, time_table[fov].keys())
-    times_all = np.unique(times_all)
-    times_all = np.sort(times_all)
-    times_all = np.array(times_all,np.int_)
-    t0 = times_all[0] # first time index
-
-    # Loop through cells
-    for Cell in Cells.values():
-        # give this cell two lists to hold new information
-        Cell.fl_tots = [] # total fluorescence per time point
-        Cell.fl_area_avgs = [] # avg fluorescence per unit area by timepoint
-        Cell.fl_vol_avgs = [] # avg fluorescence per unit volume by timepoint
-
-        if midline:
-            Cell.mid_fl = [] # avg fluorescence of midline
-
-        # and the time points that make up this cell's life
-        for n, t in enumerate(Cell.times):
-            # create fluorescent image only for this cell and timepoint.
-            fl_image_masked = np.copy(fl_stack[t-t0])
-            fl_image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
-
-            # append total flourescent image
-            Cell.fl_tots.append(np.sum(fl_image_masked))
-            # and the average fluorescence
-            Cell.fl_area_avgs.append(np.sum(fl_image_masked) / Cell.areas[n])
-            Cell.fl_vol_avgs.append(np.sum(fl_image_masked) / Cell.volumes[n])
-
-            if midline:
-                # add the midline average by first applying morphology transform
-                bin_mask = np.copy(seg_stack[t-t0])
-                bin_mask[bin_mask != Cell.labels[n]] = 0
-                med_mask, _ = morphology.medial_axis(bin_mask, return_distance=True)
-                # med_mask[med_dist < np.floor(cap_radius/2)] = 0
-                # print(img_fluo[med_mask])
-                if (np.shape(fl_image_masked[med_mask])[0] > 0):
-                    Cell.mid_fl.append(np.nanmean(fl_image_masked[med_mask]))
-                else:
-                    Cell.mid_fl.append(0)
-
-    # The cell objects in the original dictionary will be updated,
-    # no need to return anything specifically.
-    return
-
-# finds best fit for 2d gaussian using functin above
-def fitgaussian(data):
-    """Returns (height, x, y, width_x, width_y)
-    the gaussian parameters of a 2D distribution found by a fit
-    if params are not provided, they are calculated from the moments
-    params should be (height, x, y, width_x, width_y)"""
-    gparams = moments(data) # create guess parameters.
-    errorfunction = lambda p: np.ravel(gaussian(*p)(*np.indices(data.shape)) - data)
-    p, success = leastsq(errorfunction, gparams)
-    return p
-
-# returnes a 2D gaussian function
-def gaussian(height, center_x, center_y, width):
-    '''Returns a gaussian function with the given parameters. It is a circular gaussian.
-    width is 2*sigma x or y
-    '''
-    # return lambda x,y: height*np.exp(-(((center_x-x)/width_x)**2+((center_y-y)/width_y)**2)/2)
-    return lambda x,y: height*np.exp(-(((center_x-x)/width)**2+((center_y-y)/width)**2)/2)
-
-# moments of a 2D gaussian
-def moments(data):
-    '''
-    Returns (height, x, y, width_x, width_y)
-    The (circular) gaussian parameters of a 2D distribution by calculating its moments.
-    width_x and width_y are 2*sigma x and sigma y of the guassian.
-    '''
-    total = data.sum()
-    X, Y = np.indices(data.shape)
-    x = (X*data).sum()/total
-    y = (Y*data).sum()/total
-    col = data[:, int(y)]
-    width = float(np.sqrt(abs((np.arange(col.size)-y)**2*col).sum()/col.sum()))
-    row = data[int(x), :]
-    # width_y = np.sqrt(abs((np.arange(row.size)-x)**2*row).sum()/row.sum())
-    height = data.max()
-    return height, x, y, width
-
-# returns a 1D gaussian function
-def gaussian1d(x, height, mean, sigma):
-    '''
-    x : data
-    height : height
-    mean : center
-    sigma : RMS width
-    '''
-    return height * np.exp(-(x-mean)**2 / (2*sigma**2))
 
 def subtract(params):
     '''mm3_Subtract.py averages empty channels and then subtractions them from channels with cells'''

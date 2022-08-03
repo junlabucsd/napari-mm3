@@ -25,68 +25,6 @@ from ._function import information, warning, get_fov, get_time, load_stack
 
 
 ### Functions for working with TIFF metadata ###
-def get_initial_tif_params(params, image_filename):
-    '''This is a function for getting the information
-    out of an image for later trap identification, cropping, and aligning with Unet. 
-    It loads a tiff file and pulls out the image metadata.
-    TODO: How is this different from get_tif_params??? They look identical!!
-
-    it returns a dictionary like this for each image:
-
-    'filename': image_filename,
-    'fov' : image_metadata['fov'], # fov id
-    't' : image_metadata['t'], # time point
-    'jdn' : image_metadata['jdn'], # absolute julian time
-    'x' : image_metadata['x'], # x position on stage [um]
-    'y' : image_metadata['y'], # y position on stage [um]
-    'plane_names' : image_metadata['plane_names'] # list of plane names
-
-    Called by
-    mm3_Compile.py __main__
-
-    Calls
-    mm3.extract_metadata
-    mm3.find_channels
-    '''
-
-    try:
-        # open up file and get metadata
-        with tiff.TiffFile(os.path.join(params['TIFF_dir'],image_filename)) as tif:
-            image_data = tif.asarray()
-            #print(image_data.shape) # uncomment for debug
-            #if len(image_data.shape) == 2:
-            #    img_shape = [image_data.shape[0],image_data.shape[1]]
-            #else:
-            img_shape = [image_data.shape[1],image_data.shape[2]]
-            plane_list = [str(i+1) for i in range(image_data.shape[0])]
-            #print(plane_list) # uncomment for debug
-
-            if params['TIFF_source'] == 'TIFF_from_elements':
-                image_metadata = get_tif_metadata_elements(tif)
-            elif params['TIFF_source'] == ('nd2' or 'TIFF_from_nd2'):
-                image_metadata = get_tif_metadata_nd2ToTIFF(tif)
-            else:
-                image_metadata = get_tif_metadata_filename(tif)
-
-        information('Analyzed %s' % image_filename)
-
-        # return the file name, the data for the channels in that image, and the metadata
-        return {'filepath': os.path.join(params['TIFF_dir'], image_filename),
-                'fov' : image_metadata['fov'], # fov id
-                't' : image_metadata['t'], # time point
-                'jd' : image_metadata['jd'], # absolute julian time
-                'x' : image_metadata['x'], # x position on stage [um]
-                'y' : image_metadata['y'], # y position on stage [um]
-                'planes' : plane_list, # list of plane names
-                'shape' : img_shape} # image shape x y in pixels
-
-    except:
-        warning('Failed get_params for ' + image_filename.split("/")[-1])
-        print(sys.exc_info()[0])
-        print(sys.exc_info()[1])
-        print(traceback.print_tb(sys.exc_info()[2]))
-        return {'filepath': os.path.join(params['TIFF_dir'],image_filename), 'analyze_success': False}
-
 
 # get params is the major function which processes raw TIFF images
 def get_tif_params(params, image_filename, find_channels=True):
