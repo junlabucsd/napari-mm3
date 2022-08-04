@@ -19,7 +19,7 @@ contributions:
     python_name: napari_mm3._function:SegmentUnet
   - id: napari-mm3.Track
     title: Performs Mother Machine Analysis
-    python_name: napari_mm3._function:Track
+    python_name: napari_mm3._track:Track
   - id: napari-mm3.Annotate
     title: Annotate training data
     python_name: napari_mm3._annotate:Annotate
