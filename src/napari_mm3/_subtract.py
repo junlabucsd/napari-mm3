@@ -655,4 +655,4 @@ def Subtract(
         phase_plane,
         alignment_pad,
     )
-    subtract(params, working_directory / "analysis")
+    subtract(params, working_directory / analysis_directory)
