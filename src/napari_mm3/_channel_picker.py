@@ -9,10 +9,11 @@ import yaml
 import tifffile as tiff
 
 
-TRANSLUCENT_RED = np.array([1., 0., 0., .25])
-TRANSLUCENT_GREEN = np.array([0., 1., 0., .25])
-TRANSLUCENT_BLUE = np.array([0., 0., 1., .25])
+TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 0.25])
+TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, 0.25])
+TRANSLUCENT_BLUE = np.array([0.0, 0.0, 1.0, 0.25])
 TRANSPARENT = np.array([0, 0, 0, 0])
+
 
 def load_fov(image_directory, fov_id):
     print("getting files")
@@ -35,13 +36,17 @@ def load_fov(image_directory, fov_id):
     print("numpying files")
     return np.array(image_fov_stack)
 
+
 def load_crosscorrs(analysis_directory, fov_id):
     print("Getting crosscorrs")
-    with (analysis_directory/"crosscorrs.pkl").open("rb") as data:
+    with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
         cross_corrs = pickle.load(data)
     fov_crosscorrs = cross_corrs[fov_id]
-    average_crosscorrs = {peak:fov_crosscorrs[peak]['cc_avg'] for peak in fov_crosscorrs}
+    average_crosscorrs = {
+        peak: fov_crosscorrs[peak]["cc_avg"] for peak in fov_crosscorrs
+    }
     return average_crosscorrs
+
 
 @magicgui.magic_factory(
     auto_call=True,
@@ -85,15 +90,15 @@ def ChannelPicker(
     viewer.grid.enabled = False
     viewer.text_overlay.text = (
         "Interactive channel picker. Click to change channel mode. "
-        "Color code:\n" 
-        "    Green: A channel with bacteria, \n" 
-        "    Blue: An empty channel without bacteria, to be used as a template. \n" 
-        "    Red: A channel to ignore. \n" 
+        "Color code:\n"
+        "    Green: A channel with bacteria, \n"
+        "    Blue: An empty channel without bacteria, to be used as a template. \n"
+        "    Red: A channel to ignore. \n"
         "The number above the channel is the crosscorrelation. \n"
         "A higher value means that that the channel is more likely to be empty."
-        )
+    )
     viewer.text_overlay.visible = True
-    viewer.text_overlay.color = 'white'
+    viewer.text_overlay.color = "white"
 
     print("Rendering images")
     image_fov_stack = load_fov(data_directory / image_directory, fov_id)
@@ -114,11 +119,11 @@ def ChannelPicker(
     crosscorrs = load_crosscorrs(data_directory / analysis_directory, cur_fov)
     properties = {"peaks": sorted_peaks, "crosscorrs": crosscorrs.values()}
     text_parameters = {
-        'text': "{crosscorrs:.03f}",
-        'size': 8,
-        'anchor': 'upper_left',
-        'visible': True,
-        'color': 'white'
+        "text": "{crosscorrs:.03f}",
+        "size": 8,
+        "anchor": "upper_left",
+        "visible": True,
+        "color": "white",
     }
 
     # Set box colors

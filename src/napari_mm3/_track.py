@@ -628,7 +628,7 @@ def track_update_params(
 @magic_factory(
     seg_img={
         "choices": ["Otsu", "U-net"],
-        "tooltip": "Segmentation mechanism that was used."
+        "tooltip": "Segmentation mechanism that was used.",
     },
     working_directory={
         "mode": "d",
@@ -645,12 +645,10 @@ def track_update_params(
     FOV_range={
         "tooltip": "Optional. Range of FOVs to include. By default, all will be processed. E.g. '1-9' or '2,3,6-8'."
     },
-    pxl2um={
-        "tooltip": "Micrometers per pixel ('PiXel To Micrometer)"
-    },
+    pxl2um={"tooltip": "Micrometers per pixel ('PiXel To Micrometer)"},
 )
 def Track(
-    working_directory:Path=Path(),
+    working_directory: Path = Path(),
     output_prefix: str = "",
     image_directory: str = "TIFF/",
     analysis_directory: str = "analysis/",
