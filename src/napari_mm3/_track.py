@@ -12,7 +12,6 @@ from magicgui import magic_factory
 from pathlib import Path
 from skimage.measure import regionprops
 
-# TODO: IMO, lineage tracking should be TOTALLY separate from general tracking. Otherwise it gets confusing.
 from ._function import (
     information,
     load_specs,
@@ -20,10 +19,8 @@ from ._function import (
     load_stack,
     load_time_table,
     find_complete_cells,
-    plot_lineage_images,
     find_cells_of_birth_label,
 )
-
 
 # functions for checking if a cell has divided or not
 # this function should also take the variable t to
@@ -218,8 +215,8 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                 ):
                     # Create cell and put in cell dictionary
                     cell_id = create_cell_id(region, t, peak_id, fov_id)
-                    Cells[cell_id] = Cell(
-                        time_table, cell_id, region, t, parent_id=None
+                    Cells[cell_id]= Cell(
+                        params, time_table, cell_id, region, t, parent_id=None
                     )
 
                     # add thes id to list of current leaves
@@ -276,7 +273,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                             and region.label <= new_cell_region_cutoff
                         ):
                             cell_id = create_cell_id(region, t, peak_id, fov_id)
-                            Cells[cell_id] = Cell(
+                            Cells[cell_id]= Cell(params,
                                 time_table, cell_id, region, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
@@ -318,10 +315,10 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         # create two new cells and divide the mother
                         daughter1_id = create_cell_id(region1, t, peak_id, fov_id)
                         daughter2_id = create_cell_id(region2, t, peak_id, fov_id)
-                        Cells[daughter1_id] = Cell(
+                        Cells[daughter1_id]= Cell(params,
                             time_table, daughter1_id, region1, t, parent_id=leaf_id
                         )
-                        Cells[daughter2_id] = Cell(
+                        Cells[daughter2_id]= Cell(params,
                             time_table, daughter2_id, region2, t, parent_id=leaf_id
                         )
                         Cells[leaf_id].divide(
@@ -354,7 +351,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                             and region2.label <= new_cell_region_cutoff
                         ):
                             cell_id = create_cell_id(region2, t, peak_id, fov_id)
-                            Cells[cell_id] = Cell(
+                            Cells[cell_id]= Cell(params,
                                 time_table, cell_id, region2, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
@@ -368,7 +365,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                             and region1.label <= new_cell_region_cutoff
                         ):
                             cell_id = create_cell_id(region1, t, peak_id, fov_id)
-                            Cells[cell_id] = Cell(
+                            Cells[cell_id]= Cell(params,
                                 time_table, cell_id, region1, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
@@ -498,6 +495,297 @@ def Lineage(params):
     information("Completed Plotting")
 
 
+def plot_lineage_images(
+    params,
+    Cells,
+    fov_id,
+    peak_id,
+    Cells2=None,
+    bgcolor="c1",
+    fgcolor="seg",
+    plot_tracks=True,
+    trim_time=False,
+    time_set=(0, 100),
+    t_adj=1,
+):
+    """
+    Plot linages over images across time points for one FOV/peak.
+    Parameters
+    ----------
+    bgcolor : Designation of background to use. Subtracted images look best if you have them.
+    fgcolor : Designation of foreground to use. This should be a segmented image.
+    Cells2 : second set of linages to overlay. Useful for comparing lineage output.
+    plot_tracks : bool
+        If to plot cell traces or not.
+    t_adj : int
+        adjust time indexing for differences between t index of image and image number
+    """
+
+    # filter cells
+    Cells = find_cells_of_fov_and_peak(Cells, fov_id, peak_id)
+
+    # load subtracted and segmented data
+    image_data_bg = load_stack(params, fov_id, peak_id, color=bgcolor)
+
+    if fgcolor:
+        image_data_seg = load_stack(params, fov_id, peak_id, color=fgcolor)
+
+    if trim_time:
+        image_data_bg = image_data_bg[time_set[0] : time_set[1]]
+        if fgcolor:
+            image_data_seg = image_data_seg[time_set[0] : time_set[1]]
+
+    n_imgs = image_data_bg.shape[0]
+    image_indicies = range(n_imgs)
+
+    if fgcolor:
+        # calculate the regions across the segmented images
+        regions_by_time = [regionprops(timepoint) for timepoint in image_data_seg]
+
+        # Color map for good label colors
+        vmin = 0.5  # values under this color go to black
+        vmax = 100  # max y value
+        cmap = mpl.colors.ListedColormap(sns.husl_palette(vmax, h=0.5, l=0.8, s=1))
+        cmap.set_under(color="black")
+
+    # Trying to get the image size down
+    figxsize = image_data_bg.shape[2] * n_imgs / 100.0
+    figysize = image_data_bg.shape[1] / 100.0
+
+    # plot the images in a series
+    fig, axes = plt.subplots(
+        ncols=n_imgs,
+        nrows=1,
+        figsize=(figxsize, figysize),
+        facecolor="black",
+        edgecolor="black",
+    )
+    fig.subplots_adjust(wspace=0, hspace=0, left=0, right=1, top=1, bottom=0)
+    transFigure = fig.transFigure.inverted()
+
+    # change settings for each axis
+    ax = axes.flat  # same as axes.ravel()
+    for a in ax:
+        a.set_axis_off()
+        a.set_aspect("equal")
+        ttl = a.title
+        ttl.set_position([0.5, 0.05])
+
+    for i in image_indicies:
+        ax[i].imshow(image_data_bg[i], cmap=plt.cm.gray, aspect='equal')
+
+        if fgcolor:
+            # make a new version of the segmented image where the
+            # regions are relabeled by their y centroid position.
+            # scale it so it falls within 100.
+            seg_relabeled = image_data_seg[i].copy().astype(np.float)
+            for region in regions_by_time[i]:
+                rescaled_color_index = (
+                    region.centroid[0] / image_data_seg.shape[1] * vmax
+                )
+                seg_relabeled[seg_relabeled == region.label] = (
+                    int(rescaled_color_index) - 0.1
+                )  # subtract small value to make it so there is not overlabeling
+            ax[i].imshow(seg_relabeled, cmap=cmap, alpha=.5, vmin=vmin, vmax=vmax)
+
+        ax[i].set_title(str(i + t_adj), color="white")
+
+    # Annotate each cell with information
+    if plot_tracks:
+        for cell_id in Cells:
+            for n, t in enumerate(Cells[cell_id].times):
+                t -= t_adj  # adjust for special indexing
+
+                # don't look at time points out of the interval
+                if trim_time:
+                    if t < time_set[0] or t >= time_set[1] - 1:
+                        break
+
+                x = Cells[cell_id].centroids[n][1]
+                y = Cells[cell_id].centroids[n][0]
+
+                # add a circle at the centroid for every point in this cell's life
+                circle = mpatches.Circle(
+                    xy=(x, y), radius=2, color="white", lw=0, alpha=0.5
+                )
+                ax[t].add_patch(circle)
+
+                # draw connecting lines between the centroids of cells in same lineage
+                try:
+                    if n < len(Cells[cell_id].times) - 1:
+                        # coordinates of the next centroid
+                        x_next = Cells[cell_id].centroids[n + 1][1]
+                        y_next = Cells[cell_id].centroids[n + 1][0]
+                        t_next = (
+                            Cells[cell_id].times[n + 1] - t_adj
+                        )  # adjust for special indexing
+
+                        # get coordinates for the whole figure
+                        coord1 = transFigure.transform(
+                            ax[t].transData.transform([x, y])
+                        )
+                        coord2 = transFigure.transform(
+                            ax[t_next].transData.transform([x_next, y_next])
+                        )
+
+                        # create line
+                        line = mpl.lines.Line2D(
+                            (coord1[0], coord2[0]),
+                            (coord1[1], coord2[1]),
+                            transform=fig.transFigure,
+                            color="white",
+                            lw=1,
+                            alpha=0.5,
+                        )
+
+                        # add it to plot
+                        fig.lines.append(line)
+                except:
+                    pass
+
+                # draw connecting between mother and daughters
+                try:
+                    if n == len(Cells[cell_id].times) - 1 and Cells[cell_id].daughters:
+                        # daughter ids
+                        d1_id = Cells[cell_id].daughters[0]
+                        d2_id = Cells[cell_id].daughters[1]
+
+                        # both daughters should have been born at the same time.
+                        t_next = Cells[d1_id].times[0] - t_adj
+
+                        # coordinates of the two daughters
+                        x_d1 = Cells[d1_id].centroids[0][1]
+                        y_d1 = Cells[d1_id].centroids[0][0]
+                        x_d2 = Cells[d2_id].centroids[0][1]
+                        y_d2 = Cells[d2_id].centroids[0][0]
+
+                        # get coordinates for the whole figure
+                        coord1 = transFigure.transform(
+                            ax[t].transData.transform([x, y])
+                        )
+                        coordd1 = transFigure.transform(
+                            ax[t_next].transData.transform([x_d1, y_d1])
+                        )
+                        coordd2 = transFigure.transform(
+                            ax[t_next].transData.transform([x_d2, y_d2])
+                        )
+
+                        # create line and add it to plot for both
+                        for coord in [coordd1, coordd2]:
+                            line = mpl.lines.Line2D(
+                                (coord1[0], coord[0]),
+                                (coord1[1], coord[1]),
+                                transform=fig.transFigure,
+                                color="white",
+                                lw=1,
+                                alpha=0.5,
+                                ls="dashed",
+                            )
+                            # add it to plot
+                            fig.lines.append(line)
+                except:
+                    pass
+
+        # this is for plotting the traces from a second set of cells
+        if Cells2 and plot_tracks:
+            Cells2 = find_cells_of_fov_and_peak(Cells2, fov_id, peak_id)
+            for cell_id in Cells2:
+                for n, t in enumerate(Cells2[cell_id].times):
+                    t -= t_adj
+
+                    # don't look at time points out of the interval
+                    if trim_time:
+                        if t < time_set[0] or t >= time_set[1] - 1:
+                            break
+
+                    x = Cells2[cell_id].centroids[n][1]
+                    y = Cells2[cell_id].centroids[n][0]
+
+                    # add a circle at the centroid for every point in this cell's life
+                    circle = mpatches.Circle(
+                        xy=(x, y), radius=2, color="yellow", lw=0, alpha=0.25
+                    )
+                    ax[t].add_patch(circle)
+
+                    # draw connecting lines between the centroids of cells in same lineage
+                    try:
+                        if n < len(Cells2[cell_id].times) - 1:
+                            # coordinates of the next centroid
+                            x_next = Cells2[cell_id].centroids[n + 1][1]
+                            y_next = Cells2[cell_id].centroids[n + 1][0]
+                            t_next = Cells2[cell_id].times[n + 1] - t_adj
+
+                            # get coordinates for the whole figure
+                            coord1 = transFigure.transform(
+                                ax[t].transData.transform([x, y])
+                            )
+                            coord2 = transFigure.transform(
+                                ax[t_next].transData.transform([x_next, y_next])
+                            )
+
+                            # create line
+                            line = mpl.lines.Line2D(
+                                (coord1[0], coord2[0]),
+                                (coord1[1], coord2[1]),
+                                transform=fig.transFigure,
+                                color="yellow",
+                                lw=1,
+                                alpha=0.25,
+                            )
+
+                            # add it to plot
+                            fig.lines.append(line)
+                    except:
+                        pass
+
+                    # draw connecting between mother and daughters
+                    try:
+                        if (
+                            n == len(Cells2[cell_id].times) - 1
+                            and Cells2[cell_id].daughters
+                        ):
+                            # daughter ids
+                            d1_id = Cells2[cell_id].daughters[0]
+                            d2_id = Cells2[cell_id].daughters[1]
+
+                            # both daughters should have been born at the same time.
+                            t_next = Cells2[d1_id].times[0] - t_adj
+
+                            # coordinates of the two daughters
+                            x_d1 = Cells2[d1_id].centroids[0][1]
+                            y_d1 = Cells2[d1_id].centroids[0][0]
+                            x_d2 = Cells2[d2_id].centroids[0][1]
+                            y_d2 = Cells2[d2_id].centroids[0][0]
+
+                            # get coordinates for the whole figure
+                            coord1 = transFigure.transform(
+                                ax[t].transData.transform([x, y])
+                            )
+                            coordd1 = transFigure.transform(
+                                ax[t_next].transData.transform([x_d1, y_d1])
+                            )
+                            coordd2 = transFigure.transform(
+                                ax[t_next].transData.transform([x_d2, y_d2])
+                            )
+
+                            # create line and add it to plot for both
+                            for coord in [coordd1, coordd2]:
+                                line = mpl.lines.Line2D(
+                                    (coord1[0], coord[0]),
+                                    (coord1[1], coord[1]),
+                                    transform=fig.transFigure,
+                                    color="yellow",
+                                    lw=1,
+                                    alpha=0.25,
+                                    ls="dashed",
+                                )
+                                # add it to plot
+                                fig.lines.append(line)
+                    except:
+                        pass
+
+    return fig, ax
+
 def Track_Cells(params):
     # Load the project parameters file
     information("Loading experiment parameters.")
@@ -582,6 +870,8 @@ def track_update_params(
     new_cell_region_cutoff,
     max_growth_length,
     min_growth_length,
+    max_growth_area,
+    min_growth_area,
     seg_img,
 ):
     params = dict()
@@ -600,8 +890,8 @@ def track_update_params(
     params["track"]["new_cell_region_cutoff"] = new_cell_region_cutoff
     params["track"]["max_growth_length"] = max_growth_length
     params["track"]["min_growth_length"] = min_growth_length
-    params["track"]["max_growth_area"] = max_growth_length
-    params["track"]["min_growth_area"] = min_growth_length
+    params["track"]["max_growth_area"] = max_growth_area
+    params["track"]["min_growth_area"] = min_growth_area
     if seg_img == "Otsu":
         params["track"]["seg_img"] = "seg_otsu"
     elif seg_img == "U-net":
@@ -628,7 +918,7 @@ def track_update_params(
 @magic_factory(
     seg_img={
         "choices": ["Otsu", "U-net"],
-        "tooltip": "Segmentation mechanism that was used.",
+        "tooltip": "Segmentation method used.",
     },
     working_directory={
         "mode": "d",
@@ -646,6 +936,26 @@ def track_update_params(
         "tooltip": "Optional. Range of FOVs to include. By default, all will be processed. E.g. '1-9' or '2,3,6-8'."
     },
     pxl2um={"tooltip": "Micrometers per pixel ('PiXel To Micrometer)"},
+    lost_cell_time={"tooltip": "Number of frames after which a cell is dropped if no new regions connect to it"},
+    new_cell_y_cutoff = {
+        "tooltip": "regions only less than this value down the channel from the closed end will be considered to start potential new cells."
+        "Does not apply to daughters. unit is pixels"
+    },
+    new_cell_region_cutoff = {
+        "tooltip": "only regions with labels less than or equal to this value will be considered to start potential new cells. Does not apply to daughters"
+    },
+    max_growth_length = {
+        "tooltip": "Maximum increase in length allowed when linked new region to existing potential cell. Unit is ratio."
+    },
+    min_growth_length={
+        "tooltip": "Minimum change in length allowed when linked new region to existing potential cell. Unit is ratio."
+    },
+    max_growth_area = {
+        "tooltip": "Maximum change in area allowed when linked new region to existing potential cell. Unit is ratio."
+    },
+    min_growth_area = {
+        "tooltip": "Minimum change in area allowed when linked new region to existing potential cell. Unit is ratio."
+    },    
 )
 def Track(
     working_directory: Path = Path(),
@@ -660,6 +970,8 @@ def Track(
     new_cell_region_cutoff: float = 4,
     max_growth_length: float = 1.5,
     min_growth_length: float = 0.7,
+    max_growth_area: float = 1.5,
+    min_growth_area: float = 0.7,
     seg_img="Otsu",
 ):
     """Performs Mother Machine Analysis"""
@@ -676,6 +988,8 @@ def Track(
         new_cell_region_cutoff,
         max_growth_length,
         min_growth_length,
+        max_growth_area,
+        min_growth_area,
         seg_img,
     )
     Track_Cells(params)
