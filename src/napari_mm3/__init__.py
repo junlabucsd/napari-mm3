@@ -8,3 +8,4 @@ from ._compile import Compile
 from ._subtract import Subtract
 from ._track import Track
 from ._segment_otsu import SegmentOtsu
+from ._segment_unet import SegmentUnet
