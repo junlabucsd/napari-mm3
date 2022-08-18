@@ -8,7 +8,7 @@ import tifffile as tiff
 import h5py
 import numpy as np
 
-from ._function import information, warnings, load_specs, load_stack, segment_image
+from ._function import information, warnings, load_specs, load_stack
 
 # Do segmentation for an channel time stack
 def segment_chnl_stack(fov_id, peak_id):
@@ -95,6 +95,105 @@ def segment_chnl_stack(fov_id, peak_id):
     information("Saved segmented channel %d." % peak_id)
 
     return True
+
+
+# segmentation algorithm
+def segment_image(params, image):
+    """Segments a subtracted image and returns a labeled image
+
+    Parameters
+    image : a ndarray which is an image. This should be the subtracted image
+
+    Returns
+    labeled_image : a ndarray which is also an image. Labeled values, which
+        should correspond to cells, all have the same integer value starting with 1.
+        Non labeled area should have value zero.
+    """
+    # load in segmentation parameters
+    OTSU_threshold = params["segment"]["OTSU_threshold"]
+    first_opening_size = params["segment"]["first_opening_size"]
+    distance_threshold = params["segment"]["distance_threshold"]
+    second_opening_size = params["segment"]["second_opening_size"]
+    min_object_size = params["segment"]["min_object_size"]
+
+    # threshold image
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            thresh = threshold_otsu(image)  # finds optimal OTSU threshhold value
+    except:
+        return np.zeros_like(image)
+
+    threshholded = image > OTSU_threshold * thresh  # will create binary image
+
+    # if there are no cells, good to clear the border
+    # because otherwise the OTSU is just for random bullshit, most
+    # likely on the side of the image
+    threshholded = segmentation.clear_border(threshholded)
+
+    # Opening = erosion then dialation.
+    # opening smooths images, breaks isthmuses, and eliminates protrusions.
+    # "opens" dark gaps between bright features.
+    morph = morphology.binary_opening(threshholded, morphology.disk(first_opening_size))
+
+    # if this image is empty at this point (likely if there were no cells), just return
+    # zero array
+    if np.amax(morph) == 0:
+        return np.zeros_like(image)
+
+    ### Calculate distance matrix, use as markers for random walker (diffusion watershed)
+    # Generate the markers based on distance to the background
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        distance = ndi.distance_transform_edt(morph)
+
+    # threshold distance image
+    distance_thresh = np.zeros_like(distance)
+    distance_thresh[distance < distance_threshold] = 0
+    distance_thresh[distance >= distance_threshold] = 1
+
+    # do an extra opening on the distance
+    distance_opened = morphology.binary_opening(
+        distance_thresh, morphology.disk(second_opening_size)
+    )
+
+    # remove artifacts connected to image border
+    cleared = segmentation.clear_border(distance_opened)
+    # remove small objects. Remove small objects wants a
+    # labeled image and will fail if there is only one label. Return zero image in that case
+    # could have used try/except but remove_small_objects loves to issue warnings.
+    cleared, label_num = morphology.label(cleared, connectivity=1, return_num=True)
+    if label_num > 1:
+        cleared = morphology.remove_small_objects(cleared, min_size=min_object_size)
+    else:
+        # if there are no labels, then just return the cleared image as it is zero
+        return np.zeros_like(image)
+
+    # relabel now that small objects and labels on edges have been cleared
+    markers = morphology.label(cleared, connectivity=1)
+
+    # just break if there is no label
+    if np.amax(markers) == 0:
+        return np.zeros_like(image)
+
+    # the binary image for the watershed, which uses the unmodified OTSU threshold
+    threshholded_watershed = threshholded
+    threshholded_watershed = segmentation.clear_border(threshholded_watershed)
+
+    # label using the random walker (diffusion watershed) algorithm
+    try:
+        # set anything outside of OTSU threshold to -1 so it will not be labeled
+        markers[threshholded_watershed == 0] = -1
+        # here is the main algorithm
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            labeled_image = segmentation.random_walker(-1 * image, markers)
+        # put negative values back to zero for proper image
+        labeled_image[labeled_image == -1] = 0
+    except:
+        return np.zeros_like(image)
+
+    return labeled_image
 
 
 def segmentOTSU(params):
@@ -235,7 +334,7 @@ def DebugOtsu(
     experiment_directory={"mode": "d"}, phase_plane={"choices": ["c1", "c2", "c3"]}
 )
 def SegmentOtsu(
-    experiment_name: str = "",
+    output_prefix: str = "",
     experiment_directory=Path(),
     image_directory: str = "TIFF/",
     FOV: str = "1-5",
@@ -250,7 +349,7 @@ def SegmentOtsu(
 
     global params
     params = dict()
-    params["experiment_name"] = experiment_name
+    params["experiment_name"] = output_prefix
     params["experiment_directory"] = experiment_directory
     params["image_directory"] = image_directory
     params["analysis_directory"] = "analysis"

@@ -16,7 +16,7 @@ contributions:
     python_name: napari_mm3._segment_otsu:SegmentOtsu
   - id: napari-mm3.SegmentUnet
     title: Performs Mother Machine Analysis
-    python_name: napari_mm3._function:SegmentUnet
+    python_name: napari_mm3._segment_unet:SegmentUnet
   - id: napari-mm3.Track
     title: Performs Mother Machine Analysis
     python_name: napari_mm3._track:Track
