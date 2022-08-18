@@ -67,29 +67,33 @@ def julian_day_number():
 
     return jdn
 
+
 def get_plane(filepath):
-    pattern = r'(c\d+).tif'
-    res = re.search(pattern,filepath,re.IGNORECASE)
-    if (res != None):
+    pattern = r"(c\d+).tif"
+    res = re.search(pattern, filepath, re.IGNORECASE)
+    if res != None:
         return res.group(1)
     else:
         return None
 
+
 def get_fov(filepath):
-    pattern = r'xy(\d+)\w*.tif'
-    res = re.search(pattern,filepath,re.IGNORECASE)
-    if (res != None):
+    pattern = r"xy(\d+)\w*.tif"
+    res = re.search(pattern, filepath, re.IGNORECASE)
+    if res != None:
         return int(res.group(1))
     else:
         return None
 
+
 def get_time(filepath):
-    pattern = r't(\d+)xy\w+.tif'
-    res = re.search(pattern,filepath,re.IGNORECASE)
-    if (res != None):
+    pattern = r"t(\d+)xy\w+.tif"
+    res = re.search(pattern, filepath, re.IGNORECASE)
+    if res != None:
         return np.int_(res.group(1))
     else:
         return None
+
 
 # loads and image stack from TIFF or HDF5 using mm3 conventions
 def load_stack(params, fov_id, peak_id, color="c1", image_return_number=None):
@@ -225,6 +229,7 @@ def load_specs(params):
 
     return specs
 
+
 ### Cell class and related functions
 
 # this is the object that holds all information for a cell
@@ -235,7 +240,7 @@ class Cell:
     """
 
     # initialize (birth) the cell
-    def __init__(self, params,time_table, cell_id, region, t, parent_id=None):
+    def __init__(self, params, time_table, cell_id, region, t, parent_id=None):
         """The cell must be given a unique cell_id and passed the region
         information from the segmentation
 
@@ -392,7 +397,9 @@ class Cell:
         self.tau = np.float64((self.abs_times[-1] - self.abs_times[0]) / 60.0)
 
         # include the data points from the daughters
-        self.lengths_w_div = [l * self.params["pxl2um"] for l in self.lengths] + [self.sd]
+        self.lengths_w_div = [l * self.params["pxl2um"] for l in self.lengths] + [
+            self.sd
+        ]
         self.widths_w_div = [w * self.params["pxl2um"] for w in self.widths] + [
             ((daughter1.widths[0] + daughter2.widths[0]) / 2) * self.params["pxl2um"]
         ]
@@ -811,6 +818,7 @@ def find_all_cell_intensities(
     # The cell objects in the original dictionary will be updated,
     # no need to return anything specifically.
     return
+
 
 def find_cells_of_fov_and_peak(Cells, fov_id, peak_id):
     """Return only cells from a specific fov/peak
