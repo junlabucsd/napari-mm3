@@ -54,7 +54,12 @@ def load_crosscorrs(analysis_directory, fov_id):
         "mode": "d",
         "tooltip": "Directory within which all your data and analyses will be located.",
     },
-    cur_fov={"tooltip": "The FOV for which you are performing labelling."},
+    current_fov={
+        "widget_type": "SpinBox",
+        "min": 1,
+        "step": 1,
+        "tooltip": "The FOV for which you are performing labelling."
+    },
     image_directory={
         "tooltip": "Required. Location (within working directory) for the input images. 'working directory/TIFF/' by default."
     },
@@ -67,7 +72,7 @@ def ChannelPicker(
     data_directory: Path = Path(),
     image_directory: str = "TIFF",
     analysis_directory: str = "analysis",
-    cur_fov: int = 1,
+    current_fov: int = 1,
 ):
     specs = None
     with (data_directory / analysis_directory / "specs.yaml").open("r") as specs_file:
@@ -79,23 +84,24 @@ def ChannelPicker(
         )
 
     fov_id_list = list(specs.keys())
-    if cur_fov not in fov_id_list:
+    if current_fov not in fov_id_list:
         raise IndexError(
             f"FOV not found. Max FOV: {max(fov_id_list)}, Min FOV: {min(fov_id_list)}"
         )
-    fov_id = cur_fov
+    fov_id = current_fov
 
     # Set up viewer.
     viewer.layers.clear()
     viewer.grid.enabled = False
     viewer.text_overlay.text = (
-        "Interactive channel picker. Click to change channel mode. "
+        "Interactive channel picker. Click to change channel designation. "
         "Color code:\n"
         "    Green: A channel with bacteria, \n"
         "    Blue: An empty channel without bacteria, to be used as a template. \n"
         "    Red: A channel to ignore. \n"
-        "The number above the channel is the crosscorrelation. \n"
-        "A higher value means that that the channel is more likely to be empty."
+        "The number above the channel is the cross-correlation. \n"
+        "A higher value means that that the channel is more likely to be empty.\n"
+        "'Shapes' layer must be selected to change channel assignment."
     )
     viewer.text_overlay.visible = True
     viewer.text_overlay.color = "white"
@@ -116,7 +122,7 @@ def ChannelPicker(
     coords = [[[0, p - spread], [height, p + spread]] for p in sorted_peaks]
 
     # Set up crosscorrelation text
-    crosscorrs = load_crosscorrs(data_directory / analysis_directory, cur_fov)
+    crosscorrs = load_crosscorrs(data_directory / analysis_directory, current_fov)
     properties = {"peaks": sorted_peaks, "crosscorrs": crosscorrs.values()}
     text_parameters = {
         "text": "{crosscorrs:.03f}",

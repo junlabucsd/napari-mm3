@@ -648,8 +648,8 @@ def Subtract(
 
     params = subtract_prepare_params(
         output_prefix,
-        analysis_directory,
         working_directory,
+        analysis_directory,
         image_directory,
         FOV_range,
         phase_plane,
