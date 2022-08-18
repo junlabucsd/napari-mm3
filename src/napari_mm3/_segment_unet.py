@@ -53,8 +53,10 @@ def dice_loss(y_true, y_pred):
     loss = 1 - dice_coeff(y_true, y_pred)
     return loss
 
+
 def bce_dice_loss(y_true, y_pred):
     loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
+
 
 def get_pad_distances(unet_shape, img_height, img_width):
     """Finds padding and trimming sizes to make the input image the same as the size expected by the U-net model.
@@ -92,6 +94,7 @@ def get_pad_distances(unet_shape, img_height, img_width):
     }
 
     return pad_dict
+
 
 def segmentUNet(params):
     import tensorflow as tf

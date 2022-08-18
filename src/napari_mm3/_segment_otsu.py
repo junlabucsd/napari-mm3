@@ -195,6 +195,7 @@ def segment_image(params, image):
 
     return labeled_image
 
+
 def segmentOTSU(params):
 
     information("Loading experiment parameters.")

@@ -215,7 +215,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                 ):
                     # Create cell and put in cell dictionary
                     cell_id = create_cell_id(region, t, peak_id, fov_id)
-                    Cells[cell_id]= Cell(
+                    Cells[cell_id] = Cell(
                         params, time_table, cell_id, region, t, parent_id=None
                     )
 
@@ -273,8 +273,8 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                             and region.label <= new_cell_region_cutoff
                         ):
                             cell_id = create_cell_id(region, t, peak_id, fov_id)
-                            Cells[cell_id]= Cell(params,
-                                time_table, cell_id, region, t, parent_id=None
+                            Cells[cell_id] = Cell(
+                                params, time_table, cell_id, region, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
                         else:
@@ -315,11 +315,21 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         # create two new cells and divide the mother
                         daughter1_id = create_cell_id(region1, t, peak_id, fov_id)
                         daughter2_id = create_cell_id(region2, t, peak_id, fov_id)
-                        Cells[daughter1_id]= Cell(params,
-                            time_table, daughter1_id, region1, t, parent_id=leaf_id
+                        Cells[daughter1_id] = Cell(
+                            params,
+                            time_table,
+                            daughter1_id,
+                            region1,
+                            t,
+                            parent_id=leaf_id,
                         )
-                        Cells[daughter2_id]= Cell(params,
-                            time_table, daughter2_id, region2, t, parent_id=leaf_id
+                        Cells[daughter2_id] = Cell(
+                            params,
+                            time_table,
+                            daughter2_id,
+                            region2,
+                            t,
+                            parent_id=leaf_id,
                         )
                         Cells[leaf_id].divide(
                             Cells[daughter1_id], Cells[daughter2_id], t
@@ -351,8 +361,8 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                             and region2.label <= new_cell_region_cutoff
                         ):
                             cell_id = create_cell_id(region2, t, peak_id, fov_id)
-                            Cells[cell_id]= Cell(params,
-                                time_table, cell_id, region2, t, parent_id=None
+                            Cells[cell_id] = Cell(
+                                params, time_table, cell_id, region2, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
 
@@ -365,8 +375,8 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                             and region1.label <= new_cell_region_cutoff
                         ):
                             cell_id = create_cell_id(region1, t, peak_id, fov_id)
-                            Cells[cell_id]= Cell(params,
-                                time_table, cell_id, region1, t, parent_id=None
+                            Cells[cell_id] = Cell(
+                                params, time_table, cell_id, region1, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
 
@@ -572,7 +582,7 @@ def plot_lineage_images(
         ttl.set_position([0.5, 0.05])
 
     for i in image_indicies:
-        ax[i].imshow(image_data_bg[i], cmap=plt.cm.gray, aspect='equal')
+        ax[i].imshow(image_data_bg[i], cmap=plt.cm.gray, aspect="equal")
 
         if fgcolor:
             # make a new version of the segmented image where the
@@ -586,7 +596,7 @@ def plot_lineage_images(
                 seg_relabeled[seg_relabeled == region.label] = (
                     int(rescaled_color_index) - 0.1
                 )  # subtract small value to make it so there is not overlabeling
-            ax[i].imshow(seg_relabeled, cmap=cmap, alpha=.5, vmin=vmin, vmax=vmax)
+            ax[i].imshow(seg_relabeled, cmap=cmap, alpha=0.5, vmin=vmin, vmax=vmax)
 
         ax[i].set_title(str(i + t_adj), color="white")
 
@@ -786,6 +796,7 @@ def plot_lineage_images(
 
     return fig, ax
 
+
 def Track_Cells(params):
     # Load the project parameters file
     information("Loading experiment parameters.")
@@ -936,26 +947,28 @@ def track_update_params(
         "tooltip": "Optional. Range of FOVs to include. By default, all will be processed. E.g. '1-9' or '2,3,6-8'."
     },
     pxl2um={"tooltip": "Micrometers per pixel ('PiXel To Micrometer)"},
-    lost_cell_time={"tooltip": "Number of frames after which a cell is dropped if no new regions connect to it"},
-    new_cell_y_cutoff = {
+    lost_cell_time={
+        "tooltip": "Number of frames after which a cell is dropped if no new regions connect to it"
+    },
+    new_cell_y_cutoff={
         "tooltip": "regions only less than this value down the channel from the closed end will be considered to start potential new cells."
         "Does not apply to daughters. unit is pixels"
     },
-    new_cell_region_cutoff = {
+    new_cell_region_cutoff={
         "tooltip": "only regions with labels less than or equal to this value will be considered to start potential new cells. Does not apply to daughters"
     },
-    max_growth_length = {
+    max_growth_length={
         "tooltip": "Maximum increase in length allowed when linked new region to existing potential cell. Unit is ratio."
     },
     min_growth_length={
         "tooltip": "Minimum change in length allowed when linked new region to existing potential cell. Unit is ratio."
     },
-    max_growth_area = {
+    max_growth_area={
         "tooltip": "Maximum change in area allowed when linked new region to existing potential cell. Unit is ratio."
     },
-    min_growth_area = {
+    min_growth_area={
         "tooltip": "Minimum change in area allowed when linked new region to existing potential cell. Unit is ratio."
-    },    
+    },
 )
 def Track(
     working_directory: Path = Path(),

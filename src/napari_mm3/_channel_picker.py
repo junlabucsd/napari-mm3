@@ -58,7 +58,7 @@ def load_crosscorrs(analysis_directory, fov_id):
         "widget_type": "SpinBox",
         "min": 1,
         "step": 1,
-        "tooltip": "The FOV for which you are performing labelling."
+        "tooltip": "The FOV for which you are performing labelling.",
     },
     image_directory={
         "tooltip": "Required. Location (within working directory) for the input images. 'working directory/TIFF/' by default."
