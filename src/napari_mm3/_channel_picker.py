@@ -1,7 +1,5 @@
-import os
 import pickle
 from pathlib import Path
-from turtle import shape
 import magicgui
 import napari
 import numpy as np

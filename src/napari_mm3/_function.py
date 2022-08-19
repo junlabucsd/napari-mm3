@@ -1,37 +1,25 @@
 from __future__ import print_function, division
 import re
 import datetime
-import tensorflow as tf
-import tensorflow.keras.losses as losses
 import h5py
-import multiprocessing
 import numpy as np
-import napari
-from magicgui import magic_factory, magicgui
-from napari.types import ImageData, LabelsData
 import os
 
 try:
     import cPickle as pickle
 except:
     import pickle
-from pathlib import Path
 import re
 from scipy import ndimage as ndi
-from skimage import io, segmentation, filters, morphology
-from skimage.filters import threshold_otsu, median
-from skimage.measure import regionprops
+from skimage import filters, morphology
+from skimage.filters import median
 
-import six
 import sys
 import time
 import warnings
 import yaml
 import tifffile as tiff
 
-import matplotlib as mpl
-import matplotlib.patches as mpatches
-import matplotlib.pyplot as plt
 import seaborn as sns
 
 sns.set(style="ticks", color_codes=True)
@@ -735,7 +723,12 @@ def filter_cells_containing_val_in_attr(Cells, attr, val):
 
 
 def find_all_cell_intensities(
-    Cells, specs, time_table, channel_name="sub_c2", apply_background_correction=True
+    Cells,
+    params,
+    specs,
+    time_table,
+    channel_name="sub_c2",
+    apply_background_correction=True,
 ):
     """
     Finds fluorescenct information for cells. All the cells in Cells

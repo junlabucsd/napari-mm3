@@ -8,6 +8,11 @@ import tifffile as tiff
 import h5py
 import numpy as np
 
+from scipy import ndimage as ndi
+from skimage import segmentation, morphology
+from skimage.filters import threshold_otsu
+
+
 from ._function import information, warnings, load_specs, load_stack
 
 # Do segmentation for an channel time stack

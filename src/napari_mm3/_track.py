@@ -6,6 +6,9 @@ import numpy as np
 import six
 import pickle
 import os
+import matplotlib as mpl
+import seaborn as sns
+import matplotlib.patches as mpatches
 
 from skimage import io
 from magicgui import magic_factory
@@ -20,6 +23,7 @@ from ._function import (
     load_time_table,
     find_complete_cells,
     find_cells_of_birth_label,
+    find_cells_of_fov_and_peak,
 )
 
 # functions for checking if a cell has divided or not

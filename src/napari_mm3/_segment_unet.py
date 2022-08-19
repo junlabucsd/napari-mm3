@@ -1,6 +1,4 @@
 from __future__ import print_function, division
-import re
-import datetime
 import tensorflow as tf
 import tensorflow.keras.losses as losses
 import h5py
@@ -11,30 +9,14 @@ from magicgui import magic_factory, magicgui
 from napari.types import ImageData, LabelsData
 import os
 
-try:
-    import cPickle as pickle
-except:
-    import pickle
 from pathlib import Path
-import re
-from scipy import ndimage as ndi
-from skimage import io, segmentation, filters, morphology
-from skimage.filters import threshold_otsu, median
-from skimage.measure import regionprops
+from skimage import segmentation, morphology
+from skimage.filters import median
 
 import six
-import sys
-import time
-import warnings
-import yaml
 import tifffile as tiff
 
-import matplotlib as mpl
-import matplotlib.patches as mpatches
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-from ._function import information, warnings, load_specs, load_stack
+from ._function import information, load_specs, load_stack
 
 # loss functions for model
 def dice_coeff(y_true, y_pred):

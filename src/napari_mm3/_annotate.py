@@ -1,25 +1,8 @@
-from multiprocessing import Process, Queue
-import magicgui
-from magicgui.widgets import FileEdit, Slider, Container, SpinBox, LineEdit, PushButton
-from qtpy.QtWidgets import (
-    QWidget,
-    QPushButton,
-    QVBoxLayout,
-    QLineEdit,
-    QLabel,
-    QFileDialog,
-    QHBoxLayout,
-)
-from qtpy.QtCore import Qt
-from magicgui import magic_factory
-from pathlib import Path
-
-import napari
+from magicgui.widgets import FileEdit, Container, SpinBox, LineEdit, PushButton
 import numpy as np
 import tifffile as tiff
 import yaml
 import os
-import glob
 
 
 class Annotate(Container):
