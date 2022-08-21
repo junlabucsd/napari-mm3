@@ -21,7 +21,7 @@ from pprint import pprint
 from scipy.signal import find_peaks_cwt
 from magicgui import magic_factory
 
-from ._function import information, warning, get_fov, get_time, load_stack
+from ._function import information, warning, get_fov, get_time, get_plane, load_stack
 
 
 ### Functions for working with TIFF metadata ###
@@ -58,10 +58,11 @@ def get_tif_params(params, image_filename, find_channels=True):
 
             if params["TIFF_source"] == "TIFF_from_elements":
                 image_metadata = get_tif_metadata_elements(tif)
-            elif params["TIFF_source"] == "nd2" or "TIFF_from_nd2":
+            elif params["TIFF_source"] == "nd2ToTIFF":
                 image_metadata = get_tif_metadata_nd2ToTIFF(tif)
             elif params["TIFF_source"] == "TIFF":
                 image_metadata = get_tif_metadata_filename(tif)
+                print("getting metadata")
 
         # look for channels if flagged
         if find_channels:
@@ -165,6 +166,7 @@ def get_tif_metadata_filename(tif):
         "jd": -1 * 0.0,  # absolute julian time
         "x": -1 * 0.0,  # x position on stage [um]
         "y": -1 * 0.0,
+        "planes": get_plane(tif.filename),
     }  # y position on stage [um]
 
     return idata
@@ -1083,6 +1085,44 @@ def compile(params):
     # declare information variables
     analyzed_imgs = {}  # for storing get_params pool results.
 
+    ## need to stack phase and fl plane if not exported from .nd2
+    if p["TIFF_source"] == "TIFF":
+        information("Restacking TIFFs")
+        found_files = glob.glob(os.path.join(p["TIFF_dir"], "*.tif"))  # get all tiffs
+        # found_files = [filepath.split('/')[-1] for filepath in found_files] # remove pre-path
+        found_files = sorted(found_files)  # should sort by timepoint
+
+        string_c1 = re.compile("c1", re.IGNORECASE)
+        string_c2 = re.compile("c2", re.IGNORECASE)
+
+        ## should list number of planes in params file
+
+        ## if there is a second plane, stack and save them out
+        if string_c2:
+            found_files_c1 = [f for f in found_files if re.search(string_c1, f)]
+            found_files_c2 = [f for f in found_files if re.search(string_c2, f)]
+
+            for f1, f2 in zip(found_files_c1, found_files_c2):
+                information("Merging images " + str(f1) + " and " + str(f2))
+                # Last two axes are going to be your x and y
+                im1 = tiff.imread(f1)
+                im2 = tiff.imread(f2)
+                im_out = np.stack((im1, im2), axis=0)
+                name_out = f1.replace("C1", "")
+                # 'minisblack' necessary to ensure that it interprets image as black/white.
+                tiff.imwrite(name_out, im_out, photometric="minisblack")
+
+                ## should make a new directory rather than just deleting the old images
+                old_tiff_path = os.path.join(
+                    params["experiment_directory"], "TIFF_unstacked"
+                )
+                if not os.path.exists(old_tiff_path):
+                    os.makedirs(old_tiff_path)
+                os.rename(f1, f1.replace(params["image_directory"], "TIFF_unstacked"))
+                os.rename(f2, f2.replace(params["image_directory"], "TIFF_unstacked"))
+        else:
+            pass
+
     ### process TIFFs for metadata #################################################################
     if not p["compile"]["do_metadata"]:
         information("Loading image parameters dictionary.")
@@ -1094,7 +1134,6 @@ def compile(params):
 
     else:
         information("Finding image parameters.")
-
         # get all the TIFFs in the folder
         found_files = glob.glob(os.path.join(p["TIFF_dir"], "*.tif"))  # get all tiffs
         found_files = [
@@ -1133,8 +1172,12 @@ def compile(params):
             information("Filtering TIFFs by FOV.")
             fitered_files = []
             for fov_id in user_spec_fovs:
-                fov_string = "xy%02d" % fov_id  # xy01
-                fitered_files += [ifile for ifile in found_files if fov_string in ifile]
+                fov_string = re.compile(
+                    "xy%02d|xy%03d" % (fov_id, fov_id), re.IGNORECASE
+                )
+                fitered_files += [
+                    ifile for ifile in found_files if re.search(fov_string, ifile)
+                ]
 
             found_files = fitered_files[:]
 
@@ -1378,6 +1421,8 @@ def compile_gen_params(
     analysis_directory,
     image_directory,
     FOV,
+    t_start,
+    t_end,
     image_format,
     phase_plane,
     seconds_per_frame,
@@ -1402,7 +1447,8 @@ def compile_gen_params(
     params["compile"]["do_time_table"] = True
     params["compile"]["do_channel_masks"] = True
     params["compile"]["do_slicing"] = True
-    params["compile"]["t_end"] = None
+    params["compile"]["t_start"] = t_start
+    params["compile"]["t_end"] = t_end
     params["compile"]["image_orientation"] = "auto"
     params["compile"]["channel_width"] = channel_width
     params["compile"]["channel_separation"] = channel_separation
@@ -1432,7 +1478,7 @@ def compile_gen_params(
     params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
 
     # use jd time in image metadata to make time table. Set to false if no jd time
-    if params["TIFF_source"] in {"nd2", "TIFF_from_elements", "TIFF_from_nd2"}:
+    if params["TIFF_source"] in {"nd2ToTIFF", "TIFF_from_elements"}:
         params["use_jd"] = True
     else:
         params["use_jd"] = False
@@ -1445,25 +1491,37 @@ def compile_gen_params(
         "mode": "d",
         "tooltip": "Directory within which all your data and analyses will be located.",
     },
-    image_format={"choices": ["TIFF", "nd2", "TIFF_from_elements", "TIFF_from_nd2"]},
+    image_format={"choices": ["TIFF", "nd2ToTIFF", "TIFF_from_elements"]},
     phase_plane={"choices": ["c1", "c2", "c3"], "tooltip": "Phase contrast plane"},
     xcorr_threshold={
         "widget_type": "FloatSpinBox",
         "min": 0,
         "max": 1,
         "step": 0.01,
-        "tooltip": "Recommended. If channels have a high crosscorrelation, that suggests they are empty. Lower suggests they contain cells.",
+        "tooltip": "Recommended. Threshold for designating channels as full /empty based on time correlation of trap intensity profile."
+        "Traps above threshold will be set as empty.",
     },
     FOV={
         "tooltip": "Optional. Range of FOVs to include. By default, all will be processed. E.g. '1-9' or '2,3,6-8'."
     },
+    t_start={"tooltip": "Optional. First time point to analyze. Defaults to 1."},
+    t_end={
+        "tooltip": "Optional. Last time point to analyze. Defaults to none (analyze data from all timepoints)."
+    },
     image_directory={
         "tooltip": "Required. Location (within working directory) for the input images. 'working directory/TIFF/' by default."
+    },
+    seconds_per_frame={
+        "tooltip": "Required if TIFF source is not .nd2. Time interval in seconds between consecutive imaging rounds."
     },
     analysis_directory={
         "tooltip": "Required. Location (within working directory) for outputting analysis. 'working directory/analysis/' by default."
     },
     output_prefix={"tooltip": "Optional. Prefix for output files"},
+    channel_width={"tooltip": "Required. Approx. width of traps in pixels."},
+    channel_separation={
+        "tooltip": "Required. Center-to-center distance between traps in pixels."
+    },
 )
 def Compile(
     experiment_directory=Path(),
@@ -1471,7 +1529,9 @@ def Compile(
     image_directory: str = "TIFF",
     analysis_directory: str = "analysis",
     FOV: str = "",
-    image_format: str = "nd2",
+    t_start: int = 1,
+    t_end: int = None,
+    image_format: str = "nd2ToTIFF",
     phase_plane="c1",
     seconds_per_frame: int = 150,
     channel_width: int = 10,
@@ -1485,6 +1545,8 @@ def Compile(
         analysis_directory,
         image_directory,
         FOV,
+        t_start,
+        t_end,
         image_format,
         phase_plane,
         seconds_per_frame,
