@@ -2,6 +2,8 @@ from magicgui import magic_factory
 from pathlib import Path
 from skimage.feature import match_template
 from multiprocessing.pool import Pool
+from napari import Viewer
+from magicgui.widgets import SpinBox, ComboBox, PushButton
 
 import tifffile as tiff
 import numpy as np
@@ -18,6 +20,8 @@ from ._function import (
     load_specs,
     range_string_to_indices,
 )
+
+from ._deriving_widgets import MM3Container, FOVChooser
 
 
 def subtract_phase(params, cropped_channel, empty_channel):
@@ -118,8 +122,7 @@ def subtract_fluor(params, cropped_channel, empty_channel):
         empty_size = np.shape(empty_channel)[:2]
         if crop_size[0] < empty_size[0] or crop_size[1] < empty_size[1]:
             empty_channel = empty_channel[
-                : crop_size[0],
-                : crop_size[1],
+                : crop_size[0], : crop_size[1],
             ]
 
     ### Compute the difference between the empty and channel phase contrast images
@@ -475,7 +478,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
     return True
 
 
-def subtract(params, ana_dir: Path):
+def subtract(params, ana_dir: Path, subtraction_plane: str):
     """mm3_Subtract.py averages empty channels and then subtractions them from channels with cells"""
 
     # Load the project parameters file
@@ -489,11 +492,11 @@ def subtract(params, ana_dir: Path):
     # Set the shape better here.
     viewer.grid.shape = (2, 20)
 
-    user_spec_fovs = set(range_string_to_indices(p["FOV"]))
+    user_spec_fovs = set(p["FOV"])
 
     # information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
-    sub_plane = "c1"
+    sub_plane = subtraction_plane
     empty_dir = ana_dir / "empties"
     sub_dir = ana_dir / "subtracted"
     # Create folders for subtracted info if they don't exist
@@ -585,8 +588,6 @@ def subtract_prepare_params(
     params = dict()
     params["experiment_name"] = experiment_name
     params["experiment_directory"] = experiment_directory
-    params["image_directory"] = image_directory
-    params["analysis_directory"] = analysis_directory
     params["output"] = "TIFF"
     params["FOV"] = FOV
     params["phase_plane"] = phase_plane
@@ -599,12 +600,8 @@ def subtract_prepare_params(
     params["num_analyzers"] = multiprocessing.cpu_count()
 
     # useful folder shorthands for opening files
-    params["TIFF_dir"] = os.path.join(
-        params["experiment_directory"], params["image_directory"]
-    )
-    params["ana_dir"] = os.path.join(
-        params["experiment_directory"], params["analysis_directory"]
-    )
+    params["TIFF_dir"] = os.path.join(image_directory)
+    params["ana_dir"] = os.path.join(analysis_directory)
     params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
     params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
     params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
@@ -616,43 +613,67 @@ def subtract_prepare_params(
     return params
 
 
-@magic_factory(
-    working_directory={
-        "mode": "d",
-        "tooltip": "Directory within which all your data and analyses will be located.",
-    },
-    phase_plane={"choices": ["c1", "c2", "c3"], "tooltip": "Phase contrast plane"},
-    output_prefix={"tooltip": "Optional. Prefix for output files"},
-    image_directory={
-        "tooltip": "Required. Location (within working directory) for the input images. 'working directory/TIFF/' by default."
-    },
-    analysis_directory={
-        "tooltip": "Required. Location (within working directory) for outputting analysis. 'working directory/analysis/' by default."
-    },
-    FOV_range={
-        "tooltip": "Optional. Range of FOVs to include. By default, all will be processed. E.g. '1-9' or '2,3,6-8'."
-    },
-    alignment_pad={
-        "tooltip": "Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image."
-    },
-)
-def Subtract(
-    working_directory=Path(),
-    output_prefix: str = "",
-    image_directory: str = "TIFF/",
-    analysis_directory: str = "analysis/",
-    FOV_range: str = "",
-    phase_plane="c1",
-    alignment_pad: int = 10,
-):
+class Subtract(MM3Container):
+    def __init__(self, napari_viewer: Viewer):
+        super().__init__(napari_viewer)
+        self.fov_widget = FOVChooser(self.valid_fovs)
+        self.alignment_pad_widget = SpinBox(
+            label="alignment pad",
+            value=10,
+            min=0,
+            tooltip="Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image.",
+        )
+        self.phase_plane_widget = ComboBox(
+            label="phase plane",
+            choices=["c1", "c2", "c3"],
+            tooltip="Phase contrast plane",
+        )
+        # TODO Infer available channels from experiment.
+        self.subtraction_plane_widget = ComboBox(
+            label="subtraction plane",
+            choices=["c1", "c2", "c3"],
+            tooltip="The plane in which you would like to run subtraction",
+        )
+        # TODO: Allow specifying fluorescence which plane to subtract from!
+        self.run_button_widget = PushButton(label="Run")
 
-    params = subtract_prepare_params(
-        output_prefix,
-        working_directory,
-        analysis_directory,
-        image_directory,
-        FOV_range,
-        phase_plane,
-        alignment_pad,
-    )
-    subtract(params, working_directory / analysis_directory)
+        self.fov_widget.connect_callback(self.set_fovs)
+        self.alignment_pad_widget.changed.connect(self.set_alignment_pad)
+        self.phase_plane_widget.changed.connect(self.set_phase_plane)
+        self.subtraction_plane_widget.changed.connect(self.set_subtraction_plane)
+        self.run_button_widget.changed.connect(self.subtract)
+
+        self.append(self.fov_widget)
+        self.append(self.alignment_pad_widget)
+        self.append(self.phase_plane_widget)
+        self.append(self.subtraction_plane_widget)
+        self.append(self.run_button_widget)
+
+        self.set_fovs(self.valid_fovs)
+        self.set_alignment_pad()
+        self.set_phase_plane()
+        self.set_subtraction_plane()
+
+    def subtract(self):
+        params = subtract_prepare_params(
+            experiment_name=self.experiment_name,
+            experiment_directory=self.data_directory,
+            analysis_directory=self.analysis_folder,
+            image_directory=self.TIFF_folder,
+            FOV=self.fovs,
+            phase_plane=self.phase_plane,
+            alignment_pad=self.alignment_pad,
+        )
+        subtract(params, self.analysis_folder, self.subtraction_plane)
+
+    def set_fovs(self, fovs):
+        self.fovs = fovs
+
+    def set_alignment_pad(self):
+        self.alignment_pad = self.alignment_pad_widget.value
+
+    def set_phase_plane(self):
+        self.phase_plane = self.phase_plane_widget.value
+
+    def set_subtraction_plane(self):
+        self.subtraction_plane = self.subtraction_plane_widget.value
