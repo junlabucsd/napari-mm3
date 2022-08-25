@@ -1,7 +1,8 @@
 from ._function import range_string_to_indices
-from magicgui.widgets import Container, FileEdit, LineEdit, SpinBox, TextEdit, PushButton
+from magicgui.widgets import Container, FileEdit, LineEdit, SpinBox, PushButton
 from pathlib import Path
 import re
+
 
 class MM3Container(Container):
     def __init__(self, napari_viewer):
@@ -49,8 +50,7 @@ class MM3Container(Container):
         self.append(self.experiment_name_widget)
 
         self.load_data_widget = PushButton(
-            label="reload data",
-            tooltip="Load data from specified directories.",
+            label="reload data", tooltip="Load data from specified directories.",
         )
         self.load_data_widget.clicked.connect(self.set_valid_fovs)
         self.set_valid_fovs()
@@ -69,7 +69,7 @@ class MM3Container(Container):
         self.TIFF_folder = self.TIFF_folder_widget.value
 
     def set_valid_fovs(self):
-        self.fovs = self.get_valid_fovs(self.TIFF_folder)
+        self.valid_fovs = self.get_valid_fovs(self.TIFF_folder)
 
     def get_valid_fovs(self, TIFF_folder):
         found_files = TIFF_folder.glob("*.tif")
@@ -79,12 +79,14 @@ class MM3Container(Container):
         fovs = map(int, sorted(fov_strings))
         return list(fovs)
 
+
 class SingleFOVChooser(SpinBox):
     """
     Widget for specifying a single FOV; extends magicgui.widgets.SpinBox.
     Instead of using the standard SpinBox.changed.connect(...), use the custom 
     SingleFOVChooser.fixed_connect(...). It provides a workaround for a known Qt bug.
     """
+
     def __init__(self, permitted_FOVS):
         min_FOV = min(permitted_FOVS)
         max_FOV = max(permitted_FOVS)
@@ -95,7 +97,7 @@ class SingleFOVChooser(SpinBox):
             min=min_FOV,
             max=max_FOV,
         )
-    
+
     def connect_callback(self, func):
         """
         Use this method when giving this SpinBox a function.
@@ -106,8 +108,10 @@ class SingleFOVChooser(SpinBox):
         self.changed.connect(func)
         self.changed.resume()
 
-class FOVChooser(TextEdit):
+
+class FOVChooser(LineEdit):
     """Widget for choosing multiple FOVs."""
+
     def __init__(self, permitted_FOVs):
         self.min_FOV = min(permitted_FOVs)
         self.max_FOV = max(permitted_FOVs)
@@ -119,15 +123,15 @@ class FOVChooser(TextEdit):
             tooltip="A list of FOVs to analyze. Ranges and comma separated values allowed (e.g. '1-30', '2-4,15,18'.)",
         )
 
-
     def connect_callback(self, func):
         """Replaces self.changed.connect(...).
         Interprets any text in the box as a list of FOVs.
         Thus 'func' should operate on a list of FOVs, filtered by those that actually exist in the TIFs.
         """
-        def func_with_range(line):
-            user_fovs = range_string_to_indices(line)
+
+        def func_with_range():
+            user_fovs = range_string_to_indices(self.value)
             if user_fovs:
                 func(user_fovs)
-        self.changed.connect(func_with_range)
 
+        self.changed.connect(func_with_range)

@@ -20,6 +20,9 @@ from pathlib import Path
 from pprint import pprint
 from scipy.signal import find_peaks_cwt
 from magicgui import magic_factory
+from magicgui.widgets import FloatSpinBox, SpinBox, RangeEdit, PushButton, ComboBox
+from napari import Viewer
+from ._deriving_widgets import MM3Container, FOVChooser
 
 from ._function import information, warning, get_fov, get_time, get_plane, load_stack
 
@@ -1045,15 +1048,7 @@ def compile(params):
     information("Loading experiment parameters.")
     p = params
 
-    if p["FOV"]:
-        if "-" in p["FOV"]:
-            user_spec_fovs = range(
-                int(p["FOV"].split("-")[0]), int(p["FOV"].split("-")[1]) + 1
-            )
-        else:
-            user_spec_fovs = [int(val) for val in p["FOV"].split(",")]
-    else:
-        user_spec_fovs = []
+    user_spec_fovs = params["FOV"]
 
     information("Using {} threads for multiprocessing.".format(p["num_analyzers"]))
 
@@ -1321,12 +1316,7 @@ def compile(params):
 
                 # multiprocessing verion
                 crosscorrs[fov_id][peak_id] = pool.apply_async(
-                    channel_xcorr,
-                    args=(
-                        params,
-                        fov_id,
-                        peak_id,
-                    ),
+                    channel_xcorr, args=(params, fov_id, peak_id,),
                 )
 
             information(
@@ -1415,144 +1405,159 @@ def compile(params):
     information("Finished.")
 
 
-def compile_gen_params(
-    experiment_name,
-    experiment_directory,
-    analysis_directory,
-    image_directory,
-    FOV,
-    t_start,
-    t_end,
-    image_format,
-    phase_plane,
-    seconds_per_frame,
-    channel_width,
-    channel_separation,
-    xcorr_threshold,
-):
-    # global params
-    params = dict()
-    params["experiment_name"] = experiment_name
-    params["experiment_directory"] = experiment_directory
-    params["image_directory"] = image_directory
-    params["analysis_directory"] = analysis_directory
-    params["FOV"] = FOV
-    params["TIFF_source"] = image_format
-    params["output"] = "TIFF"
-    params["phase_plane"] = phase_plane
-    params["seconds_per_time_index"] = seconds_per_frame
+class Compile(MM3Container):
+    def __init__(self, napari_viewer: Viewer):
+        super().__init__(napari_viewer)
 
-    params["compile"] = dict()
-    params["compile"]["do_metadata"] = True
-    params["compile"]["do_time_table"] = True
-    params["compile"]["do_channel_masks"] = True
-    params["compile"]["do_slicing"] = True
-    params["compile"]["t_start"] = t_start
-    params["compile"]["t_end"] = t_end
-    params["compile"]["image_orientation"] = "auto"
-    params["compile"]["channel_width"] = channel_width
-    params["compile"]["channel_separation"] = channel_separation
-    params["compile"]["channel_detection_snr"] = 1
-    params["compile"]["channel_length_pad"] = 10
-    params["compile"]["channel_width_pad"] = 10
-    params["compile"]["do_crosscorrs"] = True
-    params["compile"]["channel_picking_threshold"] = xcorr_threshold
-    params["compile"]["alignment_pad"] = 10
+        self.fov_widget = FOVChooser(self.valid_fovs)
+        # TODO: Auto-infer?
+        self.image_source_widget = ComboBox(
+            label="image source", choices=["TIFF", "nd2ToTIFF", "TIFF_from_elements"],
+        )
+        # TODO: Add phase plane restrictions
+        self.phase_plane_widget = ComboBox(
+            label="phase plane",
+            choices=["c1", "c2", "c3"],
+            tooltip="Phase contrast plane",
+        )
+        # TODO: Add a range!
+        self.time_range_widget = RangeEdit(
+            label="time range", tooltip="Time range to analyze",
+        )
+        self.seconds_per_frame_widget = SpinBox(
+            value=150,
+            label="seconds per frame",
+            tooltip="Required if TIFF source is not .nd2. Time interval in seconds "
+            + "between consecutive imaging rounds.",
+            min=1,
+            max=60 * 60 * 24,
+        )
+        self.channel_width_widget = SpinBox(
+            value=10,
+            label="channel width",
+            tooltip="Required. Approx. width of traps in pixels.",
+            min=1,
+            max=10000,
+        )
+        self.channel_separation_widget = SpinBox(
+            value=45,
+            label="channel separation",
+            tooltip="Required. Center-to-center distance between traps in pixels.",
+            min=1,
+            max=10000,
+        )
+        self.xcorr_threshold_widget = FloatSpinBox(
+            label="cross correlation threshold",
+            value=0.97,
+            tooltip="Recommended. Threshold for designating channels as full /empty"
+            + "based on time correlation of trap intensity profile. "
+            + "Traps above threshold will be set as empty.",
+            step=0.01,
+            min=0,
+            max=1,
+        )
+        self.run_analysis_widget = PushButton(text="Run")
 
-    params["num_analyzers"] = multiprocessing.cpu_count()
+        self.fov_widget.connect_callback(self.set_fovs)
+        self.image_source_widget.changed.connect(self.set_image_source)
+        self.phase_plane_widget.changed.connect(self.set_phase_plane)
+        self.time_range_widget.changed.connect(self.set_range)
+        self.seconds_per_frame_widget.changed.connect(self.set_seconds_per_frame)
+        self.channel_width_widget.changed.connect(self.set_channel_width)
+        self.channel_separation_widget.changed.connect(self.set_channel_separation)
+        self.xcorr_threshold_widget.changed.connect(self.set_xcorr_threshold)
+        self.run_analysis_widget.clicked.connect(self.run_analysis)
 
-    # useful folder shorthands for opening files
-    params["TIFF_dir"] = os.path.join(
-        params["experiment_directory"], params["image_directory"]
-    )
-    params["ana_dir"] = os.path.join(
-        params["experiment_directory"], params["analysis_directory"]
-    )
-    params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
-    params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
-    params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
-    params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
-    params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
-    params["pred_dir"] = os.path.join(params["ana_dir"], "predictions")
-    params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
-    params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
+        self.append(self.fov_widget)
+        self.append(self.image_source_widget)
+        self.append(self.phase_plane_widget)
+        self.append(self.time_range_widget)
+        self.append(self.seconds_per_frame_widget)
+        self.append(self.channel_width_widget)
+        self.append(self.channel_separation_widget)
+        self.append(self.xcorr_threshold_widget)
+        self.append(self.run_analysis_widget)
 
-    # use jd time in image metadata to make time table. Set to false if no jd time
-    if params["TIFF_source"] in {"nd2ToTIFF", "TIFF_from_elements"}:
-        params["use_jd"] = True
-    else:
-        params["use_jd"] = False
+        self.set_image_source()
+        self.set_phase_plane()
+        self.set_fovs(self.valid_fovs)
+        self.set_range()
+        self.set_seconds_per_frame()
+        self.set_channel_width()
+        self.set_channel_separation()
+        self.set_xcorr_threshold()
 
-    return params
+    def set_image_source(self):
+        self.image_source = self.image_source_widget.value
 
+    def set_phase_plane(self):
+        self.phase_plane = self.phase_plane_widget.value
 
-@magic_factory(
-    experiment_directory={
-        "mode": "d",
-        "tooltip": "Directory within which all your data and analyses will be located.",
-    },
-    image_format={"choices": ["TIFF", "nd2ToTIFF", "TIFF_from_elements"]},
-    phase_plane={"choices": ["c1", "c2", "c3"], "tooltip": "Phase contrast plane"},
-    xcorr_threshold={
-        "widget_type": "FloatSpinBox",
-        "min": 0,
-        "max": 1,
-        "step": 0.01,
-        "tooltip": "Recommended. Threshold for designating channels as full /empty based on time correlation of trap intensity profile."
-        "Traps above threshold will be set as empty.",
-    },
-    FOV={
-        "tooltip": "Optional. Range of FOVs to include. By default, all will be processed. E.g. '1-9' or '2,3,6-8'."
-    },
-    t_start={"tooltip": "Optional. First time point to analyze. Defaults to 1."},
-    t_end={
-        "tooltip": "Optional. Last time point to analyze. Defaults to none (analyze data from all timepoints)."
-    },
-    image_directory={
-        "tooltip": "Required. Location (within working directory) for the input images. 'working directory/TIFF/' by default."
-    },
-    seconds_per_frame={
-        "tooltip": "Required if TIFF source is not .nd2. Time interval in seconds between consecutive imaging rounds."
-    },
-    analysis_directory={
-        "tooltip": "Required. Location (within working directory) for outputting analysis. 'working directory/analysis/' by default."
-    },
-    output_prefix={"tooltip": "Optional. Prefix for output files"},
-    channel_width={"tooltip": "Required. Approx. width of traps in pixels."},
-    channel_separation={
-        "tooltip": "Required. Center-to-center distance between traps in pixels."
-    },
-)
-def Compile(
-    experiment_directory=Path(),
-    output_prefix: str = "",
-    image_directory: str = "TIFF",
-    analysis_directory: str = "analysis",
-    FOV: str = "",
-    t_start: int = 1,
-    t_end: int = None,
-    image_format: str = "nd2ToTIFF",
-    phase_plane="c1",
-    seconds_per_frame: int = 150,
-    channel_width: int = 10,
-    channel_separation: int = 45,
-    xcorr_threshold=0.99,
-):
-    """Performs Mother Machine Analysis"""
-    params = compile_gen_params(
-        output_prefix,
-        experiment_directory,
-        analysis_directory,
-        image_directory,
-        FOV,
-        t_start,
-        t_end,
-        image_format,
-        phase_plane,
-        seconds_per_frame,
-        channel_width,
-        channel_separation,
-        xcorr_threshold,
-    )
+    # NOTE! This is different from the other functions in that it requires a parameter.
+    def set_fovs(self, new_fovs):
+        self.fovs = set(new_fovs).intersection(set(self.valid_fovs))
 
-    compile(params)
+    def set_range(self):
+        self.time_range = (
+            self.time_range_widget.start.value,
+            self.time_range_widget.stop.value,
+        )
+
+    def set_seconds_per_frame(self):
+        self.seconds_per_frame = self.seconds_per_frame_widget.value
+
+    def set_channel_width(self):
+        self.channel_width = self.channel_width_widget.value
+
+    def set_channel_separation(self):
+        self.channel_separation = self.channel_separation_widget.value
+
+    def set_xcorr_threshold(self):
+        self.xcorr_threshold = self.xcorr_threshold_widget.value
+
+    def run_analysis(self):
+        """Performs Mother Machine Analysis"""
+        # global params. Ideally, this is rendered obsolete. However, old code uses this
+        # Fixing it up would take a very long time, and as such is being deferred to later.
+        params = {
+            "experiment_name": self.experiment_name,
+            "experiment_directory": self.data_directory,
+            "analysis_directory": self.analysis_folder,
+            "FOV": self.valid_fovs,
+            "TIFF_source": self.image_source,
+            "output": "TIFF",
+            "phase_plane": self.phase_plane,
+            "seconds_per_time_index": self.seconds_per_frame,
+            "compile": {
+                "do_metadata": True,
+                "do_time_table": True,
+                "do_channel_masks": True,
+                "do_slicing": True,
+                "t_start": self.time_range[0],
+                "t_end": self.time_range[1],
+                "image_orientation": "auto",
+                "channel_width": self.channel_width,
+                "channel_separation": self.channel_separation,
+                "channel_detection_snr": 1,
+                "channel_length_pad": 10,
+                "channel_width_pad": 10,
+                "do_crosscorrs": True,
+                "channel_picking_threshold": self.xcorr_threshold,
+                "alignment_pad": 10,
+            },
+            "num_analyzers": multiprocessing.cpu_count(),
+            "TIFF_dir": self.TIFF_folder,
+            "ana_dir": self.analysis_folder,
+            "hdf5_dir": os.path.join(self.analysis_folder, "hdf5"),
+            "chnl_dir": os.path.join(self.analysis_folder, "channels"),
+            "empty_dir": os.path.join(self.analysis_folder, "empties"),
+            "sub_dir": os.path.join(self.analysis_folder, "subtracted"),
+            "seg_dir": os.path.join(self.analysis_folder, "segmented"),
+            "pred_dir": os.path.join(self.analysis_folder, "predictions"),
+            "cell_dir": os.path.join(self.analysis_folder, "cell_data"),
+            "track_dir": os.path.join(self.analysis_folder, "tracking"),
+            # use jd time in image metadata to make time table. Set to false if no jd time
+            "use_jd": self.image_source in {"nd2ToTIFF", "TIFF_from_elements"},
+        }
+
+        compile(params)
