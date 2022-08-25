@@ -852,10 +852,13 @@ def range_string_to_indices(range_string):
     range_string = range_string.replace(" ", "")
     split = range_string.split(",")
     indices = []
-    for fovs in split:
-        if "-" in fovs:
-            limits = list(map(int, fovs.split("-")))
-            # Make it an inclusive range, as users would expect
-            limits[1] += 1
-            indices += list(range(limits[0], limits[1]))
+    for items in split:
+        if "-" in items:
+            limits = list(map(int, items.split("-")))
+            if len(limits) == 2:
+                # Make it an inclusive range, as users would expect
+                limits[1] += 1
+                indices += list(range(limits[0], limits[1]))
+        else:
+            indices += [int(items)]
     return indices
