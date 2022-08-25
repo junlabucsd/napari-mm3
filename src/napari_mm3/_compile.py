@@ -22,7 +22,7 @@ from scipy.signal import find_peaks_cwt
 from magicgui import magic_factory
 from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, ComboBox
 from napari import Viewer
-from ._deriving_widgets import MM3Container, FOVChooser, TimeRangeSelector
+from ._deriving_widgets import MM3Container, FOVChooser, TimeRangeSelector, PlanePicker
 
 from ._function import information, warning, get_fov, get_time, get_plane, load_stack
 
@@ -1414,13 +1414,7 @@ class Compile(MM3Container):
         self.image_source_widget = ComboBox(
             label="image source", choices=["TIFF", "nd2ToTIFF", "TIFF_from_elements"],
         )
-        # TODO: Add phase plane restrictions
-        self.phase_plane_widget = ComboBox(
-            label="phase plane",
-            choices=["c1", "c2", "c3"],
-            tooltip="Phase contrast plane",
-        )
-        # TODO: Add a range!
+        self.phase_plane_widget = PlanePicker(self.valid_planes)
         self.time_range_widget = TimeRangeSelector(self.valid_times)
         self.seconds_per_frame_widget = SpinBox(
             value=150,

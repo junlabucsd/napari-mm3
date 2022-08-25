@@ -1,3 +1,4 @@
+from napari import Viewer
 from ._function import range_string_to_indices
 from magicgui.widgets import (
     Container,
@@ -6,9 +7,18 @@ from magicgui.widgets import (
     SpinBox,
     PushButton,
     RangeEdit,
+    ComboBox,
 )
 from pathlib import Path
+import tifffile as tiff
 import re
+
+
+def get_valid_planes(TIFF_folder):
+    found_files = TIFF_folder.glob("*.tif")
+    filepaths = [f for f in found_files][0]
+    num_channels = tiff.imread(filepaths).shape[0]
+    return [f"c{c+1}" for c in range(num_channels)]
 
 
 def get_valid_fovs(TIFF_folder):
@@ -30,7 +40,7 @@ def get_valid_times(TIFF_folder):
 
 
 class MM3Container(Container):
-    def __init__(self, napari_viewer):
+    def __init__(self, napari_viewer: Viewer):
         super().__init__()
         # TODO: Remove 'reload data' button. Make it all a bit more dynamic.
         self.viewer = napari_viewer
@@ -80,6 +90,7 @@ class MM3Container(Container):
         self.load_data_widget.clicked.connect(self.set_valid_fovs)
         self.set_valid_fovs()
         self.set_valid_times()
+        self.set_valid_planes()
         self.append(self.load_data_widget)
 
     def set_data_directory(self):
@@ -100,6 +111,9 @@ class MM3Container(Container):
     def set_valid_times(self):
         self.valid_times = get_valid_times(self.TIFF_folder)
 
+    def set_valid_planes(self):
+        self.valid_planes = get_valid_planes(self.TIFF_folder)
+
 
 class TimeRangeSelector(RangeEdit):
     def __init__(self, permitted_times):
@@ -112,6 +126,16 @@ class TimeRangeSelector(RangeEdit):
             min=permitted_times[0],
             max=permitted_times[1],
         )
+
+
+class PlanePicker(ComboBox):
+    def __init__(
+        self,
+        permitted_planes,
+        label="microscopy plane",
+        tooltip="The plane you would like to use.",
+    ):
+        super().__init__(label=label, choices=permitted_planes, tooltip=tooltip)
 
 
 class SingleFOVChooser(SpinBox):

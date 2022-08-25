@@ -18,10 +18,9 @@ from ._function import (
     warning,
     load_stack,
     load_specs,
-    range_string_to_indices,
 )
 
-from ._deriving_widgets import MM3Container, FOVChooser
+from ._deriving_widgets import MM3Container, FOVChooser, PlanePicker
 
 
 def subtract_phase(params, cropped_channel, empty_channel):
@@ -623,16 +622,9 @@ class Subtract(MM3Container):
             min=0,
             tooltip="Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image.",
         )
-        self.phase_plane_widget = ComboBox(
-            label="phase plane",
-            choices=["c1", "c2", "c3"],
-            tooltip="Phase contrast plane",
-        )
-        # TODO Infer available channels from experiment.
-        self.subtraction_plane_widget = ComboBox(
-            label="subtraction plane",
-            choices=["c1", "c2", "c3"],
-            tooltip="The plane in which you would like to run subtraction",
+        self.phase_plane_widget = PlanePicker(self.valid_planes, label="phase plane")
+        self.subtraction_plane_widget = PlanePicker(
+            self.valid_planes, label="subtraction plane"
         )
         # TODO: Allow specifying fluorescence which plane to subtract from!
         self.run_button_widget = PushButton(label="Run")
