@@ -1,7 +1,32 @@
 from ._function import range_string_to_indices
-from magicgui.widgets import Container, FileEdit, LineEdit, SpinBox, PushButton
+from magicgui.widgets import (
+    Container,
+    FileEdit,
+    LineEdit,
+    SpinBox,
+    PushButton,
+    RangeEdit,
+)
 from pathlib import Path
 import re
+
+
+def get_valid_fovs(TIFF_folder):
+    found_files = TIFF_folder.glob("*.tif")
+    filenames = [f.name for f in found_files]
+    get_fov_regex = re.compile("xy(\d*)")
+    fov_strings = set(get_fov_regex.findall(filename)[0] for filename in filenames)
+    fovs = map(int, sorted(fov_strings))
+    return list(fovs)
+
+
+def get_valid_times(TIFF_folder):
+    found_files = TIFF_folder.glob("*.tif")
+    filenames = [f.name for f in found_files]
+    get_time_regex = re.compile("t(\d*)")
+    time_strings = set(get_time_regex.findall(filename)[0] for filename in filenames)
+    times = list(map(int, sorted(time_strings)))
+    return (min(times), max(times))
 
 
 class MM3Container(Container):
@@ -54,6 +79,7 @@ class MM3Container(Container):
         )
         self.load_data_widget.clicked.connect(self.set_valid_fovs)
         self.set_valid_fovs()
+        self.set_valid_times()
         self.append(self.load_data_widget)
 
     def set_data_directory(self):
@@ -69,15 +95,23 @@ class MM3Container(Container):
         self.TIFF_folder = self.TIFF_folder_widget.value
 
     def set_valid_fovs(self):
-        self.valid_fovs = self.get_valid_fovs(self.TIFF_folder)
+        self.valid_fovs = get_valid_fovs(self.TIFF_folder)
 
-    def get_valid_fovs(self, TIFF_folder):
-        found_files = TIFF_folder.glob("*.tif")
-        filenames = [f.name for f in found_files]
-        get_fov_regex = re.compile("xy(\d*)")
-        fov_strings = set(get_fov_regex.findall(filename)[0] for filename in filenames)
-        fovs = map(int, sorted(fov_strings))
-        return list(fovs)
+    def set_valid_times(self):
+        self.valid_times = get_valid_times(self.TIFF_folder)
+
+
+class TimeRangeSelector(RangeEdit):
+    def __init__(self, permitted_times):
+        label_str = f"time range (frames {permitted_times[0]}-{permitted_times[1]})"
+        super().__init__(
+            label=label_str,
+            tooltip="The time range to analyze",
+            start=permitted_times[0],
+            stop=permitted_times[1],
+            min=permitted_times[0],
+            max=permitted_times[1],
+        )
 
 
 class SingleFOVChooser(SpinBox):

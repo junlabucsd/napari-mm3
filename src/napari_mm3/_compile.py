@@ -20,9 +20,9 @@ from pathlib import Path
 from pprint import pprint
 from scipy.signal import find_peaks_cwt
 from magicgui import magic_factory
-from magicgui.widgets import FloatSpinBox, SpinBox, RangeEdit, PushButton, ComboBox
+from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, ComboBox
 from napari import Viewer
-from ._deriving_widgets import MM3Container, FOVChooser
+from ._deriving_widgets import MM3Container, FOVChooser, TimeRangeSelector
 
 from ._function import information, warning, get_fov, get_time, get_plane, load_stack
 
@@ -1421,9 +1421,7 @@ class Compile(MM3Container):
             tooltip="Phase contrast plane",
         )
         # TODO: Add a range!
-        self.time_range_widget = RangeEdit(
-            label="time range", tooltip="Time range to analyze",
-        )
+        self.time_range_widget = TimeRangeSelector(self.valid_times)
         self.seconds_per_frame_widget = SpinBox(
             value=150,
             label="seconds per frame",
