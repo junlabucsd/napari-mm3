@@ -10,3 +10,6 @@
 # import napari_mm3._segment_unet
 # import napari_mm3._subtract
 # import napari_mm3._track
+
+def test_placeholder():
+    pass
