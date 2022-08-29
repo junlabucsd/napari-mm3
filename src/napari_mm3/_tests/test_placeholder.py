@@ -5,7 +5,8 @@ import napari_mm3._compile
 import napari_mm3._deriving_widgets
 import napari_mm3._function
 import napari_mm3._nd2_to_tiff
-import napari_mm3._segment_otsu
+# Disable for now. TODO: Re-enable when I figure out what's wrong.
+# import napari_mm3._segment_otsu 
 import napari_mm3._segment_unet
 import napari_mm3._subtract
 import napari_mm3._track
