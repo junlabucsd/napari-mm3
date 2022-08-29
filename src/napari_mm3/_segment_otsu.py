@@ -8,15 +8,17 @@ import tifffile as tiff
 import h5py
 import numpy as np
 
+from magicgui.widgets import FloatSpinBox, SpinBox, PushButton
 from scipy import ndimage as ndi
 from skimage import segmentation, morphology
 from skimage.filters import threshold_otsu
 
 
-from ._function import information, warnings, load_specs, load_stack
+from ._function import information, warnings, load_specs, load_stack, range_string_to_indices
+from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
 
 # Do segmentation for an channel time stack
-def segment_chnl_stack(fov_id, peak_id):
+def segment_chnl_stack(params, fov_id, peak_id):
     """
     For a given fov and peak (channel), do segmentation for all images in the
     subtracted .tif stack.
@@ -206,15 +208,7 @@ def segmentOTSU(params):
     information("Loading experiment parameters.")
     p = params
 
-    if p["FOV"]:
-        if "-" in p["FOV"]:
-            user_spec_fovs = range(
-                int(p["FOV"].split("-")[0]), int(p["FOV"].split("-")[1]) + 1
-            )
-        else:
-            user_spec_fovs = [int(val) for val in p["FOV"].split(",")]
-    else:
-        user_spec_fovs = []
+    user_spec_fovs = p["FOV"]
 
     # create segmenteation and cell data folder if they don't exist
     if not os.path.exists(p["seg_dir"]) and p["output"] == "TIFF":
@@ -252,7 +246,7 @@ def segmentOTSU(params):
 
         for peak_id in ana_peak_ids:
             # send to segmentation
-            segment_chnl_stack(fov_id, peak_id)
+            segment_chnl_stack(params, fov_id, peak_id)
 
     information("Finished segmentation.")
 
@@ -280,15 +274,7 @@ def DebugOtsu(
 
     p = params
 
-    if p["FOV"]:
-        if "-" in p["FOV"]:
-            user_spec_fovs = range(
-                int(p["FOV"].split("-")[0]), int(p["FOV"].split("-")[1]) + 1
-            )
-        else:
-            user_spec_fovs = [int(val) for val in p["FOV"].split(",")]
-    else:
-        user_spec_fovs = []
+    user_spec_fovs = range_string_to_indices(p["FOV"])
 
     # set segmentation image name for saving and loading segmented images
     p["seg_img"] = "seg_otsu"
@@ -335,60 +321,95 @@ def DebugOtsu(
     viewer.add_labels(segmented_imgs, name="Labels")
 
 
-@magic_factory(
-    experiment_directory={"mode": "d"}, phase_plane={"choices": ["c1", "c2", "c3"]}
-)
-def SegmentOtsu(
-    output_prefix: str = "",
-    experiment_directory=Path(),
-    image_directory: str = "TIFF/",
-    FOV: str = "1-5",
-    interactive: bool = False,
-    phase_plane="c1",
-    OTSU_threshold=1.0,
-    first_opening_size: int = 2,
-    distance_threshold: int = 2,
-    second_opening_size: int = 1,
-    min_object_size: int = 25,
-):
+class SegmentOtsu(MM3Container):
+    def __init__(self, napari_viewer: napari.Viewer):
+        super().__init__(napari_viewer)
+        napari_viewer.grid.enabled = True
+        napari_viewer.grid.shape = (-1, 20)
 
-    global params
-    params = dict()
-    params["experiment_name"] = output_prefix
-    params["experiment_directory"] = experiment_directory
-    params["image_directory"] = image_directory
-    params["analysis_directory"] = "analysis"
-    params["output"] = "TIFF"
-    params["FOV"] = FOV
-    params["interactive"] = interactive
-    params["phase_plane"] = phase_plane
+        self.plane_picker_widget = PlanePicker(self.valid_planes, label = "phase plane")
+        self.fov_widget = FOVChooser(self.valid_fovs)
+        self.otsu_threshold_widget = FloatSpinBox(label = "OTSU threshold", min = 0., max = 2., step=.01, value = 1, adaptive_step=False)
+        self.first_opening_size_widget = SpinBox(label = "first opening size", min=0, value=2)
+        self.distance_threshold_widget = SpinBox(label = "distance threshold", min=0, value=2)
+        self.second_opening_size_widget = SpinBox(label = "second opening size", min=0, value=1)
+        self.min_object_size_widget = SpinBox(label = "min object size", min=0, value=25)
+        self.run_widget = PushButton(label = "Run")
 
-    params["segment"] = dict()
-    params["segment"]["OTSU_threshold"] = OTSU_threshold
-    params["segment"]["first_opening_size"] = first_opening_size
-    params["segment"]["distance_threshold"] = distance_threshold
-    params["segment"]["second_opening_size"] = second_opening_size
-    params["segment"]["min_object_size"] = min_object_size
-    params["num_analyzers"] = multiprocessing.cpu_count()
+        self.plane_picker_widget.changed.connect(self.set_phase_plane)
+        self.fov_widget.connect_callback(self.set_fovs)
+        self.otsu_threshold_widget.changed.connect(self.set_OTSU_threshold)
+        self.first_opening_size_widget.changed.connect(self.set_first_opening_size)
+        self.distance_threshold_widget.changed.connect(self.set_distance_threshold)
+        self.second_opening_size_widget.changed.connect(self.set_second_opening_size)
+        self.min_object_size_widget.changed.connect(self.set_min_object_size)
+        self.run_widget.clicked.connect(self.run)
 
-    # useful folder shorthands for opening files
-    params["TIFF_dir"] = os.path.join(
-        params["experiment_directory"], params["image_directory"]
-    )
-    params["ana_dir"] = os.path.join(
-        params["experiment_directory"], params["analysis_directory"]
-    )
-    params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
-    params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
-    params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
-    params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
-    params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
-    params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
-    params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
+        self.append(self.plane_picker_widget)
+        self.append(self.fov_widget)
+        self.append(self.otsu_threshold_widget)
+        self.append(self.first_opening_size_widget)
+        self.append(self.distance_threshold_widget)
+        self.append(self.second_opening_size_widget)
+        self.append(self.min_object_size_widget)
+        self.append(self.run_widget)
 
-    ## if debug is checked, clicking run will launch this new widget. need to pass fov & peak
-    if params["interactive"]:
-        viewer = napari.current_viewer()
-        viewer.window.add_dock_widget(DebugOtsu, name="debugotsu")
-    else:
-        segmentOTSU(params)
+        self.set_phase_plane()
+        self.set_fovs(self.valid_fovs)
+        self.set_OTSU_threshold()
+        self.set_first_opening_size()
+        self.set_distance_threshold()
+        self.set_second_opening_size()
+        self.set_min_object_size()
+
+    def set_params(self):
+        self.params = dict()
+        self.params["experiment_name"] = self.experiment_name
+        self.params["experiment_directory"] = self.data_directory
+        self.params["output"] = "TIFF"
+        self.params["FOV"] = self.fovs
+        self.params["phase_plane"] = self.phase_plane
+
+        self.params["segment"] = dict()
+        self.params["segment"]["OTSU_threshold"] = self.OTSU_threshold
+        self.params["segment"]["first_opening_size"] = self.first_opening_size
+        self.params["segment"]["distance_threshold"] = self.distance_threshold
+        self.params["segment"]["second_opening_size"] = self.second_opening_size
+        self.params["segment"]["min_object_size"] = self.min_object_size
+        self.params["num_analyzers"] = multiprocessing.cpu_count()
+
+        # useful folder shorthands for opening files
+        self.params["TIFF_dir"] = self.TIFF_folder
+        self.params["ana_dir"] = self.analysis_folder
+        self.params["hdf5_dir"] = os.path.join(self.params["ana_dir"], "hdf5")
+        self.params["chnl_dir"] = os.path.join(self.params["ana_dir"], "channels")
+        self.params["empty_dir"] = os.path.join(self.params["ana_dir"], "empties")
+        self.params["sub_dir"] = os.path.join(self.params["ana_dir"], "subtracted")
+        self.params["seg_dir"] = os.path.join(self.params["ana_dir"], "segmented")
+        self.params["cell_dir"] = os.path.join(self.params["ana_dir"], "cell_data")
+        self.params["track_dir"] = os.path.join(self.params["ana_dir"], "tracking")
+        
+    def set_phase_plane(self):
+        self.phase_plane = self.plane_picker_widget.value
+
+    def set_fovs(self, fovs):
+        self.fovs = fovs
+
+    def set_OTSU_threshold(self):
+        self.OTSU_threshold = self.otsu_threshold_widget.value
+
+    def set_first_opening_size(self):
+        self.first_opening_size = self.first_opening_size_widget.value
+
+    def set_distance_threshold(self):
+        self.distance_threshold = self.distance_threshold_widget.value
+
+    def set_second_opening_size(self):
+        self.second_opening_size = self.second_opening_size_widget.value
+
+    def set_min_object_size(self):
+        self.min_object_size = self.min_object_size_widget.value
+
+    def run(self):
+        self.set_params()
+        segmentOTSU(self.params)

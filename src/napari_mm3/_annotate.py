@@ -20,7 +20,7 @@ class Annotate(MM3Container):
         self.prior_peak_widget.tooltip = (
             "Jump to the previous peak (typically the previous channel)"
         )
-        self.FOV_id_widget = SingleFOVChooser(self.fovs)
+        self.FOV_id_widget = SingleFOVChooser(self.valid_fovs)
         self.FOV_id_widget.value = 1
 
         self.peak_id = 0
