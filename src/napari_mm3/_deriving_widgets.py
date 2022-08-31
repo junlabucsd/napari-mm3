@@ -51,47 +51,47 @@ class MM3Container(Container):
             value=Path("."),
             tooltip="Directory within which all your data and analyses will be located.",
         )
-        self.data_directory_widget.changed.connect(self.set_data_directory)
-        self.set_data_directory()
-        self.append(self.data_directory_widget)
-
         self.analysis_folder_widget = FileEdit(
             mode="d",
             label="analysis folder",
             tooltip="Required. Location (within working directory) for outputting analysis. If in doubt, leave as default.",
             value=Path("./analysis"),
         )
-        self.analysis_folder_widget.changed.connect(self.set_analysis_folder)
-        self.set_analysis_folder()
-        self.append(self.analysis_folder_widget)
-
         self.TIFF_folder_widget = FileEdit(
             mode="d",
             label="TIFF folder",
             tooltip="Required. Location (within working directory) for the input images. If in doubt, leave as default.",
             value=Path("./TIFF"),
         )
-        self.TIFF_folder_widget.changed.connect(self.set_TIFF_folder)
-        # Automatically try to set the TIFF folder from the default.
-        self.set_TIFF_folder()
-        self.append(self.TIFF_folder_widget)
-
         self.experiment_name_widget = LineEdit(
             label="output prefix",
             tooltip="Optional. A prefix that will be prepended to output files. If in doubt, leave blank.",
         )
-        self.experiment_name_widget.changed.connect(self.set_experiment_name)
-        self.set_experiment_name()
-        self.append(self.experiment_name_widget)
-
         self.load_data_widget = PushButton(
             label="reload data", tooltip="Load data from specified directories.",
         )
+
+
+        self.data_directory_widget.changed.connect(self.set_data_directory)
+        self.experiment_name_widget.changed.connect(self.set_experiment_name)
+        self.TIFF_folder_widget.changed.connect(self.set_TIFF_folder)
+        self.analysis_folder_widget.changed.connect(self.set_analysis_folder)
         self.load_data_widget.clicked.connect(self.set_valid_fovs)
+
+        self.set_data_directory()
+        self.set_experiment_name()
+        self.set_TIFF_folder()
+        self.set_analysis_folder()
         self.set_valid_fovs()
         self.set_valid_times()
         self.set_valid_planes()
+
+        self.append(self.data_directory_widget)
+        self.append(self.experiment_name_widget)
+        self.append(self.TIFF_folder_widget)
+        self.append(self.analysis_folder_widget)
         self.append(self.load_data_widget)
+
 
     def set_data_directory(self):
         self.data_directory = self.data_directory_widget.value
@@ -127,6 +127,56 @@ class TimeRangeSelector(RangeEdit):
             max=permitted_times[1],
         )
 
+class FOVChooserSingle(Container):
+    def __init__(self, valid_fovs):
+        super().__init__(layout="horizontal", labels=False)
+        self.valid_fovs = valid_fovs
+        min_FOV = min(self.valid_fovs)
+        max_FOV = max(self.valid_fovs)
+        self.name = f"FOV ({min_FOV}-{max_FOV})"
+        self.pick_fov_widget = LineEdit(
+            value=min_FOV,
+            tooltip="The FOV you would like to work with.",
+        )
+        self.next_fov_widget = PushButton(label="+")
+        self.prev_fov_widget = PushButton(label="-")
+
+        self.pick_fov_widget.changed.connect(self.set_fov)
+        self.next_fov_widget.changed.connect(self.increment_fov)
+        self.prev_fov_widget.changed.connect(self.decrement_fov)
+
+        self.append(self.pick_fov_widget)
+        self.append(self.next_fov_widget)
+        self.append(self.prev_fov_widget)
+
+        self.fov = min_FOV
+    
+    def set_fov(self):
+        try:
+            self.fov = int(self.pick_fov_widget.value)
+        except:
+            # Int casting failure is not a big deal. No point throwing an exception.
+            print("Attempted to access invalid FOV")
+            return
+        # Enforce bounds on self.fov
+        self.fov = max(min(self.valid_fovs), self.fov)
+        self.fov = min(max(self.valid_fovs), self.fov)
+        # After setting bounds, update UI accordingly
+        self.pick_fov_widget.value = self.fov
+
+    def connect_callback(self, func):
+        self.pick_fov_widget.changed.connect(func)
+
+    def increment_fov(self):
+        # Update UI; then, act as if the user changed the number manually
+        self.pick_fov_widget.value = self.fov + 1
+        self.set_fov()
+
+    def decrement_fov(self):
+        # Update UI; then, act as if the user changed the number manually
+        self.pick_fov_widget.value = self.fov - 1
+        self.set_fov()
+
 
 class PlanePicker(ComboBox):
     def __init__(
@@ -136,36 +186,6 @@ class PlanePicker(ComboBox):
         tooltip="The plane you would like to use.",
     ):
         super().__init__(label=label, choices=permitted_planes, tooltip=tooltip)
-
-
-class SingleFOVChooser(SpinBox):
-    """
-    Widget for specifying a single FOV; extends magicgui.widgets.SpinBox.
-    Instead of using the standard SpinBox.changed.connect(...), use the custom 
-    SingleFOVChooser.fixed_connect(...). It provides a workaround for a known Qt bug.
-    """
-
-    def __init__(self, permitted_FOVS):
-        min_FOV = min(permitted_FOVS)
-        max_FOV = max(permitted_FOVS)
-        label_str = f"FOV ({min_FOV}-{max_FOV})"
-        super().__init__(
-            label=label_str,
-            tooltip="The FOV you would like to work with.",
-            min=min_FOV,
-            max=max_FOV,
-        )
-
-    def connect_callback(self, func):
-        """
-        Use this method when giving this SpinBox a function.
-        This is a workaround for a Qt bug, where if a function connected 
-        to a spinbox takes too long to execute, the spinbox skips a value.
-        """
-        self.changed.pause()
-        self.changed.connect(func)
-        self.changed.resume()
-
 
 class FOVChooser(LineEdit):
     """Widget for choosing multiple FOVs."""

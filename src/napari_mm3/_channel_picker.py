@@ -1,13 +1,13 @@
+from cgitb import enable
 from gc import callbacks
 import pickle
 from pathlib import Path
-import magicgui
 import napari
 import numpy as np
 import yaml
 import tifffile as tiff
 
-from ._deriving_widgets import MM3Container, SingleFOVChooser
+from ._deriving_widgets import MM3Container, FOVChooserSingle
 
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 0.25])
 TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, 0.25])
@@ -120,10 +120,13 @@ class ChannelPicker(MM3Container):
     def __init__(self, viewer: napari.Viewer):
         super().__init__(viewer)
         self.experiment_name_widget.hide()
-        self.specs = load_specs(self.analysis_folder)
 
-        self.fov_picker_widget = SingleFOVChooser(self.valid_fovs)
-        self.fov_picker_widget.connect_callback(self.change_fov)
+        self.fov_picker_widget = FOVChooserSingle(self.valid_fovs)
+        self.fov_picker_widget.connect_callback(self.update_fov)
+        self.append(self.fov_picker_widget)
+
+        self.specs = load_specs(self.analysis_folder)
+        self.update_fov()
 
         # Set up viewer
         self.viewer.grid.enabled = False
@@ -131,16 +134,15 @@ class ChannelPicker(MM3Container):
         self.viewer.text_overlay.visible = True
         self.viewer.text_overlay.color = "white"
 
-        self.change_fov(1)
-
-    def change_fov(self, fov):
-        self.cur_fov = fov
+    def update_fov(self):
+        self.cur_fov = self.fov_picker_widget.fov
         image_fov_stack = load_fov(self.TIFF_folder, self.cur_fov)
         self.sorted_peaks = list(sorted(self.specs[self.cur_fov].keys()))
         self.sorted_specs = [self.specs[self.cur_fov][p] for p in self.sorted_peaks]
 
         self.crosscorrs = load_crosscorrs(self.analysis_folder, self.cur_fov)
 
+        self.viewer.layers.clear()
         display_image_stack(self.viewer, image_fov_stack)
 
         # Set up selection box dimensions
