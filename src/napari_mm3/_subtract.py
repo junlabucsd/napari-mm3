@@ -477,7 +477,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
     return True
 
 
-def subtract(params, ana_dir: Path, subtraction_plane: str):
+def subtract(params, ana_dir: Path, subtraction_plane: str, fluor_plane: bool = False):
     """mm3_Subtract.py averages empty channels and then subtractions them from channels with cells"""
 
     # Load the project parameters file
@@ -517,10 +517,9 @@ def subtract(params, ana_dir: Path, subtraction_plane: str):
     information("Found %d FOVs to process." % len(fov_id_list))
 
     # determine if we are doing fluorescence or phase subtraction, and set flags
-    if sub_plane == p["phase_plane"]:
-        align = True  # used when averaging empties
-        sub_method = "phase"  # used in subtract_fov_stack
-    else:
+    align = True
+    sub_method = "phase"
+    if fluor_plane:
         align = False
         sub_method = "fluor"
 
@@ -622,7 +621,7 @@ class Subtract(MM3Container):
             min=0,
             tooltip="Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image.",
         )
-        self.phase_plane_widget = PlanePicker(self.valid_planes, label="phase plane")
+        self.mode_widget = ComboBox(choices =["phase", "fluorescence",], label="subtraction mode")
         self.subtraction_plane_widget = PlanePicker(
             self.valid_planes, label="subtraction plane"
         )
@@ -631,19 +630,19 @@ class Subtract(MM3Container):
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.alignment_pad_widget.changed.connect(self.set_alignment_pad)
-        self.phase_plane_widget.changed.connect(self.set_phase_plane)
         self.subtraction_plane_widget.changed.connect(self.set_subtraction_plane)
+        self.mode_widget.changed.connect(self.set_mode)
         self.run_button_widget.changed.connect(self.subtract)
 
         self.append(self.fov_widget)
         self.append(self.alignment_pad_widget)
-        self.append(self.phase_plane_widget)
+        self.append(self.mode_widget)
         self.append(self.subtraction_plane_widget)
         self.append(self.run_button_widget)
 
         self.set_fovs(self.valid_fovs)
         self.set_alignment_pad()
-        self.set_phase_plane()
+        self.set_mode()
         self.set_subtraction_plane()
 
     def subtract(self):
@@ -656,7 +655,7 @@ class Subtract(MM3Container):
             phase_plane=self.phase_plane,
             alignment_pad=self.alignment_pad,
         )
-        subtract(params, self.analysis_folder, self.subtraction_plane)
+        subtract(params, self.analysis_folder, self.subtraction_plane, self.fluor_plane)
 
     def set_fovs(self, fovs):
         self.fovs = fovs
@@ -664,8 +663,8 @@ class Subtract(MM3Container):
     def set_alignment_pad(self):
         self.alignment_pad = self.alignment_pad_widget.value
 
-    def set_phase_plane(self):
-        self.phase_plane = self.phase_plane_widget.value
-
     def set_subtraction_plane(self):
         self.subtraction_plane = self.subtraction_plane_widget.value
+
+    def set_mode(self):
+        self.fluor_plane = self.mode_widget.value == "fluorescence"
