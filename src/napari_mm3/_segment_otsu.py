@@ -8,13 +8,19 @@ import tifffile as tiff
 import h5py
 import numpy as np
 
-from magicgui.widgets import FloatSpinBox, SpinBox, PushButton
+from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, CheckBox
 from scipy import ndimage as ndi
 from skimage import segmentation, morphology
 from skimage.filters import threshold_otsu
 
 
-from ._function import information, warnings, load_specs, load_stack, range_string_to_indices
+from ._function import (
+    information,
+    warnings,
+    load_specs,
+    load_stack,
+    range_string_to_indices,
+)
 from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
 
 # Do segmentation for an channel time stack
@@ -250,91 +256,33 @@ def segmentOTSU(params):
 
     information("Finished segmentation.")
 
-
-@magicgui(
-    auto_call=True,
-    first_opening_size=dict(widget_type="SpinBox", step=1),
-    OTSU_threshold=dict(widget_type="FloatSpinBox", min=0, max=2, step=0.01),
-)
-def DebugOtsu(
-    OTSU_threshold=1.0,
-    first_opening_size: int = 2,
-    distance_threshold: int = 2,
-    second_opening_size: int = 1,
-    min_object_size: int = 25,
-):
-
-    warnings.filterwarnings("ignore", "The probability range is outside [0, 1]")
-
-    params["segment"]["OTSU_threshold"] = OTSU_threshold
-    params["segment"]["first_opening_size"] = first_opening_size
-    params["segment"]["distance_threshold"] = distance_threshold
-    params["segment"]["second_opening_size"] = second_opening_size
-    params["segment"]["min_object_size"] = min_object_size
-
-    p = params
-
-    user_spec_fovs = range_string_to_indices(p["FOV"])
-
-    # set segmentation image name for saving and loading segmented images
-    p["seg_img"] = "seg_otsu"
-
-    # load specs file
-    specs = load_specs(params)
-
-    # make list of FOVs to process (keys of channel_mask file)
-    fov_id_list = sorted([fov_id for fov_id in specs.keys()])
-
-    # remove fovs if the user specified so
-    if user_spec_fovs:
-        fov_id_list[:] = [fov for fov in fov_id_list if fov in user_spec_fovs]
-
-    ### Do Segmentation by FOV and then peak #######################################################
-
-    for fov_id in fov_id_list:
-        fov_id_d = fov_id
-        # determine which peaks are to be analyzed (those which have been subtracted)
-        for peak_id, spec in six.iteritems(specs[fov_id]):
-            if (
-                spec == 1
-            ):  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
-                peak_id_d = peak_id
-                break
-        break
-
-    ## pull out first fov & peak id with cells
-    sub_stack = load_stack(
-        params, fov_id_d, peak_id_d, color="sub_{}".format(params["phase_plane"])
-    )
-
-    # image by image for debug
-    segmented_imgs = []
-    for sub_image in sub_stack:
-        segmented_imgs.append(segment_image(params, sub_image))
-
-    # stack them up along a time axis
-    segmented_imgs = np.stack(segmented_imgs, axis=0)
-    segmented_imgs = segmented_imgs.astype("uint8")
-
-    viewer = napari.current_viewer()
-    viewer.layers.clear()
-    viewer.add_labels(segmented_imgs, name="Labels")
-
-
 class SegmentOtsu(MM3Container):
     def __init__(self, napari_viewer: napari.Viewer):
         super().__init__(napari_viewer)
-        napari_viewer.grid.enabled = True
-        napari_viewer.grid.shape = (-1, 20)
+        napari_viewer.grid.enabled = False
 
-        self.plane_picker_widget = PlanePicker(self.valid_planes, label = "phase plane")
+        self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
         self.fov_widget = FOVChooser(self.valid_fovs)
-        self.otsu_threshold_widget = FloatSpinBox(label = "OTSU threshold", min = 0., max = 2., step=.01, value = 1, adaptive_step=False)
-        self.first_opening_size_widget = SpinBox(label = "first opening size", min=0, value=2)
-        self.distance_threshold_widget = SpinBox(label = "distance threshold", min=0, value=2)
-        self.second_opening_size_widget = SpinBox(label = "second opening size", min=0, value=1)
-        self.min_object_size_widget = SpinBox(label = "min object size", min=0, value=25)
-        self.run_widget = PushButton(label = "Run")
+        self.otsu_threshold_widget = FloatSpinBox(
+            label="OTSU threshold",
+            min=0.0,
+            max=2.0,
+            step=0.01,
+            value=1,
+            adaptive_step=False,
+        )
+        self.first_opening_size_widget = SpinBox(
+            label="first opening size", min=0, value=2
+        )
+        self.distance_threshold_widget = SpinBox(
+            label="distance threshold", min=0, value=2
+        )
+        self.second_opening_size_widget = SpinBox(
+            label="second opening size", min=0, value=1
+        )
+        self.min_object_size_widget = SpinBox(label="min object size", min=0, value=25)
+        self.preview_widget = PushButton(label = "generate preview", value = False)
+        self.run_widget = PushButton(label="run on chosen FOVs")
 
         self.plane_picker_widget.changed.connect(self.set_phase_plane)
         self.fov_widget.connect_callback(self.set_fovs)
@@ -343,6 +291,7 @@ class SegmentOtsu(MM3Container):
         self.distance_threshold_widget.changed.connect(self.set_distance_threshold)
         self.second_opening_size_widget.changed.connect(self.set_second_opening_size)
         self.min_object_size_widget.changed.connect(self.set_min_object_size)
+        self.preview_widget.clicked.connect(self.render_preview)
         self.run_widget.clicked.connect(self.run)
 
         self.append(self.plane_picker_widget)
@@ -352,15 +301,19 @@ class SegmentOtsu(MM3Container):
         self.append(self.distance_threshold_widget)
         self.append(self.second_opening_size_widget)
         self.append(self.min_object_size_widget)
+        self.append(self.preview_widget)
         self.append(self.run_widget)
 
-        self.set_phase_plane()
         self.set_fovs(self.valid_fovs)
+        self.set_phase_plane()
         self.set_OTSU_threshold()
         self.set_first_opening_size()
         self.set_distance_threshold()
         self.set_second_opening_size()
         self.set_min_object_size()
+
+        self.redraw_image = True
+        self.render_preview()
 
     def set_params(self):
         self.params = dict()
@@ -388,7 +341,7 @@ class SegmentOtsu(MM3Container):
         self.params["seg_dir"] = os.path.join(self.params["ana_dir"], "segmented")
         self.params["cell_dir"] = os.path.join(self.params["ana_dir"], "cell_data")
         self.params["track_dir"] = os.path.join(self.params["ana_dir"], "tracking")
-        
+
     def set_phase_plane(self):
         self.phase_plane = self.plane_picker_widget.value
 
@@ -409,6 +362,38 @@ class SegmentOtsu(MM3Container):
 
     def set_min_object_size(self):
         self.min_object_size = self.min_object_size_widget.value
+
+    def render_preview(self):
+        self.viewer.layers.clear()
+        self.set_params()
+        # TODO: Add ability to change these to other FOVs
+        valid_fov = self.valid_fovs[0]
+        specs = load_specs(self.params)
+        # Find first cell-containing peak
+        valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
+        ## pull out first fov & peak id with cells
+        sub_stack = load_stack(
+            self.params, valid_fov, valid_peak, color="sub_{}".format(self.params["phase_plane"])
+        )
+
+        # image by image for debug
+        segmented_imgs = []
+        for sub_image in sub_stack:
+            segmented_imgs.append(segment_image(self.params, sub_image))
+
+        # stack them up along a time axis
+        segmented_imgs = np.stack(segmented_imgs, axis=0)
+        segmented_imgs = segmented_imgs.astype("uint8")
+
+        if self.redraw_image:
+            images = self.viewer.add_image(sub_stack)
+            images.gamma = .25
+            labels = self.viewer.add_labels(segmented_imgs, name="Labels")
+            labels.opacity = .5
+            self.no_redraw = False
+
+        self.viewer.layers[1].data = segmented_imgs
+
 
     def run(self):
         self.set_params()
