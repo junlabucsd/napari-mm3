@@ -262,7 +262,6 @@ class SegmentOtsu(MM3Container):
         napari_viewer.grid.enabled = False
 
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
-        self.fov_widget = FOVChooser(self.valid_fovs)
         self.otsu_threshold_widget = FloatSpinBox(
             label="OTSU threshold",
             min=0.0,
@@ -282,6 +281,7 @@ class SegmentOtsu(MM3Container):
         )
         self.min_object_size_widget = SpinBox(label="min object size", min=0, value=25)
         self.preview_widget = PushButton(label = "generate preview", value = False)
+        self.fov_widget = FOVChooser(self.valid_fovs)
         self.run_widget = PushButton(label="run on chosen FOVs")
 
         self.plane_picker_widget.changed.connect(self.set_phase_plane)
@@ -295,13 +295,13 @@ class SegmentOtsu(MM3Container):
         self.run_widget.clicked.connect(self.run)
 
         self.append(self.plane_picker_widget)
-        self.append(self.fov_widget)
         self.append(self.otsu_threshold_widget)
         self.append(self.first_opening_size_widget)
         self.append(self.distance_threshold_widget)
         self.append(self.second_opening_size_widget)
         self.append(self.min_object_size_widget)
         self.append(self.preview_widget)
+        self.append(self.fov_widget)
         self.append(self.run_widget)
 
         self.set_fovs(self.valid_fovs)
