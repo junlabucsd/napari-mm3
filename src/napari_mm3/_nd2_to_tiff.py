@@ -13,6 +13,7 @@ from dask import delayed
 from magicgui import magic_factory
 from pathlib import Path
 from skimage import io
+from napari.utils import progress
 from ._function import range_string_to_indices, information, julian_day_number
 
 
@@ -52,7 +53,7 @@ def nd2ToTIFF(
     nd2files = list(experiment_directory.glob("*.nd2"))
     information(f"Found {len(nd2files)} files to analyze in experiment directory.")
 
-    for nd2_file in nd2files:
+    for nd2_file in progress(nd2files):
         file_prefix = os.path.split(os.path.splitext(nd2_file)[0])[1]
         information("Extracting {file_prefix} ...")
 
@@ -91,7 +92,7 @@ def nd2ToTIFF(
             extraction_range = range(image_start, image_end + 1)
 
             # loop through time points
-            for t in extraction_range:
+            for t in progress(extraction_range):
                 # timepoint output name (1 indexed rather than 0 indexed)
                 t_id = t - 1
                 # set counter for FOV output name
@@ -224,14 +225,14 @@ def nd2ToTIFF(
 )
 def Nd2ToTIFF(
     experiment_directory=Path(),
-    image_directory="TIFF",
+    image_directory=Path(),
     image_start: int = 1,
     image_end: int = 50,
     FOVs_range: str = "",
 ):
     """Converts an Nd2 file to a series of TIFFs.
     TODO: Range inference, or similar."""
-    tif_dir = experiment_directory / image_directory
+    tif_dir = Path()
     fov_list = range_string_to_indices(FOVs_range)
     nd2ToTIFF(
         experiment_directory,
@@ -284,6 +285,6 @@ def Nd2ToTIFF(
     viewer.grid.enabled = True
     grid_w = int(len(fovs) / 17) + 1
     grid_h = int(len(fovs) / grid_w) + 1
-    viewer.grid.shape = (grid_h, grid_w)
+    viewer.grid.shape = (-1, 4)
 
     print("Done.")
