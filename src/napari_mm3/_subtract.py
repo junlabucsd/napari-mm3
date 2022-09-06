@@ -614,6 +614,13 @@ def subtract_prepare_params(
 class Subtract(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)
+
+        self.create_widgets()
+        self.load_data_widget.clicked.connect(self.delete_widgets)
+        self.load_data_widget.clicked.connect(self.create_widgets)
+
+    def create_widgets(self):
+        """Serves as the widget constructor. See MM3Container for more details."""
         self.fov_widget = FOVChooser(self.valid_fovs)
         self.alignment_pad_widget = SpinBox(
             label="alignment pad",
@@ -644,6 +651,14 @@ class Subtract(MM3Container):
         self.set_alignment_pad()
         self.set_mode()
         self.set_subtraction_plane()
+
+    def delete_widgets(self):
+        """Serves as the widget destructor. See MM3Container for more details."""
+        self.pop() # self.fov_widget
+        self.pop() # self.run_button_widget
+        self.pop() # self.subtraction_plane_widget
+        self.pop() # self.mode_widget
+        self.pop() # self.alignment_pad_widget
 
     def subtract(self):
         params = subtract_prepare_params(

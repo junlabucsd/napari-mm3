@@ -1,4 +1,5 @@
 from napari import Viewer
+from napari.utils.notifications import show_warning
 from ._function import range_string_to_indices
 from magicgui.widgets import (
     Container,
@@ -68,30 +69,31 @@ class MM3Container(Container):
             tooltip="Optional. A prefix that will be prepended to output files. If in doubt, leave blank.",
         )
         self.load_data_widget = PushButton(
-            label="reload data", tooltip="Load data from specified directories.",
+            label="set new directories",
+            tooltip="Load data from specified directories.",
         )
-
 
         self.data_directory_widget.changed.connect(self.set_data_directory)
         self.experiment_name_widget.changed.connect(self.set_experiment_name)
         self.TIFF_folder_widget.changed.connect(self.set_TIFF_folder)
         self.analysis_folder_widget.changed.connect(self.set_analysis_folder)
         self.load_data_widget.clicked.connect(self.set_valid_fovs)
+        self.load_data_widget.clicked.connect(self.set_valid_planes)
+        self.load_data_widget.clicked.connect(self.set_valid_times)
 
         self.set_data_directory()
         self.set_experiment_name()
         self.set_TIFF_folder()
         self.set_analysis_folder()
         self.set_valid_fovs()
-        self.set_valid_times()
         self.set_valid_planes()
+        self.set_valid_times()
 
         self.append(self.data_directory_widget)
         self.append(self.experiment_name_widget)
         self.append(self.TIFF_folder_widget)
         self.append(self.analysis_folder_widget)
         self.append(self.load_data_widget)
-
 
     def set_data_directory(self):
         self.data_directory = self.data_directory_widget.value
@@ -104,15 +106,29 @@ class MM3Container(Container):
 
     def set_TIFF_folder(self):
         self.TIFF_folder = self.TIFF_folder_widget.value
+        if not self.TIFF_folder.exists():
+            show_warning(
+                "No TIFF folder found.\n"
+                + "Did you make sure to launch napari from your experiment's directory?"
+            )
 
     def set_valid_fovs(self):
-        self.valid_fovs = get_valid_fovs(self.TIFF_folder)
+        try:
+            self.valid_fovs = get_valid_fovs(self.TIFF_folder)
+        except:
+            self.valid_fovs = ["unknown"]
 
     def set_valid_times(self):
-        self.valid_times = get_valid_times(self.TIFF_folder)
+        try: 
+            self.valid_times = get_valid_times(self.TIFF_folder)
+        except:
+            self.valid_times = ["unknown"]
 
     def set_valid_planes(self):
-        self.valid_planes = get_valid_planes(self.TIFF_folder)
+        try: 
+            self.valid_planes = get_valid_planes(self.TIFF_folder)
+        except: 
+            self.valid_planes = []
 
 
 class TimeRangeSelector(RangeEdit):
@@ -127,13 +143,19 @@ class TimeRangeSelector(RangeEdit):
             max=permitted_times[1],
         )
 
+
 class FOVChooserSingle(Container):
     def __init__(self, valid_fovs):
         super().__init__(layout="horizontal", labels=False)
         self.valid_fovs = valid_fovs
-        min_FOV = min(self.valid_fovs)
-        max_FOV = max(self.valid_fovs)
-        self.name = f"FOV ({min_FOV}-{max_FOV})"
+        if valid_fovs != []:
+            min_FOV = min(self.valid_fovs)
+            max_FOV = max(self.valid_fovs)
+            self.name = f"FOV ({min_FOV}-{max_FOV})"
+        else:
+            min_FOV = "not found"
+            max_FOV = "not found"
+            self.name = f"FOV (unknown-unknown)"
         self.pick_fov_widget = LineEdit(
             value=min_FOV,
             tooltip="The FOV you would like to work with.",
@@ -150,7 +172,7 @@ class FOVChooserSingle(Container):
         self.append(self.prev_fov_widget)
 
         self.fov = min_FOV
-    
+
     def set_fov(self):
         try:
             self.fov = int(self.pick_fov_widget.value)
@@ -187,10 +209,12 @@ class PlanePicker(ComboBox):
     ):
         super().__init__(label=label, choices=permitted_planes, tooltip=tooltip)
 
+
 class FOVChooser(LineEdit):
     """Widget for choosing multiple FOVs."""
 
     def __init__(self, permitted_FOVs):
+        print(permitted_FOVs)
         self.min_FOV = min(permitted_FOVs)
         self.max_FOV = max(permitted_FOVs)
         label_str = f"FOVs ({self.min_FOV}-{self.max_FOV})"

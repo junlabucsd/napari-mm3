@@ -261,6 +261,12 @@ class SegmentOtsu(MM3Container):
         super().__init__(napari_viewer)
         napari_viewer.grid.enabled = False
 
+        self.create_widgets()
+        self.load_data_widget.clicked.connect(self.delete_widgets)
+        self.load_data_widget.clicked.connect(self.create_widgets)
+
+    def create_widgets(self):
+        """Serves as the widget constructor. See MM3Container for more details."""
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
         self.otsu_threshold_widget = FloatSpinBox(
             label="OTSU threshold",
@@ -314,6 +320,18 @@ class SegmentOtsu(MM3Container):
 
         self.redraw_image = True
         self.render_preview()
+
+    def delete_widgets(self):
+        """Serves as the widget destructor. See MM3Container for more details."""
+        self.pop() # self.run_widget
+        self.pop() # self.fov_widget
+        self.pop() # self.preview_widget
+        self.pop() # self.min_object_size_widget
+        self.pop() # self.second_opening_size_widget
+        self.pop() # self.distance_threshold_widget
+        self.pop() # self.first_opening_size_widget
+        self.pop() # self.otsu_threshold_widget
+        self.pop() # self.plane_picker_widget
 
     def set_params(self):
         self.params = dict()

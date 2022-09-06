@@ -44,7 +44,12 @@ class PeakCounter:
 class Annotate(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)
+        self.create_widgets()
+        self.load_data_widget.clicked.connect(self.delete_widgets)
+        self.load_data_widget.clicked.connect(self.create_widgets)
 
+    def create_widgets(self):
+        """Serves as the widget constructor."""
         self.fov_widget = FOVChooserSingle(self.valid_fovs)
         self.next_peak_widget = PushButton(label="next peak", tooltip="Jump to the next peak (typically the next channel)")
         self.prior_peak_widget = PushButton(label="prior_peak", tooltip = "Jump to the previous peak (typically the previous channel)")
@@ -65,6 +70,14 @@ class Annotate(MM3Container):
         self.append(self.save_out_widget)
 
         self.load_data()
+
+    def delete_widgets(self):
+        """Serves as the widget destructor. See MM3Container for more details."""
+        self.pop() # Pop fov_widget
+        self.pop() # Pop next_peak button
+        self.pop() # Pop prior_peak button
+        self.pop() # Pop sav_out button.
+
 
     def next_peak(self):
         # Save current peak, update new one, display current peak.

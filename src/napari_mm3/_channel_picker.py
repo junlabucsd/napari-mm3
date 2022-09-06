@@ -119,8 +119,20 @@ def display_rectangles(
 class ChannelPicker(MM3Container):
     def __init__(self, viewer: napari.Viewer):
         super().__init__(viewer)
-        self.experiment_name_widget.hide()
 
+        self.experiment_name_widget.hide()
+        self.create_widgets()
+        self.load_data_widget.clicked.connect(self.delete_widgets)
+        self.load_data_widget.clicked.connect(self.create_widgets)
+
+        # Set up viewer
+        self.viewer.grid.enabled = False
+        self.viewer.text_overlay.text = OVERLAY_TEXT
+        self.viewer.text_overlay.visible = True
+        self.viewer.text_overlay.color = "white"
+
+    def create_widgets(self):
+        """Serves as the widget constructor. See MM3Container for more details."""
         self.fov_picker_widget = FOVChooserSingle(self.valid_fovs)
         self.fov_picker_widget.connect_callback(self.update_fov)
         self.append(self.fov_picker_widget)
@@ -128,11 +140,10 @@ class ChannelPicker(MM3Container):
         self.specs = load_specs(self.analysis_folder)
         self.update_fov()
 
-        # Set up viewer
-        self.viewer.grid.enabled = False
-        self.viewer.text_overlay.text = OVERLAY_TEXT
-        self.viewer.text_overlay.visible = True
-        self.viewer.text_overlay.color = "white"
+    def delete_widgets(self):
+        """Serves as the widget destructor. See MM3Container for more details."""
+        self.pop() # Remove FOV picker
+
 
     def update_fov(self):
         self.cur_fov = self.fov_picker_widget.fov
