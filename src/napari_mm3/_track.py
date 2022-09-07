@@ -1,3 +1,4 @@
+from email.mime import image
 import multiprocessing
 import napari
 import matplotlib.pyplot as plt
@@ -14,6 +15,10 @@ from skimage import io
 from magicgui import magic_factory
 from pathlib import Path
 from skimage.measure import regionprops
+from napari import Viewer
+
+from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
+from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, PushButton
 
 from ._function import (
     information,
@@ -806,15 +811,7 @@ def Track_Cells(params):
     information("Loading experiment parameters.")
     p = params
 
-    if p["FOV"]:
-        if "-" in p["FOV"]:
-            user_spec_fovs = range(
-                int(p["FOV"].split("-")[0]), int(p["FOV"].split("-")[1]) + 1
-            )
-        else:
-            user_spec_fovs = [int(val) for val in p["FOV"].split(",")]
-    else:
-        user_spec_fovs = []
+    user_spec_fovs = params["FOV"]
 
     information("Using {} threads for multiprocessing.".format(p["num_analyzers"]))
 
@@ -872,142 +869,217 @@ def Track_Cells(params):
     information("Finished curating and saving cell data.")
 
 
-def track_update_params(
-    experiment_name,
-    experiment_directory,
-    image_directory,
-    analysis_directory,
-    FOV,
-    phase_plane,
-    pxl2um,
-    lost_cell_time,
-    new_cell_y_cutoff,
-    new_cell_region_cutoff,
-    max_growth_length,
-    min_growth_length,
-    max_growth_area,
-    min_growth_area,
-    seg_img,
-):
-    params = dict()
-    params["experiment_name"] = experiment_name
-    params["experiment_directory"] = experiment_directory
-    params["image_directory"] = image_directory
-    params["analysis_directory"] = analysis_directory
-    params["FOV"] = FOV
-    params["phase_plane"] = phase_plane
-    params["pxl2um"] = pxl2um
-    params["output"] = "TIFF"
-    params["num_analyzers"] = multiprocessing.cpu_count()
-    params["track"] = dict()
-    params["track"]["lost_cell_time"] = lost_cell_time
-    params["track"]["new_cell_y_cutoff"] = new_cell_y_cutoff
-    params["track"]["new_cell_region_cutoff"] = new_cell_region_cutoff
-    params["track"]["max_growth_length"] = max_growth_length
-    params["track"]["min_growth_length"] = min_growth_length
-    params["track"]["max_growth_area"] = max_growth_area
-    params["track"]["min_growth_area"] = min_growth_area
-    if seg_img == "Otsu":
-        params["track"]["seg_img"] = "seg_otsu"
-    elif seg_img == "U-net":
-        params["track"]["seg_img"] = "seg_unet"
+class Track(MM3Container):
+    def __init__(self, napari_viewer: Viewer):
+        super().__init__(napari_viewer)
 
-    # useful folder shorthands for opening files
-    params["TIFF_dir"] = os.path.join(
-        params["experiment_directory"], params["image_directory"]
-    )
-    params["ana_dir"] = os.path.join(
-        params["experiment_directory"], params["analysis_directory"]
-    )
-    params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
-    params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
-    params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
-    params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
-    params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
-    params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
-    params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
+        self.create_widgets()
 
-    return params
+        self.load_data_widget.clicked.connect(self.delete_widgets)
+        self.load_data_widget.clicked.connect(self.create_widgets)
+
+    def create_widgets(self):
+        self.fov_widget = FOVChooser(self.valid_fovs)
+        self.pxl2um_widget = FloatSpinBox(
+            label="um per pixel",
+            min=0.0,
+            max=2.0,
+            step=0.01,
+            value=0.11,
+            adaptive_step=False,
+            tooltip="Micrometers per pixel",
+        )
+        self.phase_plane_widget = PlanePicker(
+            self.valid_planes,
+            label="phase plane",
+            tooltip="The phase plane in the experiment.",
+        )
+        self.lost_cell_time_widget = SpinBox(
+            label="lost cell time",
+            min=1,
+            max=10000,
+            value=3,
+            tooltip="Number of frames after which a cell is dropped if no new regions "
+            "connect to it",
+        )
+        self.new_cell_y_cutoff_widget = SpinBox(
+            label="new cell y cutoff",
+            min=1,
+            max=20000,
+            value=150,
+            tooltip="regions only less than this value down the channel from the"
+            "closed end will be considered to start potential new cells."
+            "Does not apply to daughters. unit is pixels",
+        )
+        self.new_cell_region_cutoff_widget = FloatSpinBox(
+            label="new cell region cutoff",
+            value=4,
+            min=0,
+            max=1000,
+            step=0.1,
+            tooltip="only regions with labels less than or equal to this value will "
+            "be considered to start potential new cells. Does not apply to daughters",
+        )
+        self.max_growth_length_widget = FloatSpinBox(
+            label="max growth length (um)",
+            value=1.5,
+            min=0,
+            max=20,
+            tooltip="Maximum increase in length allowed when linked new region to "
+            "existing potential cell. Unit is ratio.",
+        )
+        self.min_growth_length_widget = FloatSpinBox(
+            label="min growth length (um)",
+            value=0.7,
+            min=0,
+            max=20,
+            tooltip="Minimum change in length allowed when linked new region to "
+            "existing potential cell. Unit is ratio.",
+        )
+        self.max_growth_area_widget = FloatSpinBox(
+            label="max growth area (um^2)",
+            value=1.5,
+            min=0,
+            max=20,
+            tooltip="Maximum change in area allowed when linked new region to "
+            "existing potential cell. Unit is ratio.",
+        )
+        self.min_growth_area_widget = FloatSpinBox(
+            label="min growth area (um^2)",
+            value=0.7,
+            min=0,
+            max=20,
+            tooltip="Minimum change in area allowed when linked new region to existing potential cell. Unit is ratio.",
+        )
+        self.segmentation_method_widget = ComboBox(
+            label="segmentation method", choices=["Otsu", "U-net"]
+        )
+        self.run_widget = PushButton(label="Run tracking")
+
+        self.fov_widget.connect_callback(self.set_fovs)
+        self.pxl2um_widget.changed.connect(self.set_pxl2um)
+        self.phase_plane_widget.changed.connect(self.set_pxl2um)
+        self.lost_cell_time_widget.changed.connect(self.set_lost_cell_time)
+        self.new_cell_y_cutoff_widget.changed.connect(self.set_new_cell_y_cutoff)
+        self.new_cell_region_cutoff_widget.changed.connect(
+            self.set_new_cell_region_cutoff
+        )
+        self.max_growth_length_widget.changed.connect(self.set_max_growth_length)
+        self.min_growth_length_widget.changed.connect(self.set_min_growth_length)
+        self.max_growth_area_widget.changed.connect(self.set_max_growth_area)
+        self.min_growth_area_widget.changed.connect(self.set_min_growth_area)
+        self.segmentation_method_widget.changed.connect(self.set_segmentation_method)
+        self.run_widget.clicked.connect(self.run)
+
+        self.append(self.fov_widget)
+        self.append(self.pxl2um_widget)
+        self.append(self.phase_plane_widget)
+        self.append(self.lost_cell_time_widget)
+        self.append(self.new_cell_y_cutoff_widget)
+        self.append(self.new_cell_region_cutoff_widget)
+        self.append(self.max_growth_length_widget)
+        self.append(self.min_growth_length_widget)
+        self.append(self.max_growth_area_widget)
+        self.append(self.min_growth_area_widget)
+        self.append(self.segmentation_method_widget)
+        self.append(self.run_widget)
+
+        self.set_fovs()
+        self.set_pxl2um()
+        self.set_phase_plane()
+        self.set_lost_cell_time()
+        self.set_new_cell_y_cutoff()
+        self.set_new_cell_region_cutoff()
+        self.set_max_growth_length()
+        self.set_min_growth_length()
+        self.set_max_growth_area()
+        self.set_min_growth_area()
+        self.set_segmentation_method()
+
+    def delete_widgets(self):
+        self.pop()  # self.run_widget
+        self.pop()  # self.segmentation_method_widget
+        self.pop()  # self.min_growth_area_widget
+        self.pop()  # self.max_growth_area_widget
+        self.pop()  # self.min_growth_length_widget
+        self.pop()  # self.max_growth_length_widget
+        self.pop()  # self.new_cell_region_cutoff_widget
+        self.pop()  # self.new_cell_y_cutoff_widget
+        self.pop()  # self.lost_cell_time_widget
+        self.pop()  # self.phase_plane_widget
+        self.pop()  # self.pxl2um_widget
+        self.pop()  # self.fov_widget
+
+    def run(self):
+        """Performs Mother Machine Analysis""" 
+        params = dict()
+        params["experiment_name"] = self.experiment_name
+        params["experiment_directory"] = self.data_directory
+        params["FOV"] = self.fovs
+        params["phase_plane"] = self.phase_plane
+        params["pxl2um"] = self.pxl2um
+        params["output"] = "TIFF"
+        params["num_analyzers"] = multiprocessing.cpu_count()
+        params["track"] = dict()
+        params["track"]["lost_cell_time"] = self.lost_cell_time
+        params["track"]["new_cell_y_cutoff"] = self.new_cell_y_cutoff
+        params["track"]["new_cell_region_cutoff"] = self.new_cell_region_cutoff
+        params["track"]["max_growth_length"] = self.max_growth_length
+        params["track"]["min_growth_length"] = self.min_growth_length
+        params["track"]["max_growth_area"] = self.max_growth_area
+        params["track"]["min_growth_area"] = self.min_growth_area
+        if self.segmentation_method == "Otsu":
+            params["track"]["seg_img"] = "seg_otsu"
+        elif self.segmentation_method == "U-net":
+            params["track"]["seg_img"] = "seg_unet"
+
+        # useful folder shorthands for opening files
+        params["TIFF_dir"] = self.TIFF_folder
+        params["ana_dir"] = self.analysis_folder
+        params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
+        params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
+        params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
+        params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
+        params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
+        params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
+        params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
 
 
-@magic_factory(
-    seg_img={
-        "choices": ["Otsu", "U-net"],
-        "tooltip": "Segmentation method used.",
-    },
-    working_directory={
-        "mode": "d",
-        "tooltip": "Directory within which all your data and analyses will be located.",
-    },
-    phase_plane={"choices": ["c1", "c2", "c3"], "tooltip": "Phase contrast plane"},
-    output_prefix={"tooltip": "Optional. Prefix for output files"},
-    image_directory={
-        "tooltip": "Required. Location (within working directory) for the input images. 'working directory/TIFF/' by default."
-    },
-    analysis_directory={
-        "tooltip": "Required. Location (within working directory) for outputting analysis. 'working directory/analysis/' by default."
-    },
-    FOV_range={
-        "tooltip": "Optional. Range of FOVs to include. By default, all will be processed. E.g. '1-9' or '2,3,6-8'."
-    },
-    pxl2um={"tooltip": "Micrometers per pixel ('PiXel To Micrometer)"},
-    lost_cell_time={
-        "tooltip": "Number of frames after which a cell is dropped if no new regions connect to it"
-    },
-    new_cell_y_cutoff={
-        "tooltip": "regions only less than this value down the channel from the closed end will be considered to start potential new cells."
-        "Does not apply to daughters. unit is pixels"
-    },
-    new_cell_region_cutoff={
-        "tooltip": "only regions with labels less than or equal to this value will be considered to start potential new cells. Does not apply to daughters"
-    },
-    max_growth_length={
-        "tooltip": "Maximum increase in length allowed when linked new region to existing potential cell. Unit is ratio."
-    },
-    min_growth_length={
-        "tooltip": "Minimum change in length allowed when linked new region to existing potential cell. Unit is ratio."
-    },
-    max_growth_area={
-        "tooltip": "Maximum change in area allowed when linked new region to existing potential cell. Unit is ratio."
-    },
-    min_growth_area={
-        "tooltip": "Minimum change in area allowed when linked new region to existing potential cell. Unit is ratio."
-    },
-)
-def Track(
-    working_directory: Path = Path(),
-    output_prefix: str = "",
-    image_directory: str = "TIFF/",
-    analysis_directory: str = "analysis/",
-    FOV_range: str = "1",
-    pxl2um: float = 0.11,
-    phase_plane="c1",
-    lost_cell_time: int = 3,
-    new_cell_y_cutoff: int = 150,
-    new_cell_region_cutoff: float = 4,
-    max_growth_length: float = 1.5,
-    min_growth_length: float = 0.7,
-    max_growth_area: float = 1.5,
-    min_growth_area: float = 0.7,
-    seg_img="Otsu",
-):
-    """Performs Mother Machine Analysis"""
-    params = track_update_params(
-        output_prefix,
-        working_directory,
-        image_directory,
-        analysis_directory,
-        FOV_range,
-        phase_plane,
-        pxl2um,
-        lost_cell_time,
-        new_cell_y_cutoff,
-        new_cell_region_cutoff,
-        max_growth_length,
-        min_growth_length,
-        max_growth_area,
-        min_growth_area,
-        seg_img,
-    )
-    Track_Cells(params)
-    Lineage(params)
+        Track_Cells(params)
+        Lineage(params)
+
+    def set_fovs(self, fovs):
+        self.fovs = fovs
+
+    def set_pxl2um(self):
+        self.pxl2um = self.pxl2um_widget.value
+
+    def set_phase_plane(self):
+        self.phase_plane = self.phase_plane_widget.value
+
+    def set_lost_cell_time(self):
+        self.lost_cell_time = self.lost_cell_time_widget.value
+
+    def set_new_cell_y_cutoff(self):
+        self.new_cell_y_cutoff = self.new_cell_y_cutoff_widget.value
+
+    def set_new_cell_region_cutoff(self):
+        self.new_cell_region_cutoff = self.new_cell_region_cutoff_widget.value
+
+    def set_max_growth_length(self):
+        self.max_growth_length = self.max_growth_length_widget.value
+
+    def set_max_growth_length(self):
+        self.max_growth_length = self.max_growth_length_widget.value
+
+    def set_min_growth_length(self):
+        self.min_growth_length = self.min_growth_length_widget.value
+
+    def set_max_growth_area(self):
+        self.max_growth_area = self.max_growth_area_widget
+
+    def set_min_growth_area(self):
+        self.min_growth_area = self.min_growth_area_widget
+
+    def set_segmentation_method(self):
+        self.segmentation_method = self.segmentation_method_widget.value
