@@ -3,7 +3,7 @@ from pathlib import Path
 from skimage.feature import match_template
 from multiprocessing.pool import Pool
 from napari import Viewer
-from magicgui.widgets import SpinBox, ComboBox, PushButton
+from magicgui.widgets import SpinBox, ComboBox, PushButton, CheckBox
 
 import tifffile as tiff
 import numpy as np
@@ -186,7 +186,9 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
 
 
 # Do subtraction for an fov over many timepoints
-def subtract_fov_stack(params, sub_dir, fov_id, specs, color="c1", method="phase"):
+def subtract_fov_stack(
+    params, sub_dir, fov_id, specs, color="c1", method="phase", preview=False
+):
     """
     For a given FOV, loads the precomputed empty stack and does subtraction on
     all peaks in the FOV designated to be analyzed
@@ -241,7 +243,7 @@ def subtract_fov_stack(params, sub_dir, fov_id, specs, color="c1", method="phase
                 subtract_phase_helper, subtract_args, chunksize=10
             )
         elif method == "fluor":
-            subtract_args = [(params, pair[0], pair[1]) for pair in subtract_pairs]
+            subtract_args = [(params, pair[1], pair[0]) for pair in subtract_pairs]
             subtracted_imgs = pool.map(
                 subtract_fluor_helper, subtract_args, chunksize=10
             )
@@ -266,11 +268,12 @@ def subtract_fov_stack(params, sub_dir, fov_id, specs, color="c1", method="phase
             tiff.imsave(sub_dir / sub_filename, subtracted_stack, compress=4)  # save it
 
             # if fov_id < 3:
-            napari.current_viewer().add_image(
-                subtracted_stack,
-                name="Subtracted" + "_xy%03d_p%04d" % (fov_id, peak_id),
-                visible=True,
-            )
+            if preview:
+                napari.current_viewer().add_image(
+                    subtracted_stack,
+                    name="Subtracted" + "_xy%03d_p%04d" % (fov_id, peak_id),
+                    visible=True,
+                )
 
         if params["output"] == "HDF5":
             h5f = h5py.File(
@@ -478,7 +481,13 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
     return True
 
 
-def subtract(params, ana_dir: Path, subtraction_plane: str, fluor_plane: bool = False):
+def subtract(
+    params,
+    ana_dir: Path,
+    subtraction_plane: str,
+    fluor_mode: bool,
+    preview=False,
+):
     """mm3_Subtract.py averages empty channels and then subtractions them from channels with cells"""
 
     # Load the project parameters file
@@ -490,7 +499,7 @@ def subtract(params, ana_dir: Path, subtraction_plane: str, fluor_plane: bool = 
     viewer.layers.clear()
     viewer.grid.enabled = True
     # Set the shape better here.
-    viewer.grid.shape = (2, 20)
+    viewer.grid.shape = (-1, 20)
 
     user_spec_fovs = set(p["FOV"])
 
@@ -520,7 +529,7 @@ def subtract(params, ana_dir: Path, subtraction_plane: str, fluor_plane: bool = 
     # determine if we are doing fluorescence or phase subtraction, and set flags
     align = True
     sub_method = "phase"
-    if fluor_plane:
+    if fluor_mode:
         align = False
         sub_method = "fluor"
 
@@ -562,7 +571,13 @@ def subtract(params, ana_dir: Path, subtraction_plane: str, fluor_plane: bool = 
         for fov_id in fov_id_list:
             # send to function which will create empty stack for each fov.
             subtraction_result = subtract_fov_stack(
-                params, sub_dir, fov_id, specs, color=sub_plane, method=sub_method
+                params,
+                sub_dir,
+                fov_id,
+                specs,
+                color=sub_plane,
+                method=sub_method,
+                preview=preview,
             )
         information("Finished subtraction.")
 
@@ -636,7 +651,7 @@ class Subtract(MM3Container):
         self.subtraction_plane_widget = PlanePicker(
             self.valid_planes, label="subtraction plane"
         )
-        # TODO: Allow specifying fluorescence which plane to subtract from!
+        self.output_display_widget = CheckBox(label="display output results")
         self.run_button_widget = PushButton(label="Run")
 
         self.fov_widget.connect_callback(self.set_fovs)
@@ -649,6 +664,7 @@ class Subtract(MM3Container):
         self.append(self.alignment_pad_widget)
         self.append(self.mode_widget)
         self.append(self.subtraction_plane_widget)
+        self.append(self.output_display_widget)
         self.append(self.run_button_widget)
 
         self.set_fovs(self.valid_fovs)
@@ -657,6 +673,9 @@ class Subtract(MM3Container):
         self.set_subtraction_plane()
 
     def subtract(self):
+        # Only need this if we will be using a progress bar, and
+        # currently we don't do progress bars with multithreading.
+        # self.viewer.window._status_bar._toggle_activity_dock(True)
         params = subtract_prepare_params(
             experiment_name=self.experiment_name,
             experiment_directory=self.data_directory,
@@ -665,7 +684,13 @@ class Subtract(MM3Container):
             FOV=self.fovs,
             alignment_pad=self.alignment_pad,
         )
-        subtract(params, self.analysis_folder, self.subtraction_plane, self.fluor_plane)
+        subtract(
+            params,
+            self.analysis_folder,
+            self.subtraction_plane,
+            self.fluor_mode,
+            self.output_display_widget.value,
+        )
 
     def set_fovs(self, fovs):
         self.fovs = fovs
@@ -677,4 +702,4 @@ class Subtract(MM3Container):
         self.subtraction_plane = self.subtraction_plane_widget.value
 
     def set_mode(self):
-        self.fluor_plane = self.mode_widget.value == "fluorescence"
+        self.fluor_mode = self.mode_widget.value == "fluorescence"
