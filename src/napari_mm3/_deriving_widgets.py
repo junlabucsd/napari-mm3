@@ -34,7 +34,7 @@ def get_valid_fovs(TIFF_folder):
 def get_valid_times(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
     filenames = [f.name for f in found_files]
-    get_time_regex = re.compile("t(\d*)")
+    get_time_regex = re.compile("t(\d+)")
     time_strings = set(get_time_regex.findall(filename)[0] for filename in filenames)
     times = list(map(int, sorted(time_strings)))
     return (min(times), max(times))
@@ -115,22 +115,16 @@ class MM3Container(Container):
         self.TIFF_folder = self.TIFF_folder_widget.value
 
     def set_valid_fovs(self):
-        try:
-            self.valid_fovs = get_valid_fovs(self.TIFF_folder)
-        except:
-            self.valid_fovs = ["unknown"]
+        self.valid_fovs = get_valid_fovs(self.TIFF_folder)
+        print(f"{self.valid_fovs=}")
 
     def set_valid_times(self):
-        try:
-            self.valid_times = get_valid_times(self.TIFF_folder)
-        except:
-            self.valid_times = ["unknown"]
+        self.valid_times = get_valid_times(self.TIFF_folder)
+        print(f"{self.valid_times=}")
 
     def set_valid_planes(self):
-        try:
-            self.valid_planes = get_valid_planes(self.TIFF_folder)
-        except:
-            self.valid_planes = []
+        self.valid_planes = get_valid_planes(self.TIFF_folder)
+        print(f"{self.valid_planes=}")
 
 
 class TimeRangeSelector(RangeEdit):
