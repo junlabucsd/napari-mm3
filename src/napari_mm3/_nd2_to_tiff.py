@@ -53,7 +53,7 @@ def nd2ToTIFF(
     nd2files = list(experiment_directory.glob("*.nd2"))
     information(f"Found {len(nd2files)} files to analyze in experiment directory.")
 
-    for nd2_file in progress(nd2files):
+    for nd2_file in nd2files:
         file_prefix = os.path.split(os.path.splitext(nd2_file)[0])[1]
         information("Extracting {file_prefix} ...")
 
@@ -211,6 +211,7 @@ def nd2ToTIFF(
         "tooltip": "Directory within which all your data and analyses will be located.",
     },
     image_directory={
+        "mode": "d",
         "tooltip": "Required. Location (within working directory) for the input images. 'working directory/TIFF/' by default."
     },
     image_start={
@@ -222,17 +223,22 @@ def nd2ToTIFF(
     FOVs_range={
         "tooltip": "Optional. Range of FOVs to include. By default, all will be processed."
     },
+    display_after_export={
+        "tooltip": "Whether or not to display output images after exporting."
+    },
 )
 def Nd2ToTIFF(
     experiment_directory=Path(),
-    image_directory=Path(),
+    image_directory=Path("./TIFF"),
     image_start: int = 1,
     image_end: int = 50,
     FOVs_range: str = "",
+    display_after_export: bool = True,
 ):
     """Converts an Nd2 file to a series of TIFFs.
     TODO: Range inference, or similar."""
-    tif_dir = Path()
+    napari.current_viewer().window._status_bar._toggle_activity_dock(True)
+    tif_dir = image_directory
     fov_list = range_string_to_indices(FOVs_range)
     nd2ToTIFF(
         experiment_directory,
@@ -244,6 +250,10 @@ def Nd2ToTIFF(
         fov_list=fov_list,
         tworow_crop=None,
     )
+
+    if not display_after_export:
+        # Kick out if we don't want to display.
+        return
 
     viewer = napari.current_viewer()
     viewer.layers.clear()
@@ -283,8 +293,6 @@ def Nd2ToTIFF(
         # viewer.add_image(stack,name='FOV %02d' % fov_id)
 
     viewer.grid.enabled = True
-    grid_w = int(len(fovs) / 17) + 1
-    grid_h = int(len(fovs) / grid_w) + 1
     viewer.grid.shape = (-1, 4)
 
     print("Done.")
