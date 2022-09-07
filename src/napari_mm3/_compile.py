@@ -22,6 +22,7 @@ from scipy.signal import find_peaks_cwt
 from magicgui import magic_factory
 from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, ComboBox
 from napari import Viewer
+from napari.utils import progress
 from ._deriving_widgets import MM3Container, FOVChooser, TimeRangeSelector, PlanePicker
 
 from ._function import information, warning, get_fov, get_time, get_plane, load_stack
@@ -1276,7 +1277,7 @@ def compile(params):
             ]
 
             # sort the filenames by jdn
-            send_to_write = sorted(send_to_write, key=lambda time: time[1])
+            send_to_write = progress(sorted(send_to_write, key=lambda time: time[1]))
 
             if p["output"] == "TIFF":
                 # This is for loading the whole raw tiff stack and then slicing through it
@@ -1298,7 +1299,7 @@ def compile(params):
         crosscorrs = {}
 
         # for each fov find cross correlations (sending to pull)
-        for fov_id in user_spec_fovs:
+        for fov_id in progress(user_spec_fovs):
             information("Calculating cross correlations for FOV %d." % fov_id)
 
             # nested dict keys are peak_ids and values are cross correlations
@@ -1562,5 +1563,6 @@ class Compile(MM3Container):
             # use jd time in image metadata to make time table. Set to false if no jd time
             "use_jd": self.image_source in {"nd2ToTIFF", "TIFF_from_elements"},
         }
+        self.viewer.window._status_bar._toggle_activity_dock(True)
 
         compile(params)
