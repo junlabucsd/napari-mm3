@@ -12,6 +12,7 @@ from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, CheckBox
 from scipy import ndimage as ndi
 from skimage import segmentation, morphology
 from skimage.filters import threshold_otsu
+from napari.utils import progress
 
 
 from ._function import (
@@ -19,12 +20,11 @@ from ._function import (
     warnings,
     load_specs,
     load_stack,
-    range_string_to_indices,
 )
 from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
 
 # Do segmentation for an channel time stack
-def segment_chnl_stack(params, fov_id, peak_id):
+def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
     """
     For a given fov and peak (channel), do segmentation for all images in the
     subtracted .tif stack.
@@ -71,18 +71,19 @@ def segment_chnl_stack(params, fov_id, peak_id):
         tiff.imsave(
             os.path.join(params["seg_dir"], seg_filename), segmented_imgs, compress=5
         )
-        # if fov_id==1:
-        viewer = napari.current_viewer()
+        if view_result:
+            # if fov_id==1:
+            viewer = napari.current_viewer()
 
-        viewer.add_labels(
-            segmented_imgs,
-            name="Segmented"
-            + "_xy%03d_p%04d" % (fov_id, peak_id)
-            + "_"
-            + str(params["seg_img"])
-            + ".tif",
-            visible=True,
-        )
+            viewer.add_labels(
+                segmented_imgs,
+                name="Segmented"
+                + "_xy%03d_p%04d" % (fov_id, peak_id)
+                + "_"
+                + str(params["seg_img"])
+                + ".tif",
+                visible=True,
+            )
 
     if params["output"] == "HDF5":
         h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r+")
@@ -209,7 +210,7 @@ def segment_image(params, image):
     return labeled_image
 
 
-def segmentOTSU(params):
+def segmentOTSU(params, view_result: bool = False):
 
     information("Loading experiment parameters.")
     p = params
@@ -240,7 +241,7 @@ def segmentOTSU(params):
     ### Do Segmentation by FOV and then peak #######################################################
     information("Segmenting channels using Otsu method.")
 
-    for fov_id in fov_id_list:
+    for fov_id in progress(fov_id_list):
         # determine which peaks are to be analyzed (those which have been subtracted)
         ana_peak_ids = []
         for peak_id, spec in six.iteritems(specs[fov_id]):
@@ -252,7 +253,7 @@ def segmentOTSU(params):
 
         for peak_id in ana_peak_ids:
             # send to segmentation
-            segment_chnl_stack(params, fov_id, peak_id)
+            segment_chnl_stack(params, fov_id, peak_id, view_result)
 
     information("Finished segmentation.")
 
@@ -260,7 +261,8 @@ def segmentOTSU(params):
 class SegmentOtsu(MM3Container):
     def __init__(self, napari_viewer: napari.Viewer):
         super().__init__(napari_viewer)
-        napari_viewer.grid.enabled = False
+
+        self.viewer.grid.enabled = False
 
         self.create_widgets()
         self.load_data_widget.clicked.connect(self.create_widgets)
@@ -288,6 +290,7 @@ class SegmentOtsu(MM3Container):
         self.min_object_size_widget = SpinBox(label="min object size", min=0, value=25)
         self.preview_widget = PushButton(label="generate preview", value=False)
         self.fov_widget = FOVChooser(self.valid_fovs)
+        self.view_result_widget = CheckBox(label = "view result")
         self.run_widget = PushButton(label="run on chosen FOVs")
 
         self.plane_picker_widget.changed.connect(self.set_phase_plane)
@@ -308,6 +311,7 @@ class SegmentOtsu(MM3Container):
         self.append(self.min_object_size_widget)
         self.append(self.preview_widget)
         self.append(self.fov_widget)
+        self.append(self.view_result_widget)
         self.append(self.run_widget)
 
         self.set_fovs(self.valid_fovs)
@@ -405,4 +409,5 @@ class SegmentOtsu(MM3Container):
 
     def run(self):
         self.set_params()
-        segmentOTSU(self.params)
+        self.viewer.window._status_bar._toggle_activity_dock(True)
+        segmentOTSU(self.params, self.view_result_widget.value)
