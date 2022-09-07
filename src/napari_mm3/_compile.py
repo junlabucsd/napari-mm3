@@ -1423,7 +1423,7 @@ class Compile(MM3Container):
             label="image source",
             choices=["TIFF", "nd2ToTIFF", "TIFF_from_elements"],
         )
-        self.phase_plane_widget = PlanePicker(self.valid_planes)
+        self.phase_plane_widget = PlanePicker(self.valid_planes, label="phase plane channel")
         self.time_range_widget = TimeRangeSelector(self.valid_times)
         self.seconds_per_frame_widget = SpinBox(
             value=150,
