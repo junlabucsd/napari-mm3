@@ -1,4 +1,3 @@
-from email.mime import image
 import multiprocessing
 import napari
 import matplotlib.pyplot as plt
@@ -12,10 +11,9 @@ import seaborn as sns
 import matplotlib.patches as mpatches
 
 from skimage import io
-from magicgui import magic_factory
-from pathlib import Path
 from skimage.measure import regionprops
 from napari import Viewer
+from napari.utils import progress
 
 from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
 from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, PushButton
@@ -434,7 +432,7 @@ def make_lineages_fov(params, fov_id, specs):
 
     # This is the non-parallelized version (useful for debug)
     lineages = []
-    for fov_and_peak_ids in fov_and_peak_ids_list:
+    for fov_and_peak_ids in progress(fov_and_peak_ids_list):
         lineages.append(make_lineage_chnl_stack(params, fov_and_peak_ids))
 
     # combine all dictionaries into one dictionary
@@ -458,9 +456,7 @@ def Lineage(params):
         Cells2 = pickle.load(cell_file)
         Cells2 = find_cells_of_birth_label(Cells2, label_num=[1, 2])
 
-    lin_dir = os.path.join(
-        params["experiment_directory"], params["analysis_directory"], "lineages"
-    )
+    lin_dir = params["ana_dir"] / "lineages"
     if not os.path.exists(lin_dir):
         os.makedirs(lin_dir)
 
@@ -985,7 +981,7 @@ class Track(MM3Container):
         self.append(self.segmentation_method_widget)
         self.append(self.run_widget)
 
-        self.set_fovs()
+        self.set_fovs(self.valid_fovs)
         self.set_pxl2um()
         self.set_phase_plane()
         self.set_lost_cell_time()
@@ -1031,6 +1027,7 @@ class Track(MM3Container):
         params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
         params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
 
+        self.viewer.window._status_bar._toggle_activity_dock(True)
         Track_Cells(params)
         Lineage(params)
 
@@ -1062,10 +1059,10 @@ class Track(MM3Container):
         self.min_growth_length = self.min_growth_length_widget.value
 
     def set_max_growth_area(self):
-        self.max_growth_area = self.max_growth_area_widget
+        self.max_growth_area = self.max_growth_area_widget.value
 
     def set_min_growth_area(self):
-        self.min_growth_area = self.min_growth_area_widget
+        self.min_growth_area = self.min_growth_area_widget.value
 
     def set_segmentation_method(self):
         self.segmentation_method = self.segmentation_method_widget.value
