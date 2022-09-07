@@ -869,13 +869,9 @@ class Track(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)
 
-        try:
-            self.create_widgets()
-        except:
-            pass
-        self.load_data_widget.clicked.connect(self.create_widgets)
 
     def create_widgets(self):
+        """Overriding method. Widget constructor. See _deriving_widgets.MM3Container for more details."""
         self.fov_widget = FOVChooser(self.valid_fovs)
         self.pxl2um_widget = FloatSpinBox(
             label="um per pixel",

@@ -122,8 +122,6 @@ class ChannelPicker(MM3Container):
         super().__init__(viewer)
 
         self.experiment_name_widget.hide()
-        self.create_widgets()
-        self.load_data_widget.clicked.connect(self.create_widgets)
 
         # Set up viewer
         self.viewer.grid.enabled = False
@@ -132,7 +130,7 @@ class ChannelPicker(MM3Container):
         self.viewer.text_overlay.color = "white"
 
     def create_widgets(self):
-        """Serves as the widget constructor. See MM3Container for more details."""
+        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
         self.fov_picker_widget = FOVChooserSingle(self.valid_fovs)
         self.fov_picker_widget.connect_callback(self.update_fov)
         self.append(self.fov_picker_widget)

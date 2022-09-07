@@ -81,6 +81,7 @@ class MM3Container(Container):
         self.load_data_widget.clicked.connect(self.set_valid_planes)
         self.load_data_widget.clicked.connect(self.set_valid_times)
         self.load_data_widget.clicked.connect(self.delete_extra_widgets)
+        self.load_data_widget.clicked.connect(self.load_from_data_conditional)
 
         self.set_data_directory()
         self.set_experiment_name()
@@ -95,6 +96,15 @@ class MM3Container(Container):
         self.append(self.TIFF_folder_widget)
         self.append(self.analysis_folder_widget)
         self.append(self.load_data_widget)
+
+        self.load_from_data_conditional()
+
+    def load_from_data_conditional(self):
+        if self.found_planes and self.found_fovs and self.found_times:
+            self.create_widgets()
+
+    def create_widgets(self):
+        pass
 
     def delete_extra_widgets(self):
         """Delete any widgets that come after the 'reload directories' button.
@@ -115,16 +125,25 @@ class MM3Container(Container):
         self.TIFF_folder = self.TIFF_folder_widget.value
 
     def set_valid_fovs(self):
-        self.valid_fovs = get_valid_fovs(self.TIFF_folder)
-        print(f"{self.valid_fovs=}")
+        try:
+            self.valid_fovs = get_valid_fovs(self.TIFF_folder)
+            self.found_fovs = True
+        except:
+            self.found_fovs = False
 
     def set_valid_times(self):
-        self.valid_times = get_valid_times(self.TIFF_folder)
-        print(f"{self.valid_times=}")
+        try:
+            self.valid_times = get_valid_times(self.TIFF_folder)
+            self.found_times = True
+        except:
+            self.found_times = False
 
     def set_valid_planes(self):
-        self.valid_planes = get_valid_planes(self.TIFF_folder)
-        print(f"{self.valid_planes=}")
+        try:
+            self.valid_planes = get_valid_planes(self.TIFF_folder)
+            self.found_planes = True
+        except:
+            self.found_planes = False
 
 
 class TimeRangeSelector(RangeEdit):

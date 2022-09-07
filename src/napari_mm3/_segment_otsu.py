@@ -264,11 +264,8 @@ class SegmentOtsu(MM3Container):
 
         self.viewer.grid.enabled = False
 
-        self.create_widgets()
-        self.load_data_widget.clicked.connect(self.create_widgets)
-
     def create_widgets(self):
-        """Serves as the widget constructor. See MM3Container for more details."""
+        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
         self.otsu_threshold_widget = FloatSpinBox(
             label="OTSU threshold",

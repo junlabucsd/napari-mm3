@@ -46,11 +46,9 @@ class PeakCounter:
 class Annotate(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)
-        self.create_widgets()
-        self.load_data_widget.clicked.connect(self.create_widgets)
 
     def create_widgets(self):
-        """Serves as the widget constructor."""
+        """Overriding method. Serves as the widget constructor. See _deriving_widgets.MM3Container for details."""
         self.fov_widget = FOVChooserSingle(self.valid_fovs)
         self.next_peak_widget = PushButton(
             label="next peak",

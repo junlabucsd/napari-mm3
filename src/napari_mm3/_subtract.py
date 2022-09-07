@@ -629,11 +629,8 @@ class Subtract(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)
 
-        self.create_widgets()
-        self.load_data_widget.clicked.connect(self.create_widgets)
-
     def create_widgets(self):
-        """Serves as the widget constructor. See MM3Container for more details."""
+        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
         self.fov_widget = FOVChooser(self.valid_fovs)
         self.alignment_pad_widget = SpinBox(
             label="alignment pad",
