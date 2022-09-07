@@ -1,5 +1,5 @@
 from napari import Viewer
-from napari.utils.notifications import show_warning
+from napari.utils.notifications import show_info
 from ._function import range_string_to_indices
 from magicgui.widgets import (
     Container,
@@ -25,7 +25,7 @@ def get_valid_planes(TIFF_folder):
 def get_valid_fovs(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
     filenames = [f.name for f in found_files]
-    get_fov_regex = re.compile("xy(\d*)")
+    get_fov_regex = re.compile("xy(\d+)")
     fov_strings = set(get_fov_regex.findall(filename)[0] for filename in filenames)
     fovs = map(int, sorted(fov_strings))
     return list(fovs)
@@ -145,15 +145,15 @@ class FOVChooserSingle(Container):
         super().__init__(layout="horizontal", labels=False)
         self.valid_fovs = valid_fovs
         if valid_fovs != []:
-            min_FOV = min(self.valid_fovs)
-            max_FOV = max(self.valid_fovs)
-            self.name = f"FOV ({min_FOV}-{max_FOV})"
+            self.min_FOV = min(self.valid_fovs)
+            self.max_FOV = max(self.valid_fovs)
+            self.name = f"FOV ({self.min_FOV}-{self.max_FOV})"
         else:
-            min_FOV = "not found"
-            max_FOV = "not found"
+            self.min_FOV = "not found"
+            self.max_FOV = "not found"
             self.name = f"FOV (unknown-unknown)"
         self.pick_fov_widget = LineEdit(
-            value=min_FOV,
+            value=self.min_FOV,
             tooltip="The FOV you would like to work with.",
         )
         self.next_fov_widget = PushButton(label="+")
@@ -167,7 +167,7 @@ class FOVChooserSingle(Container):
         self.append(self.next_fov_widget)
         self.append(self.prev_fov_widget)
 
-        self.fov = min_FOV
+        self.fov = self.min_FOV
 
     def set_fov(self):
         try:
@@ -176,9 +176,12 @@ class FOVChooserSingle(Container):
             # Int casting failure is not a big deal. No point throwing an exception.
             print("Attempted to access invalid FOV")
             return
+        old_fov = self.fov
         # Enforce bounds on self.fov
-        self.fov = max(min(self.valid_fovs), self.fov)
-        self.fov = min(max(self.valid_fovs), self.fov)
+        self.fov = max(self.min_FOV, self.fov)
+        self.fov = min(self.max_FOV, self.fov)
+        if self.fov != old_fov:
+            show_info("You've hit the outer edges of available FOVs!")
         # After setting bounds, update UI accordingly
         self.pick_fov_widget.value = self.fov
 
