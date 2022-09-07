@@ -80,6 +80,7 @@ class MM3Container(Container):
         self.load_data_widget.clicked.connect(self.set_valid_fovs)
         self.load_data_widget.clicked.connect(self.set_valid_planes)
         self.load_data_widget.clicked.connect(self.set_valid_times)
+        self.load_data_widget.clicked.connect(self.delete_extra_widgets)
 
         self.set_data_directory()
         self.set_experiment_name()
@@ -95,6 +96,12 @@ class MM3Container(Container):
         self.append(self.analysis_folder_widget)
         self.append(self.load_data_widget)
 
+    def delete_extra_widgets(self):
+        """Delete any widgets that come after the 'reload directories' button.
+        This allows for easy UI resets in deriving widgets (see, e.g. _track.py)"""
+        while self[-1].label != self.load_data_widget.label:
+            self.pop()
+
     def set_data_directory(self):
         self.data_directory = self.data_directory_widget.value
 
@@ -106,11 +113,6 @@ class MM3Container(Container):
 
     def set_TIFF_folder(self):
         self.TIFF_folder = self.TIFF_folder_widget.value
-        if not self.TIFF_folder.exists():
-            show_warning(
-                "No TIFF folder found.\n"
-                + "Did you make sure to launch napari from your experiment's directory?"
-            )
 
     def set_valid_fovs(self):
         try:
@@ -119,15 +121,15 @@ class MM3Container(Container):
             self.valid_fovs = ["unknown"]
 
     def set_valid_times(self):
-        try: 
+        try:
             self.valid_times = get_valid_times(self.TIFF_folder)
         except:
             self.valid_times = ["unknown"]
 
     def set_valid_planes(self):
-        try: 
+        try:
             self.valid_planes = get_valid_planes(self.TIFF_folder)
-        except: 
+        except:
             self.valid_planes = []
 
 

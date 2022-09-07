@@ -256,13 +256,13 @@ def segmentOTSU(params):
 
     information("Finished segmentation.")
 
+
 class SegmentOtsu(MM3Container):
     def __init__(self, napari_viewer: napari.Viewer):
         super().__init__(napari_viewer)
         napari_viewer.grid.enabled = False
 
         self.create_widgets()
-        self.load_data_widget.clicked.connect(self.delete_widgets)
         self.load_data_widget.clicked.connect(self.create_widgets)
 
     def create_widgets(self):
@@ -286,7 +286,7 @@ class SegmentOtsu(MM3Container):
             label="second opening size", min=0, value=1
         )
         self.min_object_size_widget = SpinBox(label="min object size", min=0, value=25)
-        self.preview_widget = PushButton(label = "generate preview", value = False)
+        self.preview_widget = PushButton(label="generate preview", value=False)
         self.fov_widget = FOVChooser(self.valid_fovs)
         self.run_widget = PushButton(label="run on chosen FOVs")
 
@@ -320,18 +320,6 @@ class SegmentOtsu(MM3Container):
 
         self.redraw_image = True
         self.render_preview()
-
-    def delete_widgets(self):
-        """Serves as the widget destructor. See MM3Container for more details."""
-        self.pop() # self.run_widget
-        self.pop() # self.fov_widget
-        self.pop() # self.preview_widget
-        self.pop() # self.min_object_size_widget
-        self.pop() # self.second_opening_size_widget
-        self.pop() # self.distance_threshold_widget
-        self.pop() # self.first_opening_size_widget
-        self.pop() # self.otsu_threshold_widget
-        self.pop() # self.plane_picker_widget
 
     def set_params(self):
         self.params = dict()
@@ -391,7 +379,10 @@ class SegmentOtsu(MM3Container):
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         ## pull out first fov & peak id with cells
         sub_stack = load_stack(
-            self.params, valid_fov, valid_peak, color="sub_{}".format(self.params["phase_plane"])
+            self.params,
+            valid_fov,
+            valid_peak,
+            color="sub_{}".format(self.params["phase_plane"]),
         )
 
         # image by image for debug
@@ -405,13 +396,12 @@ class SegmentOtsu(MM3Container):
 
         if self.redraw_image:
             images = self.viewer.add_image(sub_stack)
-            images.gamma = .25
+            images.gamma = 0.25
             labels = self.viewer.add_labels(segmented_imgs, name="Labels")
-            labels.opacity = .5
+            labels.opacity = 0.5
             self.no_redraw = False
 
         self.viewer.layers[1].data = segmented_imgs
-
 
     def run(self):
         self.set_params()

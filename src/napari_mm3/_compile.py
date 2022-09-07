@@ -1316,7 +1316,12 @@ def compile(params):
 
                 # multiprocessing verion
                 crosscorrs[fov_id][peak_id] = pool.apply_async(
-                    channel_xcorr, args=(params, fov_id, peak_id,),
+                    channel_xcorr,
+                    args=(
+                        params,
+                        fov_id,
+                        peak_id,
+                    ),
                 )
 
             information(
@@ -1410,7 +1415,6 @@ class Compile(MM3Container):
         super().__init__(napari_viewer)
 
         self.create_widgets()
-        self.load_data_widget.clicked.connect(self.delete_widgets)
         self.load_data_widget.clicked.connect(self.create_widgets)
 
     def create_widgets(self):
@@ -1418,7 +1422,8 @@ class Compile(MM3Container):
         self.fov_widget = FOVChooser(self.valid_fovs)
         # TODO: Auto-infer?
         self.image_source_widget = ComboBox(
-            label="image source", choices=["TIFF", "nd2ToTIFF", "TIFF_from_elements"],
+            label="image source",
+            choices=["TIFF", "nd2ToTIFF", "TIFF_from_elements"],
         )
         self.phase_plane_widget = PlanePicker(self.valid_planes)
         self.time_range_widget = TimeRangeSelector(self.valid_times)
@@ -1484,18 +1489,6 @@ class Compile(MM3Container):
         self.set_channel_width()
         self.set_channel_separation()
         self.set_xcorr_threshold()
-
-    def delete_widgets(self):
-        """Serves as the widget destructor. See MM3Container for more details."""
-        self.pop() # self.run_analysis_widget
-        self.pop() # self.xcorr_threshold_widget
-        self.pop() # self.channel_separation_widget
-        self.pop() # self.channel_width_widget
-        self.pop() # self.seconds_per_frame_widget
-        self.pop() # self.time_range_widget
-        self.pop() # self.phase_plane_widget
-        self.pop() # self.image_source_widget
-        self.pop() # self.fov_widget
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value

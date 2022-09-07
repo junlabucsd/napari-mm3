@@ -12,8 +12,10 @@ def load_specs(analysis_folder):
     with (analysis_folder / "specs.yaml").open(mode="r") as specs_file:
         return yaml.safe_load(specs_file)
 
+
 def get_peaks(specs, fov):
     return [peak for peak in specs[fov].keys() if specs[fov][peak] == 1]
+
 
 class PeakCounter:
     def __init__(self, specs, fov):
@@ -25,11 +27,11 @@ class PeakCounter:
     def increment(self):
         self.peak_index += 1
         self.peak = get_peaks(self.specs, self.fov)[self.peak_index]
-    
+
     def decrement(self):
         self.peak_index -= 1
         self.peak = get_peaks(self.specs, self.fov)[self.peak_index]
-    
+
     def set_peak(self, peak):
         peaks = get_peaks(self.specs, self.fov)
         self.peak_index = peaks.index(peak)
@@ -45,16 +47,22 @@ class Annotate(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)
         self.create_widgets()
-        self.load_data_widget.clicked.connect(self.delete_widgets)
         self.load_data_widget.clicked.connect(self.create_widgets)
 
     def create_widgets(self):
         """Serves as the widget constructor."""
         self.fov_widget = FOVChooserSingle(self.valid_fovs)
-        self.next_peak_widget = PushButton(label="next peak", tooltip="Jump to the next peak (typically the next channel)")
-        self.prior_peak_widget = PushButton(label="prior_peak", tooltip = "Jump to the previous peak (typically the previous channel)")
-        self.save_out_widget = PushButton(label="save", tooltip = "save the current label")
-
+        self.next_peak_widget = PushButton(
+            label="next peak",
+            tooltip="Jump to the next peak (typically the next channel)",
+        )
+        self.prior_peak_widget = PushButton(
+            label="prior_peak",
+            tooltip="Jump to the previous peak (typically the previous channel)",
+        )
+        self.save_out_widget = PushButton(
+            label="save", tooltip="save the current label"
+        )
 
         self.fov = self.fov_widget.fov
         self.peak_cntr = PeakCounter(load_specs(self.analysis_folder), self.fov)
@@ -70,14 +78,6 @@ class Annotate(MM3Container):
         self.append(self.save_out_widget)
 
         self.load_data()
-
-    def delete_widgets(self):
-        """Serves as the widget destructor. See MM3Container for more details."""
-        self.pop() # Pop fov_widget
-        self.pop() # Pop next_peak button
-        self.pop() # Pop prior_peak button
-        self.pop() # Pop sav_out button.
-
 
     def next_peak(self):
         # Save current peak, update new one, display current peak.

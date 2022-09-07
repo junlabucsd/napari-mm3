@@ -873,9 +873,10 @@ class Track(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)
 
-        self.create_widgets()
-
-        self.load_data_widget.clicked.connect(self.delete_widgets)
+        try:
+            self.create_widgets()
+        except:
+            pass
         self.load_data_widget.clicked.connect(self.create_widgets)
 
     def create_widgets(self):
@@ -996,22 +997,8 @@ class Track(MM3Container):
         self.set_min_growth_area()
         self.set_segmentation_method()
 
-    def delete_widgets(self):
-        self.pop()  # self.run_widget
-        self.pop()  # self.segmentation_method_widget
-        self.pop()  # self.min_growth_area_widget
-        self.pop()  # self.max_growth_area_widget
-        self.pop()  # self.min_growth_length_widget
-        self.pop()  # self.max_growth_length_widget
-        self.pop()  # self.new_cell_region_cutoff_widget
-        self.pop()  # self.new_cell_y_cutoff_widget
-        self.pop()  # self.lost_cell_time_widget
-        self.pop()  # self.phase_plane_widget
-        self.pop()  # self.pxl2um_widget
-        self.pop()  # self.fov_widget
-
     def run(self):
-        """Performs Mother Machine Analysis""" 
+        """Performs Mother Machine Analysis"""
         params = dict()
         params["experiment_name"] = self.experiment_name
         params["experiment_directory"] = self.data_directory
@@ -1043,7 +1030,6 @@ class Track(MM3Container):
         params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
         params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
         params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
-
 
         Track_Cells(params)
         Lineage(params)

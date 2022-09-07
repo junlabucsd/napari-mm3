@@ -121,7 +121,8 @@ def subtract_fluor(params, cropped_channel, empty_channel):
         empty_size = np.shape(empty_channel)[:2]
         if crop_size[0] < empty_size[0] or crop_size[1] < empty_size[1]:
             empty_channel = empty_channel[
-                : crop_size[0], : crop_size[1],
+                : crop_size[0],
+                : crop_size[1],
             ]
 
     ### Compute the difference between the empty and channel phase contrast images
@@ -579,7 +580,6 @@ def subtract_prepare_params(
     analysis_directory,
     image_directory,
     FOV,
-    phase_plane,
     alignment_pad,
 ):
     # global params
@@ -588,7 +588,6 @@ def subtract_prepare_params(
     params["experiment_directory"] = experiment_directory
     params["output"] = "TIFF"
     params["FOV"] = FOV
-    params["phase_plane"] = phase_plane
 
     params["subtract"] = dict()
     params["subtract"]["do_empties"] = True
@@ -616,7 +615,6 @@ class Subtract(MM3Container):
         super().__init__(napari_viewer)
 
         self.create_widgets()
-        self.load_data_widget.clicked.connect(self.delete_widgets)
         self.load_data_widget.clicked.connect(self.create_widgets)
 
     def create_widgets(self):
@@ -628,7 +626,13 @@ class Subtract(MM3Container):
             min=0,
             tooltip="Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image.",
         )
-        self.mode_widget = ComboBox(choices =["phase", "fluorescence",], label="subtraction mode")
+        self.mode_widget = ComboBox(
+            choices=[
+                "phase",
+                "fluorescence",
+            ],
+            label="subtraction mode",
+        )
         self.subtraction_plane_widget = PlanePicker(
             self.valid_planes, label="subtraction plane"
         )
@@ -652,14 +656,6 @@ class Subtract(MM3Container):
         self.set_mode()
         self.set_subtraction_plane()
 
-    def delete_widgets(self):
-        """Serves as the widget destructor. See MM3Container for more details."""
-        self.pop() # self.fov_widget
-        self.pop() # self.run_button_widget
-        self.pop() # self.subtraction_plane_widget
-        self.pop() # self.mode_widget
-        self.pop() # self.alignment_pad_widget
-
     def subtract(self):
         params = subtract_prepare_params(
             experiment_name=self.experiment_name,
@@ -667,7 +663,6 @@ class Subtract(MM3Container):
             analysis_directory=self.analysis_folder,
             image_directory=self.TIFF_folder,
             FOV=self.fovs,
-            phase_plane=self.phase_plane,
             alignment_pad=self.alignment_pad,
         )
         subtract(params, self.analysis_folder, self.subtraction_plane, self.fluor_plane)
