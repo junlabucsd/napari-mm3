@@ -619,8 +619,8 @@ def tiff_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_
                 + "_xy%03d_p%04d_c%1d.tif" % (fov_id, peak, color_index + 1),
             )
             # save stack
-            tiff.imsave(
-                channel_filename, channel_stack[:, :, :, color_index], compress=4
+            tiff.imwrite(
+                channel_filename, channel_stack[:, :, :, color_index], compression=('zlib', 4)
             )
 
     return

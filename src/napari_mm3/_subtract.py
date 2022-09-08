@@ -51,7 +51,12 @@ def subtract_phase(params, cropped_channel, empty_channel):
 
     # ### Align channel to empty using match template.
     # use match template to get a correlation array and find the position of maximum overlap
-    match_result = match_template(padded_chnl, empty_channel)
+    try:
+        match_result = match_template(padded_chnl, empty_channel)
+    except:
+        information("match_template failed. This is likely due to cropping issues with the image of the channel containing bacteria.")
+        information("Consider marking this channel as disabled in specs.yaml, or increasing the pad_size.")
+        raise
     # get row and colum of max correlation value in correlation array
     y, x = np.unravel_index(np.argmax(match_result), match_result.shape)
 
@@ -158,7 +163,7 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
             to_fov,
             color,
         )
-        tiff.imsave(empty_dir / empty_filename, avg_empty_stack, compress=4)
+        tiff.imwrite(empty_dir / empty_filename, avg_empty_stack, compression=('zlib', 4))
 
     if params["output"] == "HDF5":
         h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % to_fov), "r+")
@@ -265,7 +270,7 @@ def subtract_fov_stack(
                 color,
             )
             # TODO: Make this respect compression levels
-            tiff.imsave(sub_dir / sub_filename, subtracted_stack, compress=4)  # save it
+            tiff.imwrite(sub_dir / sub_filename, subtracted_stack, compression=(4, 'zlib'))  # save it
 
             # if fov_id < 3:
             if preview:
@@ -452,7 +457,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
             fov_id,
             color,
         )
-        tiff.imsave(empty_dir / empty_filename, avg_empty_stack, compress=4)
+        tiff.imwrite(empty_dir / empty_filename, avg_empty_stack, compression=(4, 'zlib'))
 
     if params["output"] == "HDF5":
         h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r+")

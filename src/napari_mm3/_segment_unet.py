@@ -177,9 +177,11 @@ def segmentUNet(params):
                     med_stack[frame_idx, ...] = median(tmpImg, selem)
 
                 # robust normalization of peak's image stack to 1
-                max_val = np.max(med_stack)
-                img_stack = img_stack / max_val
-                img_stack[img_stack > 1] = 1
+                # max_val = np.max(med_stack)
+                img_avg = np.mean(img_stack,axis=(1,2))
+                img_std = np.std(img_stack,axis=(1,2))
+                #permute axes to make use of numpy slicing then permute back
+                img_stack = np.transpose((np.transpose(img_stack)-img_avg)/img_std)
 
             # trim and pad image to correct size
             img_stack = img_stack[:, : unet_shape[0], : unet_shape[1]]
@@ -201,7 +203,7 @@ def segmentUNet(params):
             )  # keep same order
 
             # predict cell locations. This has multiprocessing built in but I need to mess with the parameters to see how to best utilize it. ***
-            predictions = model.predict(image_generator, **predict_args)
+            predictions = model.predict_generator(image_generator, **predict_args)
 
             # post processing
             # remove padding including the added last dimension
@@ -228,10 +230,10 @@ def segmentUNet(params):
                 if not os.path.isdir(params["pred_dir"]):
                     os.makedirs(params["pred_dir"])
                 int_preds = (predictions * 255).astype("uint8")
-                tiff.imsave(
+                tiff.imwrite(
                     os.path.join(params["pred_dir"], pred_filename),
                     int_preds,
-                    compress=4,
+                    compression=('zlib', 4),
                 )
 
             if params["interactive"]:
@@ -282,10 +284,10 @@ def segmentUNet(params):
                     peak_id,
                     params["seg_img"],
                 )
-                tiff.imsave(
+                tiff.imwrite(
                     os.path.join(params["seg_dir"], seg_filename),
                     segmented_imgs,
-                    compress=4,
+                    compression=('zlib', 4),
                 )
 
                 out_counter = 0
