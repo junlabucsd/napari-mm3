@@ -24,7 +24,7 @@ def get_nd2_fovs(exp_dir):
 
     for nd2_file in nd2files:
         with pims_nd2.ND2_Reader(nd2_file) as nd2f:
-            return (1, nd2f.sizes["m"] - 1)
+            return (1, nd2f.sizes["m"])
 
 
 def get_nd2_times(exp_dir):
@@ -32,7 +32,7 @@ def get_nd2_times(exp_dir):
 
     for nd2_file in nd2files:
         with pims_nd2.ND2_Reader(nd2_file) as nd2f:
-            return (1, nd2f.sizes["t"] - 1)
+            return (1, nd2f.sizes["t"])
 
 
 def nd2ToTIFF(
@@ -274,7 +274,7 @@ class Nd2ToTIFF(Container):
             self.image_directory,
             tif_compress=5,  # TODO: assign from UI
             image_start=self.time_range[0],
-            image_end=self.time_range[1],
+            image_end=self.time_range[1] + 1,
             vertical_crop=None,  # TODO: assign from UI
             fov_list=self.fovs,
             tworow_crop=None,
@@ -355,5 +355,5 @@ class Nd2ToTIFF(Container):
     def set_time_range(self):
         self.time_range = (
             self.time_range_widget.value.start,
-            self.time_range_widget.value.stop + 1,
+            self.time_range_widget.value.stop,
         )
