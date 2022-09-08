@@ -151,7 +151,7 @@ class TimeRangeSelector(RangeEdit):
         label_str = f"time range (frames {permitted_times[0]}-{permitted_times[1]})"
         super().__init__(
             label=label_str,
-            tooltip="The time range to analyze",
+            tooltip="The time range to analyze. Note that 'step' is currently not supported.",
             start=permitted_times[0],
             stop=permitted_times[1],
             min=permitted_times[0],

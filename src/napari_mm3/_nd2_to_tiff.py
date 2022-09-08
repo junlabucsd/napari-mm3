@@ -14,7 +14,25 @@ from magicgui import magic_factory
 from pathlib import Path
 from skimage import io
 from napari.utils import progress
+from magicgui.widgets import Container, FileEdit, CheckBox, PushButton
 from ._function import range_string_to_indices, information, julian_day_number
+from ._deriving_widgets import FOVChooser, TimeRangeSelector
+
+
+def get_nd2_fovs(exp_dir):
+    nd2files = list(exp_dir.glob("*.nd2"))
+
+    for nd2_file in nd2files:
+        with pims_nd2.ND2_Reader(nd2_file) as nd2f:
+            return (1, nd2f.sizes["m"] - 1)
+
+
+def get_nd2_times(exp_dir):
+    nd2files = list(exp_dir.glob("*.nd2"))
+
+    for nd2_file in nd2files:
+        with pims_nd2.ND2_Reader(nd2_file) as nd2f:
+            return (1, nd2f.sizes["t"] - 1)
 
 
 def nd2ToTIFF(
@@ -205,94 +223,132 @@ def nd2ToTIFF(
                     fov += 1
 
 
-@magic_factory(
-    experiment_directory={
-        "mode": "d",
-        "tooltip": "Directory within which all your data and analyses will be located.",
-    },
-    image_directory={
-        "mode": "d",
-        "tooltip": "Required. Location (within working directory) for the input images. 'working directory/TIFF/' by default."
-    },
-    image_start={
-        "tooltip": "Required. First time stamp for which we would like to do analysis."
-    },
-    image_end={
-        "tooltip": "Required. Last time stamp for which we would like to do analysis."
-    },
-    FOVs_range={
-        "tooltip": "Optional. Range of FOVs to include. By default, all will be processed."
-    },
-    display_after_export={
-        "tooltip": "Whether or not to display output images after exporting."
-    },
-)
-def Nd2ToTIFF(
-    experiment_directory=Path(),
-    image_directory=Path("./TIFF"),
-    image_start: int = 1,
-    image_end: int = 50,
-    FOVs_range: str = "",
-    display_after_export: bool = True,
-):
-    """Converts an Nd2 file to a series of TIFFs.
-    TODO: Range inference, or similar."""
-    napari.current_viewer().window._status_bar._toggle_activity_dock(True)
-    tif_dir = image_directory
-    fov_list = range_string_to_indices(FOVs_range)
-    nd2ToTIFF(
-        experiment_directory,
-        tif_dir,
-        tif_compress=5,
-        image_start=image_start,
-        image_end=image_end,
-        vertical_crop=None,
-        fov_list=fov_list,
-        tworow_crop=None,
-    )
+class Nd2ToTIFF(Container):
+    """No good way to make this derive MM3Widget; have to roll a custom version here."""
 
-    if not display_after_export:
-        # Kick out if we don't want to display.
-        return
+    def __init__(self):
+        super().__init__()
 
-    viewer = napari.current_viewer()
-    viewer.layers.clear()
+        self.valid_times = get_nd2_times(Path("."))
+        self.valid_fovs = get_nd2_fovs(Path("."))
 
-    image_name_list = [filename.name for filename in tif_dir.glob("*xy*")]
-    fov_regex = re.compile(r"xy\d*")
-    fovs = list(
-        sorted(
-            set(
-                int(fov_regex.search(filename).group()[2:])
-                for filename in image_name_list
+        self.experiment_directory_widget = FileEdit(
+            label="experiment_directory",
+            value=Path("."),
+            tooltip="Directory within which all your nd2 files are located.",
+        )
+        self.image_directory_widget = FileEdit(
+            label="image_directory",
+            value=Path("./TIFF"),
+            tooltip="Directory within which to put your TIFFs",
+        )
+        self.FOVs_range_widget = FOVChooser(self.valid_fovs)
+        self.time_range_widget = TimeRangeSelector(self.valid_times)
+        self.display_after_export_widget = CheckBox(label="display after export")
+        self.run_widget = PushButton(text="run")
+
+        self.experiment_directory_widget.changed.connect(self.set_experiment_directory)
+        self.experiment_directory_widget.changed.connect(self.set_widget_bounds)
+        self.image_directory_widget.changed.connect(self.set_image_directory)
+        self.FOVs_range_widget.connect_callback(self.set_fovs)
+        self.time_range_widget.changed.connect(self.set_time_range)
+        self.run_widget.clicked.connect(self.run)
+
+        self.append(self.experiment_directory_widget)
+        self.append(self.image_directory_widget)
+        self.append(self.FOVs_range_widget)
+        self.append(self.time_range_widget)
+        self.append(self.display_after_export_widget)
+        self.append(self.run_widget)
+
+        napari.current_viewer().window._status_bar._toggle_activity_dock(True)
+
+    def run(self):
+        nd2ToTIFF(
+            self.experiment_directory,
+            self.image_directory,
+            tif_compress=5,  # TODO: assign from UI
+            image_start=self.time_range[0],
+            image_end=self.time_range[1],
+            vertical_crop=None,  # TODO: assign from UI
+            fov_list=self.fovs,
+            tworow_crop=None,
+        )
+
+        if self.display_after_export_widget.value:
+            self.render_images()
+
+    def render_images(self):
+        viewer = napari.current_viewer()
+        viewer.layers.clear()
+
+        image_name_list = [
+            filename.name for filename in self.image_directory.glob("*xy*")
+        ]
+        fov_regex = re.compile(r"xy\d*")
+        fovs = list(
+            sorted(
+                set(
+                    int(fov_regex.search(filename).group()[2:])
+                    for filename in image_name_list
+                )
             )
         )
-    )
-    if fov_list:
-        fovs = fov_list
+        if self.fovs:
+            fovs = self.fovs
 
-    # Print out results!
-    for fov_id in fovs:
-        # TODO: Can allow xy in any position via regex! But it currently does not
-        found_files = tif_dir.glob(f"*xy{fov_id:02d}.tif")
+        viewer.grid.enabled = True
+        viewer.grid.shape = (-1, 4)
 
-        found_files = sorted(found_files)  # should sort by timepoint
+        # Print out results!
+        for fov_id in fovs:
+            # TODO: Can allow xy in any position via regex! But it currently does not
+            found_files = self.image_directory.glob(f"*xy{fov_id:02d}.tif")
 
-        sample = io.imread(found_files[0])
+            found_files = sorted(found_files)  # should sort by timepoint
 
-        lazy_imread = delayed(io.imread)  # lazy reader
-        lazy_arrays = [lazy_imread(fn) for fn in found_files]
-        dask_arrays = [
-            da.from_delayed(delayed_reader, shape=sample.shape, dtype=sample.dtype)
-            for delayed_reader in lazy_arrays
-        ]
-        # Stack into one large dask.array
-        stack = da.stack(dask_arrays, axis=0)
+            sample = io.imread(found_files[0])
 
-        viewer.add_image(stack, name="FOV %02d" % fov_id, contrast_limits=[90, 250])
-        # viewer.add_image(stack,name='FOV %02d' % fov_id)
+            lazy_imread = delayed(io.imread)  # lazy reader
+            lazy_arrays = [lazy_imread(fn) for fn in found_files]
+            dask_arrays = [
+                da.from_delayed(delayed_reader, shape=sample.shape, dtype=sample.dtype)
+                for delayed_reader in lazy_arrays
+            ]
+            # Stack into one large dask.array
+            stack = da.stack(dask_arrays, axis=0)
 
-    viewer.grid.enabled = True
-    viewer.grid.shape = (-1, 4)
+            viewer.add_image(stack, name="FOV %02d" % fov_id, contrast_limits=[90, 250])
+            # viewer.add_image(stack,name='FOV %02d' % fov_id)
 
-    print("Done.")
+    def set_widget_bounds(self):
+        self.valid_fovs = get_nd2_fovs(self.experiment_directory)
+        self.FOVs_range_widget.max_FOV = min(self.valid_fovs)
+        self.FOVs_range_widget.max_FOV = max(self.valid_fovs)
+        self.FOVs_range_widget.label = (
+            f"FOVs ({min(self.valid_fovs)}-{max(self.valid_fovs)}"
+        )
+        self.FOVs_range_widget.value = f"{min(self.valid_fovs)}-{max(self.valid_fovs)}"
+
+        self.valid_times = get_nd2_times(self.experiment_directory)
+        self.time_range_widget.start.min = min(self.valid_times)
+        self.time_range_widget.start.max = max(self.valid_times)
+        self.time_range_widget.stop.min = min(self.valid_times)
+        self.time_range_widget.stop.max = max(self.valid_times)
+        self.time_range_widget.start.value = min(self.valid_times)
+        self.time_range_widget.stop.value = max(self.valid_times)
+
+    def set_fovs(self, fovs):
+        self.fovs = fovs
+
+    def set_image_directory(self):
+        self.image_directory = self.image_directory_widget.value
+
+    def set_experiment_directory(self):
+        self.experiment_directory = self.experiment_directory_widget.value
+
+    def set_time_range(self):
+        self.time_range = (
+            self.time_range_widget.value.start,
+            self.time_range_widget.value.stop + 1,
+        )
