@@ -261,6 +261,11 @@ class Nd2ToTIFF(Container):
         self.append(self.display_after_export_widget)
         self.append(self.run_widget)
 
+        self.set_experiment_directory()
+        self.set_fovs(list(range(self.valid_fovs[0], self.valid_fovs[1] + 1)))
+        self.set_time_range()
+        self.set_image_directory()
+
         napari.current_viewer().window._status_bar._toggle_activity_dock(True)
 
     def run(self):
