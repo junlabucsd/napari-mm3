@@ -1496,7 +1496,7 @@ class Compile(MM3Container):
 
     # NOTE! This is different from the other functions in that it requires a parameter.
     def set_fovs(self, new_fovs):
-        self.fovs = set(new_fovs).intersection(set(self.valid_fovs))
+        self.fovs = list(set(new_fovs)) # set(new_fovs).intersection(set(self.valid_fovs))
 
     def set_range(self):
         self.time_range = (
@@ -1524,7 +1524,7 @@ class Compile(MM3Container):
             "experiment_name": self.experiment_name,
             "experiment_directory": self.data_directory,
             "analysis_directory": self.analysis_folder,
-            "FOV": self.valid_fovs,
+            "FOV": self.fovs,
             "TIFF_source": self.image_source,
             "output": "TIFF",
             "phase_plane": self.phase_plane,
@@ -1535,7 +1535,7 @@ class Compile(MM3Container):
                 "do_channel_masks": True,
                 "do_slicing": True,
                 "t_start": self.time_range[0],
-                "t_end": self.time_range[1],
+                "t_end": self.time_range[1] + 1,
                 "image_orientation": "auto",
                 "channel_width": self.channel_width,
                 "channel_separation": self.channel_separation,
