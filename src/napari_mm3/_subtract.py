@@ -270,7 +270,7 @@ def subtract_fov_stack(
                 color,
             )
             # TODO: Make this respect compression levels
-            tiff.imwrite(sub_dir / sub_filename, subtracted_stack, compression=(4, 'zlib'))  # save it
+            tiff.imwrite(sub_dir / sub_filename, subtracted_stack, compression=('zlib', 4))  # save it
 
             # if fov_id < 3:
             if preview:
@@ -457,7 +457,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
             fov_id,
             color,
         )
-        tiff.imwrite(empty_dir / empty_filename, avg_empty_stack, compression=(4, 'zlib'))
+        tiff.imwrite(empty_dir / empty_filename, avg_empty_stack, compression=('zlib', 4))
 
     if params["output"] == "HDF5":
         h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r+")
