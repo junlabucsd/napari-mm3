@@ -868,7 +868,7 @@ def Track_Cells(params):
 class Track(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)
-
+        self.viewer.text_overlay.visible = False
 
     def create_widgets(self):
         """Overriding method. Widget constructor. See _deriving_widgets.MM3Container for more details."""

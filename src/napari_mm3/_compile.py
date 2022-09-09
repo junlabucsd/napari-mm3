@@ -1414,6 +1414,7 @@ def compile(params):
 class Compile(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)
+        self.viewer.text_overlay.visible = False
 
     def create_widgets(self):
         """Override method. Serves as the widget constructor. See MM3Container for more details."""
