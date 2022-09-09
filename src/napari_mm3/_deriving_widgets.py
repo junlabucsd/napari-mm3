@@ -5,7 +5,6 @@ from magicgui.widgets import (
     Container,
     FileEdit,
     LineEdit,
-    SpinBox,
     PushButton,
     RangeEdit,
     ComboBox,
@@ -46,12 +45,6 @@ class MM3Container(Container):
         # TODO: Remove 'reload data' button. Make it all a bit more dynamic.
         self.viewer = napari_viewer
 
-        self.data_directory_widget = FileEdit(
-            mode="d",
-            label="data directory",
-            value=Path("."),
-            tooltip="Directory within which all your data and analyses will be located.",
-        )
         self.analysis_folder_widget = FileEdit(
             mode="d",
             label="analysis folder",
@@ -73,7 +66,6 @@ class MM3Container(Container):
             tooltip="Load data from specified directories.",
         )
 
-        self.data_directory_widget.changed.connect(self.set_data_directory)
         self.experiment_name_widget.changed.connect(self.set_experiment_name)
         self.TIFF_folder_widget.changed.connect(self.set_TIFF_folder)
         self.analysis_folder_widget.changed.connect(self.set_analysis_folder)
@@ -83,7 +75,6 @@ class MM3Container(Container):
         self.load_data_widget.clicked.connect(self.delete_extra_widgets)
         self.load_data_widget.clicked.connect(self.load_from_data_conditional)
 
-        self.set_data_directory()
         self.set_experiment_name()
         self.set_TIFF_folder()
         self.set_analysis_folder()
@@ -91,7 +82,6 @@ class MM3Container(Container):
         self.set_valid_planes()
         self.set_valid_times()
 
-        self.append(self.data_directory_widget)
         self.append(self.experiment_name_widget)
         self.append(self.TIFF_folder_widget)
         self.append(self.analysis_folder_widget)
@@ -111,9 +101,6 @@ class MM3Container(Container):
         This allows for easy UI resets in deriving widgets (see, e.g. _track.py)"""
         while self[-1].label != self.load_data_widget.label:
             self.pop()
-
-    def set_data_directory(self):
-        self.data_directory = self.data_directory_widget.value
 
     def set_analysis_folder(self):
         self.analysis_folder = self.analysis_folder_widget.value
