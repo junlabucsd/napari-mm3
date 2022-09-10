@@ -620,7 +620,9 @@ def tiff_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_
             )
             # save stack
             tiff.imwrite(
-                channel_filename, channel_stack[:, :, :, color_index], compression=('zlib', 4)
+                channel_filename,
+                channel_stack[:, :, :, color_index],
+                compression=("zlib", 4),
             )
 
     return
@@ -1343,8 +1345,6 @@ def compile(params):
                     crosscorrs[fov_id][peak_id] = {
                         "ccs": result.get(),
                         "cc_avg": np.average(result.get()),
-                        "full": np.average(result.get())
-                        < p["compile"]["channel_picking_threshold"],
                     }
                 else:
                     crosscorrs[fov_id][peak_id] = False  # put a false there if it's bad
@@ -1377,39 +1377,6 @@ def compile(params):
             crosscorrs = None
             information("Could not load cross-correlations.")
 
-    ### User selection (channel picking) #####################################################
-    information("Initializing specifications file.")
-    # nested dictionary of {fov : {peak : spec ...}) for if channel should
-    # be analyzed, used for empty, or ignored.
-    specs = {}
-
-    # if there is cross corrs, use it. Otherwise, just make everything -1
-    if crosscorrs:
-        # update dictionary on initial guess from cross correlations
-        for fov_id, peaks in six.iteritems(crosscorrs):
-            specs[fov_id] = {}
-            for peak_id, xcorrs in six.iteritems(peaks):
-                # update the guess incase the parameters file was changed
-                xcorrs["full"] = (
-                    xcorrs["cc_avg"] < p["compile"]["channel_picking_threshold"]
-                )
-
-                if xcorrs["full"] == True:
-                    specs[fov_id][peak_id] = 1
-                else:  # default to don't analyze
-                    specs[fov_id][peak_id] = -1
-        # pprint(specs) # uncomment for debugging
-
-    else:  # just set everything to 1 and go forward.
-        for fov_id, peaks in six.iteritems(channel_masks):
-            specs[fov_id] = {peak_id: -1 for peak_id in peaks.keys()}
-
-    # Save out specs file in yaml format
-    with open(os.path.join(p["ana_dir"], "specs.yaml"), "w") as specs_file:
-        yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
-
-    information("Finished.")
-
 
 class Compile(MM3Container):
     def __init__(self, napari_viewer: Viewer):
@@ -1424,7 +1391,9 @@ class Compile(MM3Container):
             label="image source",
             choices=["TIFF", "nd2ToTIFF", "TIFF_from_elements"],
         )
-        self.phase_plane_widget = PlanePicker(self.valid_planes, label="phase plane channel")
+        self.phase_plane_widget = PlanePicker(
+            self.valid_planes, label="phase plane channel"
+        )
         self.time_range_widget = TimeRangeSelector(self.valid_times)
         self.seconds_per_frame_widget = SpinBox(
             value=150,
@@ -1467,7 +1436,6 @@ class Compile(MM3Container):
         self.seconds_per_frame_widget.changed.connect(self.set_seconds_per_frame)
         self.channel_width_widget.changed.connect(self.set_channel_width)
         self.channel_separation_widget.changed.connect(self.set_channel_separation)
-        self.xcorr_threshold_widget.changed.connect(self.set_xcorr_threshold)
         self.run_analysis_widget.clicked.connect(self.run_analysis)
 
         self.append(self.fov_widget)
@@ -1477,7 +1445,6 @@ class Compile(MM3Container):
         self.append(self.seconds_per_frame_widget)
         self.append(self.channel_width_widget)
         self.append(self.channel_separation_widget)
-        self.append(self.xcorr_threshold_widget)
         self.append(self.run_analysis_widget)
 
         self.set_image_source()
@@ -1487,7 +1454,6 @@ class Compile(MM3Container):
         self.set_seconds_per_frame()
         self.set_channel_width()
         self.set_channel_separation()
-        self.set_xcorr_threshold()
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value
@@ -1497,7 +1463,9 @@ class Compile(MM3Container):
 
     # NOTE! This is different from the other functions in that it requires a parameter.
     def set_fovs(self, new_fovs):
-        self.fovs = list(set(new_fovs)) # set(new_fovs).intersection(set(self.valid_fovs))
+        self.fovs = list(
+            set(new_fovs)
+        )  # set(new_fovs).intersection(set(self.valid_fovs))
 
     def set_range(self):
         self.time_range = (
@@ -1514,16 +1482,12 @@ class Compile(MM3Container):
     def set_channel_separation(self):
         self.channel_separation = self.channel_separation_widget.value
 
-    def set_xcorr_threshold(self):
-        self.xcorr_threshold = self.xcorr_threshold_widget.value
-
     def run_analysis(self):
         """Performs Mother Machine Analysis"""
         # global params. Ideally, this is rendered obsolete. However, old code uses this
         # Fixing it up would take a very long time, and as such is being deferred to later.
         params = {
             "experiment_name": self.experiment_name,
-            "experiment_directory": self.data_directory,
             "analysis_directory": self.analysis_folder,
             "FOV": self.fovs,
             "TIFF_source": self.image_source,
@@ -1544,7 +1508,6 @@ class Compile(MM3Container):
                 "channel_length_pad": 10,
                 "channel_width_pad": 10,
                 "do_crosscorrs": True,
-                "channel_picking_threshold": self.xcorr_threshold,
                 "alignment_pad": 10,
             },
             "num_analyzers": multiprocessing.cpu_count(),

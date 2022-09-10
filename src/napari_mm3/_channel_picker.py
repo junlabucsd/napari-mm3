@@ -1,13 +1,12 @@
-from cgitb import enable
-from gc import callbacks
 import pickle
-from pathlib import Path
 import napari
 import numpy as np
 import yaml
 import tifffile as tiff
 
+from ._function import information, warning
 from ._deriving_widgets import MM3Container, FOVChooserSingle
+from magicgui.widgets import FloatSpinBox
 
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 0.25])
 TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, 0.25])
@@ -30,6 +29,29 @@ OVERLAY_TEXT = (
     "A higher value means that that the channel is more likely to be empty.\n"
     "'Shapes' layer must be selected to change channel assignment."
 )
+
+
+# function for loading the channel masks
+def load_channel_masks(analysis_directory):
+    """Load channel masks dictionary. Should be .yaml but try pickle too."""
+    information("Loading channel masks dictionary.")
+
+    # try loading from .yaml before .pkl
+    try:
+        information("Path:", analysis_directory / "channel_masks.yaml")
+        with open(analysis_directory / "channel_masks.yaml", "r") as cmask_file:
+            channel_masks = yaml.safe_load(cmask_file)
+    except:
+        warning("Could not load channel masks dictionary from .yaml.")
+
+        try:
+            information("Path:", analysis_directory / "channel_masks.pkl")
+            with open(analysis_directory / "channel_masks.pkl", "rb") as cmask_file:
+                channel_masks = pickle.load(cmask_file)
+        except ValueError:
+            warning("Could not load channel masks dictionary from .pkl.")
+
+    return channel_masks
 
 
 def load_specs(analysis_directory):
@@ -70,10 +92,12 @@ def load_fov(image_directory, fov_id):
     return np.array(image_fov_stack)
 
 
-def load_crosscorrs(analysis_directory, fov_id):
+def load_crosscorrs(analysis_directory, fov_id=None):
     print("Getting crosscorrs")
     with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
         cross_corrs = pickle.load(data)
+        if fov_id == None:
+            return cross_corrs
     fov_crosscorrs = cross_corrs[fov_id]
     average_crosscorrs = {
         peak: fov_crosscorrs[peak]["cc_avg"] for peak in fov_crosscorrs
@@ -86,6 +110,26 @@ def display_image_stack(viewer: napari.Viewer, image_fov_stack):
     viewer.dims.current_step = (0, 0)
     images.reset_contrast_limits()
     images.gamma = 0.5
+
+
+def threshold_fov(fov, threshold, specs, crosscorrs, channel_masks=None):
+    if crosscorrs:
+        # update dictionary on initial guess from cross correlations
+        peaks = crosscorrs[fov]
+        specs[fov] = {}
+        for peak_id, xcorrs in peaks.items():
+            # default to don't analyze
+            specs[fov][peak_id] = -1
+            if xcorrs["cc_avg"] < threshold:
+                specs[fov][peak_id] = 1
+    else:
+        # We don't have crosscorrelations for this FOV -- default to ignoring peaks
+        specs[fov] = {}
+        channel_masks = channel_masks
+        for peaks in channel_masks[fov]:
+            specs[fov] = {peak_id: -1 for peak_id in peaks.keys()}
+
+    return specs
 
 
 def display_rectangles(
@@ -117,6 +161,30 @@ def display_rectangles(
     return shapes_layer
 
 
+def regenerate_fov_specs(analysis_folder, fov, threshold, overwrite=False):
+    try:
+        specs = load_specs(analysis_folder)
+    except:
+        specs = {}
+
+    if not overwrite and (fov in specs):
+        return specs
+
+    try:
+        crosscorrs = load_crosscorrs(analysis_folder)
+    except:
+        crosscorrs = {}
+
+    try:
+        channel_masks = load_channel_masks(analysis_directory=analysis_folder)
+    except:
+        channel_masks = None
+
+    new_specs = threshold_fov(fov, threshold, specs, crosscorrs, channel_masks)
+    save_specs(analysis_folder=analysis_folder, specs=new_specs)
+    return new_specs
+
+
 class ChannelPicker(MM3Container):
     def __init__(self, viewer: napari.Viewer):
         super().__init__(viewer)
@@ -135,11 +203,25 @@ class ChannelPicker(MM3Container):
         self.fov_picker_widget.connect_callback(self.update_fov)
         self.append(self.fov_picker_widget)
 
-        self.specs = load_specs(self.analysis_folder)
+        self.threshold_widget = FloatSpinBox(
+            label="crosscorrelation threshold",
+            tooltip="the autocorrelation threshold for discerning whether or not a given channel is empty.",
+            min=0,
+            max=1,
+            value=0.97,
+            step=0.005,
+        )
+        self.threshold_widget.changed.connect(self.update_threshold)
+        self.append(self.threshold_widget)
+
+        self.threshold = self.threshold_widget.value
         self.update_fov()
 
     def update_fov(self):
         self.cur_fov = self.fov_picker_widget.fov
+        self.specs = regenerate_fov_specs(
+            self.analysis_folder, self.cur_fov, self.threshold, overwrite=False
+        )
         image_fov_stack = load_fov(self.TIFF_folder, self.cur_fov)
         self.sorted_peaks = list(sorted(self.specs[self.cur_fov].keys()))
         self.sorted_specs = [self.specs[self.cur_fov][p] for p in self.sorted_peaks]
@@ -201,3 +283,19 @@ class ChannelPicker(MM3Container):
         ]
         save_specs(self.analysis_folder, self.specs)
         print("Saved channel classifications to specs file")
+
+    def update_threshold(self):
+        self.threshold = self.threshold_widget.value
+        self.specs = regenerate_fov_specs(
+            self.analysis_folder, self.cur_fov, self.threshold, overwrite=True
+        )
+        self.sorted_peaks = list(sorted(self.specs[self.cur_fov].keys()))
+        self.sorted_specs = [self.specs[self.cur_fov][p] for p in self.sorted_peaks]
+        self.viewer.layers.pop()
+        display_rectangles(
+            self.viewer,
+            self.coords,
+            self.sorted_peaks,
+            self.sorted_specs,
+            self.crosscorrs,
+        )
