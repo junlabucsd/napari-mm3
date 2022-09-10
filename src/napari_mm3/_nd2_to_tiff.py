@@ -1,3 +1,4 @@
+from cgitb import reset
 import os
 import napari
 import copy
@@ -10,7 +11,6 @@ import io
 import numpy as np
 
 from dask import delayed
-from magicgui import magic_factory
 from pathlib import Path
 from skimage import io
 from napari.utils import progress
@@ -44,6 +44,7 @@ def nd2ToTIFF(
     vertical_crop=None,
     tworow_crop=None,
     fov_list=[],
+    reset_numbering=False,
 ):
     """
     This script converts a Nikon Elements .nd2 file to individual TIFF files per time point. Multiple color planes are stacked in each time point to make a multipage TIFF.
@@ -115,14 +116,19 @@ def nd2ToTIFF(
                 t_id = t - 1
                 # set counter for FOV output name
                 # fov = fov_naming_start
-
+                out_fov_number = 0
                 for fov_id in range(0, nd2f.sizes["m"]):  # for every FOV
                     # fov_id is the fov index according to elements, fov is the output fov ID
                     fov = fov_id + 1
+                    if not reset_numbering:
+                        out_fov_number = fov
 
                     # skip FOVs as specified above
                     if len(fov_list) > 0 and not (fov in fov_list):
                         continue
+
+                    # Only want to increment this if we are saving the current image
+                    out_fov_number += 1
 
                     # set the FOV we are working on in the nd2 file object
                     nd2f.default_coords["m"] = fov_id
@@ -164,7 +170,10 @@ def nd2ToTIFF(
                             image_data_one = image_data[
                                 :, tworow_crop[0][0] : tworow_crop[0][1], :
                             ]
-                            tif_filename = file_prefix + "_t%04dxy%02d_1.tif" % (t, fov)
+                            tif_filename = file_prefix + "_t%04dxy%02d_1.tif" % (
+                                t,
+                                out_fov_number,
+                            )
                             information("Saving %s." % tif_filename)
                             tiff.imsave(
                                 tif_dir / tif_filename,
@@ -180,7 +189,10 @@ def nd2ToTIFF(
                             image_data_two = image_data[
                                 :, tworow_crop[1][0] : tworow_crop[1][1], :
                             ]
-                            tif_filename = file_prefix + "_t%04dxy%02d_2.tif" % (t, fov)
+                            tif_filename = file_prefix + "_t%04dxy%02d_2.tif" % (
+                                t,
+                                out_fov_number,
+                            )
                             information("Saving %s." % tif_filename)
                             tiff.imsave(
                                 tif_dir / tif_filename,
@@ -198,7 +210,10 @@ def nd2ToTIFF(
                             image_data = image_data[:, ylo:yhi, :]
 
                             # save the tiff
-                            tif_filename = file_prefix + "_t%04dxy%02d.tif" % (t, fov)
+                            tif_filename = file_prefix + "_t%04dxy%02d.tif" % (
+                                t,
+                                out_fov_number,
+                            )
                             information("Saving %s." % tif_filename)
                             tiff.imsave(
                                 tif_dir / tif_filename,
@@ -209,7 +224,10 @@ def nd2ToTIFF(
                             )
 
                     else:  # just save the image if no cropping was done.
-                        tif_filename = file_prefix + "_t%04dxy%02d.tif" % (t, fov)
+                        tif_filename = file_prefix + "_t%04dxy%02d.tif" % (
+                            t,
+                            out_fov_number,
+                        )
                         information("Saving %s." % tif_filename)
                         tiff.imsave(
                             tif_dir / tif_filename,
@@ -245,6 +263,11 @@ class Nd2ToTIFF(Container):
         self.FOVs_range_widget = FOVChooser(self.valid_fovs)
         self.time_range_widget = TimeRangeSelector(self.valid_times)
         self.display_after_export_widget = CheckBox(label="display after export")
+        self.reset_numbering_widget = CheckBox(
+            label="reset numbering",
+            tooltip="Whether or not to preserve FOV numbering in the TIFF filenames. Use this to remove unwanted FOVs (e.g, blank FOVs)",
+            value=True,
+        )
         self.run_widget = PushButton(text="run")
 
         self.experiment_directory_widget.changed.connect(self.set_experiment_directory)
@@ -259,6 +282,7 @@ class Nd2ToTIFF(Container):
         self.append(self.FOVs_range_widget)
         self.append(self.time_range_widget)
         self.append(self.display_after_export_widget)
+        self.append(self.reset_numbering_widget)
         self.append(self.run_widget)
 
         self.set_experiment_directory()
@@ -278,6 +302,7 @@ class Nd2ToTIFF(Container):
             vertical_crop=None,  # TODO: assign from UI
             fov_list=self.fovs,
             tworow_crop=None,
+            reset_numbering=self.reset_numbering_widget.value,
         )
 
         if self.display_after_export_widget.value:
