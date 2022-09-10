@@ -1377,40 +1377,6 @@ def compile(params):
             crosscorrs = None
             information("Could not load cross-correlations.")
 
-    ### User selection (channel picking) #####################################################
-    information("Initializing specifications file.")
-    # nested dictionary of {fov : {peak : spec ...}) for if channel should
-    # be analyzed, used for empty, or ignored.
-    specs = {}
-
-    # if there is cross corrs, use it. Otherwise, just make everything -1
-    if crosscorrs:
-        # update dictionary on initial guess from cross correlations
-        for fov_id, peaks in six.iteritems(crosscorrs):
-            specs[fov_id] = {}
-            for peak_id, xcorrs in six.iteritems(peaks):
-                # update the guess incase the parameters file was changed
-                xcorrs["full"] = (
-                    xcorrs["cc_avg"] < p["compile"]["channel_picking_threshold"]
-                )
-
-                if xcorrs["full"] == True:
-                    specs[fov_id][peak_id] = 1
-                else:  # default to don't analyze
-                    specs[fov_id][peak_id] = -1
-        # pprint(specs) # uncomment for debugging
-
-    else:  # just set everything to 1 and go forward.
-        for fov_id, peaks in six.iteritems(channel_masks):
-            specs[fov_id] = {peak_id: -1 for peak_id in peaks.keys()}
-
-    # Save out specs file in yaml format
-    with open(os.path.join(p["ana_dir"], "specs.yaml"), "w") as specs_file:
-        yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
-
-    information("Finished.")
-
-
 class Compile(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)

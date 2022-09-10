@@ -1,12 +1,10 @@
-from cgitb import enable
-from gc import callbacks
 import pickle
-from pathlib import Path
 import napari
 import numpy as np
 import yaml
 import tifffile as tiff
 
+from ._function import information, warning
 from ._deriving_widgets import MM3Container, FOVChooserSingle
 
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 0.25])
@@ -32,6 +30,28 @@ OVERLAY_TEXT = (
 )
 
 
+# function for loading the channel masks
+def load_channel_masks(analysis_directory):
+    """Load channel masks dictionary. Should be .yaml but try pickle too."""
+    information("Loading channel masks dictionary.")
+
+    # try loading from .yaml before .pkl
+    try:
+        information("Path:", analysis_directory / "channel_masks.yaml")
+        with open( analysis_directory / "channel_masks.yaml", "r") as cmask_file:
+            channel_masks = yaml.safe_load(cmask_file)
+    except:
+        warning("Could not load channel masks dictionary from .yaml.")
+
+        try:
+            information("Path:", analysis_directory / "channel_masks.pkl")
+            with open( analysis_directory/ "channel_masks.pkl", "rb") as cmask_file:
+                channel_masks = pickle.load(cmask_file)
+        except ValueError:
+            warning("Could not load channel masks dictionary from .pkl.")
+
+    return channel_masks
+
 def load_specs(analysis_directory):
     with (analysis_directory / "specs.yaml").open("r") as specs_file:
         specs = yaml.safe_load(specs_file)
@@ -42,11 +62,9 @@ def load_specs(analysis_directory):
         )
     return specs
 
-
 def save_specs(analysis_folder, specs):
     with (analysis_folder / "specs.yaml").open("w") as specs_file:
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
-
 
 def load_fov(image_directory, fov_id):
     print("getting files")
@@ -70,10 +88,12 @@ def load_fov(image_directory, fov_id):
     return np.array(image_fov_stack)
 
 
-def load_crosscorrs(analysis_directory, fov_id):
+def load_crosscorrs(analysis_directory, fov_id = None):
     print("Getting crosscorrs")
     with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
         cross_corrs = pickle.load(data)
+        if fov_id == None:
+            return cross_corrs
     fov_crosscorrs = cross_corrs[fov_id]
     average_crosscorrs = {
         peak: fov_crosscorrs[peak]["cc_avg"] for peak in fov_crosscorrs
@@ -87,6 +107,37 @@ def display_image_stack(viewer: napari.Viewer, image_fov_stack):
     images.reset_contrast_limits()
     images.gamma = 0.5
 
+
+def reset_fov(analysis_directory, fov, threshold):
+    try:
+        crosscorrs = load_crosscorrs(analysis_directory=analysis_directory)
+    except:
+        crosscorrs = None
+    try:
+        specs = load_specs(analysis_directory)
+    except:
+        specs = {}
+
+
+    if crosscorrs:
+        specs = load_specs(analysis_directory)
+        # update dictionary on initial guess from cross correlations
+        peaks = crosscorrs[fov]
+        specs[fov] = {}
+        for peak_id, xcorrs in peaks.items():
+            # default to don't analyze
+            specs[fov][peak_id] = -1
+            if xcorrs["cc_avg"] < threshold:
+                specs[fov][peak_id] = 1
+    else:
+        # We don't have crosscorrelations for this FOV -- default to ignoring peaks
+        specs[fov] = {}
+        channel_masks = load_channel_masks(analysis_directory)
+        for peaks in channel_masks[fov]:
+            specs[fov] = {peak_id: -1 for peak_id in peaks.keys()}
+ 
+    save_specs(analysis_folder=analysis_directory, specs=specs)
+    information(f"FOV {fov} added to specs.")
 
 def display_rectangles(
     viewer: napari.Viewer, coords, sorted_peaks, sorted_specs, crosscorrs
