@@ -53,7 +53,6 @@ def load_channel_masks(analysis_directory):
 
     return channel_masks
 
-
 def load_specs(analysis_directory):
     with (analysis_directory / "specs.yaml").open("r") as specs_file:
         specs = yaml.safe_load(specs_file)
@@ -64,11 +63,9 @@ def load_specs(analysis_directory):
         )
     return specs
 
-
 def save_specs(analysis_folder, specs):
     with (analysis_folder / "specs.yaml").open("w") as specs_file:
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
-
 
 def load_fov(image_directory, fov_id):
     print("getting files")
@@ -92,7 +89,7 @@ def load_fov(image_directory, fov_id):
     return np.array(image_fov_stack)
 
 
-def load_crosscorrs(analysis_directory, fov_id=None):
+def load_crosscorrs(analysis_directory, fov_id = None):
     print("Getting crosscorrs")
     with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
         cross_corrs = pickle.load(data)

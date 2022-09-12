@@ -1377,7 +1377,6 @@ def compile(params):
             crosscorrs = None
             information("Could not load cross-correlations.")
 
-
 class Compile(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer)
