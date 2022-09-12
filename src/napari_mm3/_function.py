@@ -1,37 +1,25 @@
 from __future__ import print_function, division
 import re
 import datetime
-import tensorflow as tf
-import tensorflow.keras.losses as losses
 import h5py
-import multiprocessing
 import numpy as np
-import napari
-from magicgui import magic_factory, magicgui
-from napari.types import ImageData, LabelsData
 import os
 
 try:
     import cPickle as pickle
 except:
     import pickle
-from pathlib import Path
 import re
 from scipy import ndimage as ndi
-from skimage import io, segmentation, filters, morphology
-from skimage.filters import threshold_otsu, median
-from skimage.measure import regionprops
+from skimage import filters, morphology
+from skimage.filters import median
 
-import six
 import sys
 import time
 import warnings
 import yaml
 import tifffile as tiff
 
-import matplotlib as mpl
-import matplotlib.patches as mpatches
-import matplotlib.pyplot as plt
 import seaborn as sns
 
 sns.set(style="ticks", color_codes=True)
@@ -735,7 +723,12 @@ def filter_cells_containing_val_in_attr(Cells, attr, val):
 
 
 def find_all_cell_intensities(
-    Cells, specs, time_table, channel_name="sub_c2", apply_background_correction=True
+    Cells,
+    params,
+    specs,
+    time_table,
+    channel_name="sub_c2",
+    apply_background_correction=True,
 ):
     """
     Finds fluorescenct information for cells. All the cells in Cells
@@ -856,13 +849,25 @@ def find_cells_of_birth_label(Cells, label_num=1):
 
 
 def range_string_to_indices(range_string):
-    range_string = range_string.replace(" ", "")
-    split = range_string.split(",")
-    indices = []
-    for fovs in split:
-        if "-" in fovs:
-            limits = list(map(int, fovs.split("-")))
-            # Make it an inclusive range, as users would expect
-            limits[1] += 1
-            indices += list(range(limits[0], limits[1]))
-    return indices
+    successful = True
+    try:
+        range_string = range_string.replace(" ", "")
+        split = range_string.split(",")
+        indices = []
+        for items in split:
+            # If it's a range
+            if "-" in items:
+                limits = list(map(int, items.split("-")))
+                if len(limits) == 2:
+                    # Make it an inclusive range, as users would expect
+                    limits[1] += 1
+                    indices += list(range(limits[0], limits[1]))
+            # If it's a single item.
+            else:
+                indices += [int(items)]
+        print("Index range string valid!")
+        return indices
+    except:
+        print("Index range string invalid. Returning empty range until a new string is specified.")
+        return []
+    

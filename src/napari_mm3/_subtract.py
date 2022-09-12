@@ -2,6 +2,8 @@ from magicgui import magic_factory
 from pathlib import Path
 from skimage.feature import match_template
 from multiprocessing.pool import Pool
+from napari import Viewer
+from magicgui.widgets import SpinBox, ComboBox, PushButton, CheckBox
 
 import tifffile as tiff
 import numpy as np
@@ -16,8 +18,9 @@ from ._function import (
     warning,
     load_stack,
     load_specs,
-    range_string_to_indices,
 )
+
+from ._deriving_widgets import MM3Container, FOVChooser, PlanePicker
 
 
 def subtract_phase(params, cropped_channel, empty_channel):
@@ -48,7 +51,12 @@ def subtract_phase(params, cropped_channel, empty_channel):
 
     # ### Align channel to empty using match template.
     # use match template to get a correlation array and find the position of maximum overlap
-    match_result = match_template(padded_chnl, empty_channel)
+    try:
+        match_result = match_template(padded_chnl, empty_channel)
+    except:
+        information("match_template failed. This is likely due to cropping issues with the image of the channel containing bacteria.")
+        information("Consider marking this channel as disabled in specs.yaml, or increasing the pad_size.")
+        raise
     # get row and colum of max correlation value in correlation array
     y, x = np.unravel_index(np.argmax(match_result), match_result.shape)
 
@@ -155,7 +163,7 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
             to_fov,
             color,
         )
-        tiff.imsave(empty_dir / empty_filename, avg_empty_stack, compress=4)
+        tiff.imwrite(empty_dir / empty_filename, avg_empty_stack, compression=('zlib', 4))
 
     if params["output"] == "HDF5":
         h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % to_fov), "r+")
@@ -183,7 +191,9 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
 
 
 # Do subtraction for an fov over many timepoints
-def subtract_fov_stack(params, sub_dir, fov_id, specs, color="c1", method="phase"):
+def subtract_fov_stack(
+    params, sub_dir, fov_id, specs, color="c1", method="phase", preview=False
+):
     """
     For a given FOV, loads the precomputed empty stack and does subtraction on
     all peaks in the FOV designated to be analyzed
@@ -238,7 +248,7 @@ def subtract_fov_stack(params, sub_dir, fov_id, specs, color="c1", method="phase
                 subtract_phase_helper, subtract_args, chunksize=10
             )
         elif method == "fluor":
-            subtract_args = [(params, pair[0], pair[1]) for pair in subtract_pairs]
+            subtract_args = [(params, pair[1], pair[0]) for pair in subtract_pairs]
             subtracted_imgs = pool.map(
                 subtract_fluor_helper, subtract_args, chunksize=10
             )
@@ -260,14 +270,15 @@ def subtract_fov_stack(params, sub_dir, fov_id, specs, color="c1", method="phase
                 color,
             )
             # TODO: Make this respect compression levels
-            tiff.imsave(sub_dir / sub_filename, subtracted_stack, compress=4)  # save it
+            tiff.imwrite(sub_dir / sub_filename, subtracted_stack, compression=('zlib', 4))  # save it
 
             # if fov_id < 3:
-            napari.current_viewer().add_image(
-                subtracted_stack,
-                name="Subtracted" + "_xy%03d_p%04d" % (fov_id, peak_id),
-                visible=True,
-            )
+            if preview:
+                napari.current_viewer().add_image(
+                    subtracted_stack,
+                    name="Subtracted" + "_xy%03d_p%04d" % (fov_id, peak_id),
+                    visible=True,
+                )
 
         if params["output"] == "HDF5":
             h5f = h5py.File(
@@ -446,7 +457,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
             fov_id,
             color,
         )
-        tiff.imsave(empty_dir / empty_filename, avg_empty_stack, compress=4)
+        tiff.imwrite(empty_dir / empty_filename, avg_empty_stack, compression=('zlib', 4))
 
     if params["output"] == "HDF5":
         h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r+")
@@ -475,7 +486,13 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
     return True
 
 
-def subtract(params, ana_dir: Path):
+def subtract(
+    params,
+    ana_dir: Path,
+    subtraction_plane: str,
+    fluor_mode: bool,
+    preview=False,
+):
     """mm3_Subtract.py averages empty channels and then subtractions them from channels with cells"""
 
     # Load the project parameters file
@@ -487,13 +504,13 @@ def subtract(params, ana_dir: Path):
     viewer.layers.clear()
     viewer.grid.enabled = True
     # Set the shape better here.
-    viewer.grid.shape = (2, 20)
+    viewer.grid.shape = (-1, 20)
 
-    user_spec_fovs = set(range_string_to_indices(p["FOV"]))
+    user_spec_fovs = set(p["FOV"])
 
     # information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
 
-    sub_plane = "c1"
+    sub_plane = subtraction_plane
     empty_dir = ana_dir / "empties"
     sub_dir = ana_dir / "subtracted"
     # Create folders for subtracted info if they don't exist
@@ -515,10 +532,9 @@ def subtract(params, ana_dir: Path):
     information("Found %d FOVs to process." % len(fov_id_list))
 
     # determine if we are doing fluorescence or phase subtraction, and set flags
-    if sub_plane == p["phase_plane"]:
-        align = True  # used when averaging empties
-        sub_method = "phase"  # used in subtract_fov_stack
-    else:
+    align = True
+    sub_method = "phase"
+    if fluor_mode:
         align = False
         sub_method = "fluor"
 
@@ -560,7 +576,13 @@ def subtract(params, ana_dir: Path):
         for fov_id in fov_id_list:
             # send to function which will create empty stack for each fov.
             subtraction_result = subtract_fov_stack(
-                params, sub_dir, fov_id, specs, color=sub_plane, method=sub_method
+                params,
+                sub_dir,
+                fov_id,
+                specs,
+                color=sub_plane,
+                method=sub_method,
+                preview=preview,
             )
         information("Finished subtraction.")
 
@@ -578,18 +600,14 @@ def subtract_prepare_params(
     analysis_directory,
     image_directory,
     FOV,
-    phase_plane,
     alignment_pad,
 ):
     # global params
     params = dict()
     params["experiment_name"] = experiment_name
     params["experiment_directory"] = experiment_directory
-    params["image_directory"] = image_directory
-    params["analysis_directory"] = analysis_directory
     params["output"] = "TIFF"
     params["FOV"] = FOV
-    params["phase_plane"] = phase_plane
 
     params["subtract"] = dict()
     params["subtract"]["do_empties"] = True
@@ -599,12 +617,8 @@ def subtract_prepare_params(
     params["num_analyzers"] = multiprocessing.cpu_count()
 
     # useful folder shorthands for opening files
-    params["TIFF_dir"] = os.path.join(
-        params["experiment_directory"], params["image_directory"]
-    )
-    params["ana_dir"] = os.path.join(
-        params["experiment_directory"], params["analysis_directory"]
-    )
+    params["TIFF_dir"] = os.path.join(image_directory)
+    params["ana_dir"] = os.path.join(analysis_directory)
     params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
     params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
     params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
@@ -616,43 +630,79 @@ def subtract_prepare_params(
     return params
 
 
-@magic_factory(
-    working_directory={
-        "mode": "d",
-        "tooltip": "Directory within which all your data and analyses will be located.",
-    },
-    phase_plane={"choices": ["c1", "c2", "c3"], "tooltip": "Phase contrast plane"},
-    output_prefix={"tooltip": "Optional. Prefix for output files"},
-    image_directory={
-        "tooltip": "Required. Location (within working directory) for the input images. 'working directory/TIFF/' by default."
-    },
-    analysis_directory={
-        "tooltip": "Required. Location (within working directory) for outputting analysis. 'working directory/analysis/' by default."
-    },
-    FOV_range={
-        "tooltip": "Optional. Range of FOVs to include. By default, all will be processed. E.g. '1-9' or '2,3,6-8'."
-    },
-    alignment_pad={
-        "tooltip": "Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image."
-    },
-)
-def Subtract(
-    working_directory=Path(),
-    output_prefix: str = "",
-    image_directory: str = "TIFF/",
-    analysis_directory: str = "analysis/",
-    FOV_range: str = "",
-    phase_plane="c1",
-    alignment_pad: int = 10,
-):
+class Subtract(MM3Container):
+    def __init__(self, napari_viewer: Viewer):
+        super().__init__(napari_viewer)
+        self.viewer.text_overlay.visible = False
 
-    params = subtract_prepare_params(
-        output_prefix,
-        working_directory,
-        analysis_directory,
-        image_directory,
-        FOV_range,
-        phase_plane,
-        alignment_pad,
-    )
-    subtract(params, working_directory / analysis_directory)
+    def create_widgets(self):
+        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
+        self.fov_widget = FOVChooser(self.valid_fovs)
+        self.alignment_pad_widget = SpinBox(
+            label="alignment pad",
+            value=10,
+            min=0,
+            tooltip="Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image.",
+        )
+        self.mode_widget = ComboBox(
+            choices=[
+                "phase",
+                "fluorescence",
+            ],
+            label="subtraction mode",
+        )
+        self.subtraction_plane_widget = PlanePicker(
+            self.valid_planes, label="subtraction plane"
+        )
+        self.output_display_widget = CheckBox(label="display output results")
+        self.run_button_widget = PushButton(label="Run")
+
+        self.fov_widget.connect_callback(self.set_fovs)
+        self.alignment_pad_widget.changed.connect(self.set_alignment_pad)
+        self.subtraction_plane_widget.changed.connect(self.set_subtraction_plane)
+        self.mode_widget.changed.connect(self.set_mode)
+        self.run_button_widget.changed.connect(self.subtract)
+
+        self.append(self.fov_widget)
+        self.append(self.alignment_pad_widget)
+        self.append(self.mode_widget)
+        self.append(self.subtraction_plane_widget)
+        self.append(self.output_display_widget)
+        self.append(self.run_button_widget)
+
+        self.set_fovs(self.valid_fovs)
+        self.set_alignment_pad()
+        self.set_mode()
+        self.set_subtraction_plane()
+
+    def subtract(self):
+        # Only need this if we will be using a progress bar, and
+        # currently we don't do progress bars with multithreading.
+        # self.viewer.window._status_bar._toggle_activity_dock(True)
+        params = subtract_prepare_params(
+            experiment_name=self.experiment_name,
+            experiment_directory=self.data_directory,
+            analysis_directory=self.analysis_folder,
+            image_directory=self.TIFF_folder,
+            FOV=self.fovs,
+            alignment_pad=self.alignment_pad,
+        )
+        subtract(
+            params,
+            self.analysis_folder,
+            self.subtraction_plane,
+            self.fluor_mode,
+            self.output_display_widget.value,
+        )
+
+    def set_fovs(self, fovs):
+        self.fovs = fovs
+
+    def set_alignment_pad(self):
+        self.alignment_pad = self.alignment_pad_widget.value
+
+    def set_subtraction_plane(self):
+        self.subtraction_plane = self.subtraction_plane_widget.value
+
+    def set_mode(self):
+        self.fluor_mode = self.mode_widget.value == "fluorescence"

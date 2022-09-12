@@ -8,10 +8,23 @@ import tifffile as tiff
 import h5py
 import numpy as np
 
-from ._function import information, warnings, load_specs, load_stack
+from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, CheckBox
+from scipy import ndimage as ndi
+from skimage import segmentation, morphology
+from skimage.filters import threshold_otsu
+from napari.utils import progress
+
+
+from ._function import (
+    information,
+    warnings,
+    load_specs,
+    load_stack,
+)
+from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
 
 # Do segmentation for an channel time stack
-def segment_chnl_stack(fov_id, peak_id):
+def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
     """
     For a given fov and peak (channel), do segmentation for all images in the
     subtracted .tif stack.
@@ -58,18 +71,19 @@ def segment_chnl_stack(fov_id, peak_id):
         tiff.imsave(
             os.path.join(params["seg_dir"], seg_filename), segmented_imgs, compress=5
         )
-        # if fov_id==1:
-        viewer = napari.current_viewer()
+        if view_result:
+            # if fov_id==1:
+            viewer = napari.current_viewer()
 
-        viewer.add_labels(
-            segmented_imgs,
-            name="Segmented"
-            + "_xy%03d_p%04d" % (fov_id, peak_id)
-            + "_"
-            + str(params["seg_img"])
-            + ".tif",
-            visible=True,
-        )
+            viewer.add_labels(
+                segmented_imgs,
+                name="Segmented"
+                + "_xy%03d_p%04d" % (fov_id, peak_id)
+                + "_"
+                + str(params["seg_img"])
+                + ".tif",
+                visible=True,
+            )
 
     if params["output"] == "HDF5":
         h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r+")
@@ -196,20 +210,12 @@ def segment_image(params, image):
     return labeled_image
 
 
-def segmentOTSU(params):
+def segmentOTSU(params, view_result: bool = False):
 
     information("Loading experiment parameters.")
     p = params
 
-    if p["FOV"]:
-        if "-" in p["FOV"]:
-            user_spec_fovs = range(
-                int(p["FOV"].split("-")[0]), int(p["FOV"].split("-")[1]) + 1
-            )
-        else:
-            user_spec_fovs = [int(val) for val in p["FOV"].split(",")]
-    else:
-        user_spec_fovs = []
+    user_spec_fovs = p["FOV"]
 
     # create segmenteation and cell data folder if they don't exist
     if not os.path.exists(p["seg_dir"]) and p["output"] == "TIFF":
@@ -235,7 +241,7 @@ def segmentOTSU(params):
     ### Do Segmentation by FOV and then peak #######################################################
     information("Segmenting channels using Otsu method.")
 
-    for fov_id in fov_id_list:
+    for fov_id in progress(fov_id_list):
         # determine which peaks are to be analyzed (those which have been subtracted)
         ana_peak_ids = []
         for peak_id, spec in six.iteritems(specs[fov_id]):
@@ -247,143 +253,158 @@ def segmentOTSU(params):
 
         for peak_id in ana_peak_ids:
             # send to segmentation
-            segment_chnl_stack(fov_id, peak_id)
+            segment_chnl_stack(params, fov_id, peak_id, view_result)
 
     information("Finished segmentation.")
 
 
-@magicgui(
-    auto_call=True,
-    first_opening_size=dict(widget_type="SpinBox", step=1),
-    OTSU_threshold=dict(widget_type="FloatSpinBox", min=0, max=2, step=0.01),
-)
-def DebugOtsu(
-    OTSU_threshold=1.0,
-    first_opening_size: int = 2,
-    distance_threshold: int = 2,
-    second_opening_size: int = 1,
-    min_object_size: int = 25,
-):
+class SegmentOtsu(MM3Container):
+    def __init__(self, napari_viewer: napari.Viewer):
+        super().__init__(napari_viewer)
 
-    warnings.filterwarnings("ignore", "The probability range is outside [0, 1]")
+        self.viewer.grid.enabled = False
 
-    params["segment"]["OTSU_threshold"] = OTSU_threshold
-    params["segment"]["first_opening_size"] = first_opening_size
-    params["segment"]["distance_threshold"] = distance_threshold
-    params["segment"]["second_opening_size"] = second_opening_size
-    params["segment"]["min_object_size"] = min_object_size
+    def create_widgets(self):
+        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
+        self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
+        self.otsu_threshold_widget = FloatSpinBox(
+            label="OTSU threshold",
+            min=0.0,
+            max=2.0,
+            step=0.01,
+            value=1,
+            adaptive_step=False,
+        )
+        self.first_opening_size_widget = SpinBox(
+            label="first opening size", min=0, value=2
+        )
+        self.distance_threshold_widget = SpinBox(
+            label="distance threshold", min=0, value=2
+        )
+        self.second_opening_size_widget = SpinBox(
+            label="second opening size", min=0, value=1
+        )
+        self.min_object_size_widget = SpinBox(label="min object size", min=0, value=25)
+        self.preview_widget = PushButton(label="generate preview", value=False)
+        self.fov_widget = FOVChooser(self.valid_fovs)
+        self.view_result_widget = CheckBox(label = "view result")
+        self.run_widget = PushButton(label="run on chosen FOVs")
 
-    p = params
+        self.plane_picker_widget.changed.connect(self.set_phase_plane)
+        self.fov_widget.connect_callback(self.set_fovs)
+        self.otsu_threshold_widget.changed.connect(self.set_OTSU_threshold)
+        self.first_opening_size_widget.changed.connect(self.set_first_opening_size)
+        self.distance_threshold_widget.changed.connect(self.set_distance_threshold)
+        self.second_opening_size_widget.changed.connect(self.set_second_opening_size)
+        self.min_object_size_widget.changed.connect(self.set_min_object_size)
+        self.preview_widget.clicked.connect(self.render_preview)
+        self.run_widget.clicked.connect(self.run)
 
-    if p["FOV"]:
-        if "-" in p["FOV"]:
-            user_spec_fovs = range(
-                int(p["FOV"].split("-")[0]), int(p["FOV"].split("-")[1]) + 1
-            )
-        else:
-            user_spec_fovs = [int(val) for val in p["FOV"].split(",")]
-    else:
-        user_spec_fovs = []
+        self.append(self.plane_picker_widget)
+        self.append(self.otsu_threshold_widget)
+        self.append(self.first_opening_size_widget)
+        self.append(self.distance_threshold_widget)
+        self.append(self.second_opening_size_widget)
+        self.append(self.min_object_size_widget)
+        self.append(self.preview_widget)
+        self.append(self.fov_widget)
+        self.append(self.view_result_widget)
+        self.append(self.run_widget)
 
-    # set segmentation image name for saving and loading segmented images
-    p["seg_img"] = "seg_otsu"
+        self.set_fovs(self.valid_fovs)
+        self.set_phase_plane()
+        self.set_OTSU_threshold()
+        self.set_first_opening_size()
+        self.set_distance_threshold()
+        self.set_second_opening_size()
+        self.set_min_object_size()
 
-    # load specs file
-    specs = load_specs(params)
+        self.redraw_image = True
+        self.render_preview()
 
-    # make list of FOVs to process (keys of channel_mask file)
-    fov_id_list = sorted([fov_id for fov_id in specs.keys()])
+    def set_params(self):
+        self.params = dict()
+        self.params["experiment_name"] = self.experiment_name
+        self.params["experiment_directory"] = self.data_directory
+        self.params["output"] = "TIFF"
+        self.params["FOV"] = self.fovs
+        self.params["phase_plane"] = self.phase_plane
 
-    # remove fovs if the user specified so
-    if user_spec_fovs:
-        fov_id_list[:] = [fov for fov in fov_id_list if fov in user_spec_fovs]
+        self.params["segment"] = dict()
+        self.params["segment"]["OTSU_threshold"] = self.OTSU_threshold
+        self.params["segment"]["first_opening_size"] = self.first_opening_size
+        self.params["segment"]["distance_threshold"] = self.distance_threshold
+        self.params["segment"]["second_opening_size"] = self.second_opening_size
+        self.params["segment"]["min_object_size"] = self.min_object_size
+        self.params["num_analyzers"] = multiprocessing.cpu_count()
 
-    ### Do Segmentation by FOV and then peak #######################################################
+        # useful folder shorthands for opening files
+        self.params["TIFF_dir"] = self.TIFF_folder
+        self.params["ana_dir"] = self.analysis_folder
+        self.params["hdf5_dir"] = os.path.join(self.params["ana_dir"], "hdf5")
+        self.params["chnl_dir"] = os.path.join(self.params["ana_dir"], "channels")
+        self.params["empty_dir"] = os.path.join(self.params["ana_dir"], "empties")
+        self.params["sub_dir"] = os.path.join(self.params["ana_dir"], "subtracted")
+        self.params["seg_dir"] = os.path.join(self.params["ana_dir"], "segmented")
+        self.params["cell_dir"] = os.path.join(self.params["ana_dir"], "cell_data")
+        self.params["track_dir"] = os.path.join(self.params["ana_dir"], "tracking")
 
-    for fov_id in fov_id_list:
-        fov_id_d = fov_id
-        # determine which peaks are to be analyzed (those which have been subtracted)
-        for peak_id, spec in six.iteritems(specs[fov_id]):
-            if (
-                spec == 1
-            ):  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
-                peak_id_d = peak_id
-                break
-        break
+    def set_phase_plane(self):
+        self.phase_plane = self.plane_picker_widget.value
 
-    ## pull out first fov & peak id with cells
-    sub_stack = load_stack(
-        params, fov_id_d, peak_id_d, color="sub_{}".format(params["phase_plane"])
-    )
+    def set_fovs(self, fovs):
+        self.fovs = fovs
 
-    # image by image for debug
-    segmented_imgs = []
-    for sub_image in sub_stack:
-        segmented_imgs.append(segment_image(params, sub_image))
+    def set_OTSU_threshold(self):
+        self.OTSU_threshold = self.otsu_threshold_widget.value
 
-    # stack them up along a time axis
-    segmented_imgs = np.stack(segmented_imgs, axis=0)
-    segmented_imgs = segmented_imgs.astype("uint8")
+    def set_first_opening_size(self):
+        self.first_opening_size = self.first_opening_size_widget.value
 
-    viewer = napari.current_viewer()
-    viewer.layers.clear()
-    viewer.add_labels(segmented_imgs, name="Labels")
+    def set_distance_threshold(self):
+        self.distance_threshold = self.distance_threshold_widget.value
 
+    def set_second_opening_size(self):
+        self.second_opening_size = self.second_opening_size_widget.value
 
-@magic_factory(
-    experiment_directory={"mode": "d"}, phase_plane={"choices": ["c1", "c2", "c3"]}
-)
-def SegmentOtsu(
-    output_prefix: str = "",
-    experiment_directory=Path(),
-    image_directory: str = "TIFF/",
-    FOV: str = "1-5",
-    interactive: bool = False,
-    phase_plane="c1",
-    OTSU_threshold=1.0,
-    first_opening_size: int = 2,
-    distance_threshold: int = 2,
-    second_opening_size: int = 1,
-    min_object_size: int = 25,
-):
+    def set_min_object_size(self):
+        self.min_object_size = self.min_object_size_widget.value
 
-    global params
-    params = dict()
-    params["experiment_name"] = output_prefix
-    params["experiment_directory"] = experiment_directory
-    params["image_directory"] = image_directory
-    params["analysis_directory"] = "analysis"
-    params["output"] = "TIFF"
-    params["FOV"] = FOV
-    params["interactive"] = interactive
-    params["phase_plane"] = phase_plane
+    def render_preview(self):
+        self.viewer.layers.clear()
+        self.set_params()
+        # TODO: Add ability to change these to other FOVs
+        valid_fov = self.valid_fovs[0]
+        specs = load_specs(self.params)
+        # Find first cell-containing peak
+        valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
+        ## pull out first fov & peak id with cells
+        sub_stack = load_stack(
+            self.params,
+            valid_fov,
+            valid_peak,
+            color="sub_{}".format(self.params["phase_plane"]),
+        )
 
-    params["segment"] = dict()
-    params["segment"]["OTSU_threshold"] = OTSU_threshold
-    params["segment"]["first_opening_size"] = first_opening_size
-    params["segment"]["distance_threshold"] = distance_threshold
-    params["segment"]["second_opening_size"] = second_opening_size
-    params["segment"]["min_object_size"] = min_object_size
-    params["num_analyzers"] = multiprocessing.cpu_count()
+        # image by image for debug
+        segmented_imgs = []
+        for sub_image in sub_stack:
+            segmented_imgs.append(segment_image(self.params, sub_image))
 
-    # useful folder shorthands for opening files
-    params["TIFF_dir"] = os.path.join(
-        params["experiment_directory"], params["image_directory"]
-    )
-    params["ana_dir"] = os.path.join(
-        params["experiment_directory"], params["analysis_directory"]
-    )
-    params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
-    params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
-    params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
-    params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
-    params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
-    params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
-    params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
+        # stack them up along a time axis
+        segmented_imgs = np.stack(segmented_imgs, axis=0)
+        segmented_imgs = segmented_imgs.astype("uint8")
 
-    ## if debug is checked, clicking run will launch this new widget. need to pass fov & peak
-    if params["interactive"]:
-        viewer = napari.current_viewer()
-        viewer.window.add_dock_widget(DebugOtsu, name="debugotsu")
-    else:
-        segmentOTSU(params)
+        if self.redraw_image:
+            images = self.viewer.add_image(sub_stack)
+            images.gamma = 0.25
+            labels = self.viewer.add_labels(segmented_imgs, name="Labels")
+            labels.opacity = 0.5
+            self.no_redraw = False
+
+        self.viewer.layers[1].data = segmented_imgs
+
+    def run(self):
+        self.set_params()
+        self.viewer.window._status_bar._toggle_activity_dock(True)
+        segmentOTSU(self.params, self.view_result_widget.value)

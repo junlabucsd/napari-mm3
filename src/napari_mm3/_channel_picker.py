@@ -1,19 +1,70 @@
-import os
 import pickle
-from pathlib import Path
-from turtle import shape
-import magicgui
 import napari
 import numpy as np
 import yaml
 import tifffile as tiff
 
+from ._function import information, warning
+from ._deriving_widgets import MM3Container, FOVChooserSingle
 
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 0.25])
 TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, 0.25])
 TRANSLUCENT_BLUE = np.array([0.0, 0.0, 1.0, 0.25])
 TRANSPARENT = np.array([0, 0, 0, 0])
 
+SPEC_TO_COLOR = {
+    -1: TRANSLUCENT_RED,
+    0: TRANSLUCENT_BLUE,
+    1: TRANSLUCENT_GREEN,
+}
+
+OVERLAY_TEXT = (
+    "Interactive channel picker. Click to change channel designation. "
+    "Color code:\n"
+    "    Green: A channel with bacteria, \n"
+    "    Blue: An empty channel without bacteria, to be used as a template. \n"
+    "    Red: A channel to ignore. \n"
+    "The number above the channel is the cross-correlation. \n"
+    "A higher value means that that the channel is more likely to be empty.\n"
+    "'Shapes' layer must be selected to change channel assignment."
+)
+
+
+# function for loading the channel masks
+def load_channel_masks(analysis_directory):
+    """Load channel masks dictionary. Should be .yaml but try pickle too."""
+    information("Loading channel masks dictionary.")
+
+    # try loading from .yaml before .pkl
+    try:
+        information("Path:", analysis_directory / "channel_masks.yaml")
+        with open( analysis_directory / "channel_masks.yaml", "r") as cmask_file:
+            channel_masks = yaml.safe_load(cmask_file)
+    except:
+        warning("Could not load channel masks dictionary from .yaml.")
+
+        try:
+            information("Path:", analysis_directory / "channel_masks.pkl")
+            with open( analysis_directory/ "channel_masks.pkl", "rb") as cmask_file:
+                channel_masks = pickle.load(cmask_file)
+        except ValueError:
+            warning("Could not load channel masks dictionary from .pkl.")
+
+    return channel_masks
+
+def load_specs(analysis_directory):
+    with (analysis_directory / "specs.yaml").open("r") as specs_file:
+        specs = yaml.safe_load(specs_file)
+    if specs == None:
+        file_location = analysis_directory / "specs.yaml"
+        raise FileNotFoundError(
+            f"Specs file not found. Looked for it in the following location:\n {file_location.absolute().as_posix()}"
+        )
+    return specs
+
+def save_specs(analysis_folder, specs):
+    with (analysis_folder / "specs.yaml").open("w") as specs_file:
+        yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
 
 def load_fov(image_directory, fov_id):
     print("getting files")
@@ -37,10 +88,12 @@ def load_fov(image_directory, fov_id):
     return np.array(image_fov_stack)
 
 
-def load_crosscorrs(analysis_directory, fov_id):
+def load_crosscorrs(analysis_directory, fov_id = None):
     print("Getting crosscorrs")
     with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
         cross_corrs = pickle.load(data)
+        if fov_id == None:
+            return cross_corrs
     fov_crosscorrs = cross_corrs[fov_id]
     average_crosscorrs = {
         peak: fov_crosscorrs[peak]["cc_avg"] for peak in fov_crosscorrs
@@ -48,81 +101,48 @@ def load_crosscorrs(analysis_directory, fov_id):
     return average_crosscorrs
 
 
-@magicgui.magic_factory(
-    auto_call=True,
-    data_directory={
-        "mode": "d",
-        "tooltip": "Directory within which all your data and analyses will be located.",
-    },
-    current_fov={
-        "widget_type": "SpinBox",
-        "min": 1,
-        "step": 1,
-        "tooltip": "The FOV for which you are performing labelling.",
-    },
-    image_directory={
-        "tooltip": "Required. Location (within working directory) for the input images. 'working directory/TIFF/' by default."
-    },
-    analysis_directory={
-        "tooltip": "Required. Location (within working directory) for outputting analysis. 'working directory/analysis/' by default."
-    },
-)
-def ChannelPicker(
-    viewer: napari.Viewer,
-    data_directory: Path = Path(),
-    image_directory: str = "TIFF",
-    analysis_directory: str = "analysis",
-    current_fov: int = 1,
-):
-    specs = None
-    with (data_directory / analysis_directory / "specs.yaml").open("r") as specs_file:
-        specs = yaml.safe_load(specs_file)
-    if specs == None:
-        file_location = data_directory / analysis_directory / "specs.yaml"
-        raise FileNotFoundError(
-            f"Specs file not found. Looked for it in the following location:\n {file_location.absolute().as_posix()}"
-        )
-
-    fov_id_list = list(specs.keys())
-    if current_fov not in fov_id_list:
-        raise IndexError(
-            f"FOV not found. Max FOV: {max(fov_id_list)}, Min FOV: {min(fov_id_list)}"
-        )
-    fov_id = current_fov
-
-    # Set up viewer.
-    viewer.layers.clear()
-    viewer.grid.enabled = False
-    viewer.text_overlay.text = (
-        "Interactive channel picker. Click to change channel designation. "
-        "Color code:\n"
-        "    Green: A channel with bacteria, \n"
-        "    Blue: An empty channel without bacteria, to be used as a template. \n"
-        "    Red: A channel to ignore. \n"
-        "The number above the channel is the cross-correlation. \n"
-        "A higher value means that that the channel is more likely to be empty.\n"
-        "'Shapes' layer must be selected to change channel assignment."
-    )
-    viewer.text_overlay.visible = True
-    viewer.text_overlay.color = "white"
-
-    print("Rendering images")
-    image_fov_stack = load_fov(data_directory / image_directory, fov_id)
+def display_image_stack(viewer: napari.Viewer, image_fov_stack):
     images = viewer.add_image(np.array(image_fov_stack))
     viewer.dims.current_step = (0, 0)
     images.reset_contrast_limits()
     images.gamma = 0.5
 
-    # Set up selection box dimensions
-    sorted_peaks = list(sorted(specs[fov_id].keys()))
-    sorted_specs = [specs[fov_id][p] for p in sorted_peaks]
-    height = image_fov_stack.shape[2]
-    width = image_fov_stack.shape[3] / len(sorted_peaks)
-    spread = width // 2
-    coords = [[[0, p - spread], [height, p + spread]] for p in sorted_peaks]
 
+def reset_fov(analysis_directory, fov, threshold):
+    try:
+        crosscorrs = load_crosscorrs(analysis_directory=analysis_directory)
+    except:
+        crosscorrs = None
+    try:
+        specs = load_specs(analysis_directory)
+    except:
+        specs = {}
+
+
+    if crosscorrs:
+        specs = load_specs(analysis_directory)
+        # update dictionary on initial guess from cross correlations
+        peaks = crosscorrs[fov]
+        specs[fov] = {}
+        for peak_id, xcorrs in peaks.items():
+            # default to don't analyze
+            specs[fov][peak_id] = -1
+            if xcorrs["cc_avg"] < threshold:
+                specs[fov][peak_id] = 1
+    else:
+        # We don't have crosscorrelations for this FOV -- default to ignoring peaks
+        specs[fov] = {}
+        channel_masks = load_channel_masks(analysis_directory)
+        for peaks in channel_masks[fov]:
+            specs[fov] = {peak_id: -1 for peak_id in peaks.keys()}
+ 
+    save_specs(analysis_folder=analysis_directory, specs=specs)
+    information(f"FOV {fov} added to specs.")
+
+def display_rectangles(
+    viewer: napari.Viewer, coords, sorted_peaks, sorted_specs, crosscorrs
+):
     # Set up crosscorrelation text
-    crosscorrs = load_crosscorrs(data_directory / analysis_directory, current_fov)
     properties = {"peaks": sorted_peaks, "crosscorrs": crosscorrs.values()}
     text_parameters = {
         "text": "{crosscorrs:.03f}",
@@ -132,13 +152,7 @@ def ChannelPicker(
         "color": "white",
     }
 
-    # Set box colors
-    spec_to_color = {
-        -1: TRANSLUCENT_RED,
-        0: TRANSLUCENT_BLUE,
-        1: TRANSLUCENT_GREEN,
-    }
-    curr_colors = [spec_to_color[n] for n in sorted_specs]
+    curr_colors = [SPEC_TO_COLOR[n] for n in sorted_specs]
 
     # Add channel boxes.
     shapes_layer = viewer.add_shapes(
@@ -151,39 +165,90 @@ def ChannelPicker(
         opacity=1,
     )
 
-    @shapes_layer.mouse_drag_callbacks.append
-    def update_classification(shapes_layer, event):
+    return shapes_layer
+
+
+class ChannelPicker(MM3Container):
+    def __init__(self, viewer: napari.Viewer):
+        super().__init__(viewer)
+
+        self.experiment_name_widget.hide()
+
+        # Set up viewer
+        self.viewer.grid.enabled = False
+        self.viewer.text_overlay.text = OVERLAY_TEXT
+        self.viewer.text_overlay.visible = True
+        self.viewer.text_overlay.color = "white"
+
+    def create_widgets(self):
+        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
+        self.fov_picker_widget = FOVChooserSingle(self.valid_fovs)
+        self.fov_picker_widget.connect_callback(self.update_fov)
+        self.append(self.fov_picker_widget)
+
+        self.specs = load_specs(self.analysis_folder)
+        self.update_fov()
+
+    def update_fov(self):
+        self.cur_fov = self.fov_picker_widget.fov
+        image_fov_stack = load_fov(self.TIFF_folder, self.cur_fov)
+        self.sorted_peaks = list(sorted(self.specs[self.cur_fov].keys()))
+        self.sorted_specs = [self.specs[self.cur_fov][p] for p in self.sorted_peaks]
+
+        self.crosscorrs = load_crosscorrs(self.analysis_folder, self.cur_fov)
+
+        self.viewer.layers.clear()
+        display_image_stack(self.viewer, image_fov_stack)
+
+        # Set up selection box dimensions
+        height = image_fov_stack.shape[2]
+        width = image_fov_stack.shape[3]
+
+        channel_height = height
+        channel_width = width / len(self.sorted_peaks)
+        spread = channel_width // 2
+        self.coords = [
+            [[0, p - spread], [channel_height, p + spread]] for p in self.sorted_peaks
+        ]
+
+        shapes_layer = display_rectangles(
+            self.viewer,
+            self.coords,
+            self.sorted_peaks,
+            self.sorted_specs,
+            self.crosscorrs,
+        )
+        shapes_layer.mouse_drag_callbacks.append(self.update_classification)
+
+    def update_classification(self, shapes_layer, event):
+        # Figure out what is under our cursors. If nothing, kick out.
         cursor_data_coordinates = shapes_layer.world_to_data(event.position)
         shapes_under_cursor = shapes_layer.get_value(cursor_data_coordinates)
+        # Nothing under cursor
         if shapes_under_cursor is None:
-            # Nothing found under cursor
             return
         shape_i = shapes_under_cursor[0]
+        # Image under cursor, but no channel
         if shape_i == None:
-            # Image under cursor, but no channel
             return
 
         # Would be nice to do this with modulo, but sadly we chose -1 0 1 as our convention instead of 0 1 2
         next_color = {-1: 0, 0: 1, 1: -1}
         # Switch to the next color!
-        sorted_specs[shape_i] = next_color[sorted_specs[shape_i]]
+        self.sorted_specs[shape_i] = next_color[self.sorted_specs[shape_i]]
 
+        # Redraw extant rectangles
+        curr_colors = [SPEC_TO_COLOR[n] for n in self.sorted_specs]
         ## update the shape color accordingly
-        curr_colors[shape_i] = spec_to_color[sorted_specs[shape_i]]
-
         # clear existing shapes
-        viewer.layers["Shapes"].data = []
-
+        print(self.viewer.layers)
+        self.viewer.layers[1].data = []
         # redraw with updated colors
-        shapes_layer.add(coords, shape_type="rectangle", face_color=curr_colors)
+        shapes_layer.add(self.coords, shape_type="rectangle", face_color=curr_colors)
 
         # update specs
-        specs[fov_id][sorted_peaks[shape_i]] = sorted_specs[shape_i]
-
-        with (data_directory / analysis_directory / "specs.yaml").open(
-            "w"
-        ) as specs_file:
-            yaml.dump(
-                data=specs, stream=specs_file, default_flow_style=False, tags=None
-            )
+        self.specs[self.cur_fov][self.sorted_peaks[shape_i]] = self.sorted_specs[
+            shape_i
+        ]
+        save_specs(self.analysis_folder, self.specs)
         print("Saved channel classifications to specs file")
