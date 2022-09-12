@@ -5,7 +5,7 @@ import yaml
 import tifffile as tiff
 
 from ._function import information, warning
-from ._deriving_widgets import MM3Container, FOVChooserSingle
+from ._deriving_widgets import MM3Container, FOVChooserSingle, InteractiveSpinBox
 from magicgui.widgets import FloatSpinBox
 
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 0.25])
@@ -53,6 +53,7 @@ def load_channel_masks(analysis_directory):
 
     return channel_masks
 
+
 def load_specs(analysis_directory):
     with (analysis_directory / "specs.yaml").open("r") as specs_file:
         specs = yaml.safe_load(specs_file)
@@ -63,9 +64,11 @@ def load_specs(analysis_directory):
         )
     return specs
 
+
 def save_specs(analysis_folder, specs):
     with (analysis_folder / "specs.yaml").open("w") as specs_file:
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
+
 
 def load_fov(image_directory, fov_id):
     print("getting files")
@@ -89,7 +92,7 @@ def load_fov(image_directory, fov_id):
     return np.array(image_fov_stack)
 
 
-def load_crosscorrs(analysis_directory, fov_id = None):
+def load_crosscorrs(analysis_directory, fov_id=None):
     print("Getting crosscorrs")
     with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
         cross_corrs = pickle.load(data)
@@ -197,25 +200,26 @@ class ChannelPicker(MM3Container):
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
         self.fov_picker_widget = FOVChooserSingle(self.valid_fovs)
-        self.fov_picker_widget.connect_callback(self.update_fov)
+        self.fov_picker_widget.connect(self.update_fov)
         self.append(self.fov_picker_widget)
 
-        self.threshold_widget = FloatSpinBox(
+        self.threshold_widget = InteractiveSpinBox(
             label="crosscorrelation threshold",
             tooltip="the autocorrelation threshold for discerning whether or not a given channel is empty.",
             min=0,
             max=1,
             value=0.97,
             step=0.005,
+            use_float=True,
         )
-        self.threshold_widget.changed.connect(self.update_threshold)
+        self.threshold_widget.connect(self.update_threshold)
         self.append(self.threshold_widget)
 
         self.threshold = self.threshold_widget.value
         self.update_fov()
 
     def update_fov(self):
-        self.cur_fov = self.fov_picker_widget.fov
+        self.cur_fov = self.fov_picker_widget.value
         self.specs = regenerate_fov_specs(
             self.analysis_folder, self.cur_fov, self.threshold, overwrite=False
         )
