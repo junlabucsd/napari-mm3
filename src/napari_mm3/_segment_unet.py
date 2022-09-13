@@ -382,6 +382,7 @@ def segmentUNet(params):
 
 class SegmentUnet(MM3Container):
     def create_widgets(self):
+        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
         self.fov_widget = FOVChooser(self.valid_fovs)
         self.plane_widget = PlanePicker(
             self.valid_planes,

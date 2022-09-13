@@ -46,9 +46,6 @@ class PeakCounter:
 
 
 class Annotate(MM3Container):
-    def __init__(self, napari_viewer: Viewer):
-        super().__init__(napari_viewer)
-
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See _deriving_widgets.MM3Container for details."""
         self.fov_widget = FOVChooserSingle(self.valid_fovs)
@@ -103,7 +100,7 @@ class Annotate(MM3Container):
     def save_out(self):
         fov = self.fov
         peak = self.peak_cntr.peak
-        training_dir : Path = self.analysis_folder / "training_dir"
+        training_dir: Path = self.analysis_folder / "training_dir"
         if not training_dir.exists():
             training_dir.mkdir()
 
@@ -111,7 +108,8 @@ class Annotate(MM3Container):
         cur_label = labels[self.viewer.dims.current_step[0], :, :]
 
         fileout_name = (
-            training_dir / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t{self.viewer.dims.current_step[0]:04d}_seg.tif"
+            training_dir
+            / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t{self.viewer.dims.current_step[0]:04d}_seg.tif"
         )
         tiff.imsave(fileout_name, cur_label)
         print("Training data saved")
@@ -132,7 +130,6 @@ class Annotate(MM3Container):
         self.viewer.layers.clear()
         self.viewer.add_image(img_stack)
 
-
         training_dir = self.analysis_folder / "training_dir"
         if not training_dir.exists():
             training_dir.mkdir()
@@ -141,8 +138,10 @@ class Annotate(MM3Container):
         mask_filenames = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*_seg.tif"
         filenames = list(training_dir.glob(mask_filenames))
         get_numbers = re.compile("t(\d+)_seg.tif")
-        timestamps = [int(get_numbers.findall(filename.name)[0]) for filename in filenames]
-        mask_stack = np.zeros(np.shape(img_stack), dtype = int)
+        timestamps = [
+            int(get_numbers.findall(filename.name)[0]) for filename in filenames
+        ]
+        mask_stack = np.zeros(np.shape(img_stack), dtype=int)
         for timestamp, filename in zip(timestamps, filenames):
             with tiff.TiffFile(filename) as tif:
                 mask_stack[timestamp, :, :] = tif.asarray()

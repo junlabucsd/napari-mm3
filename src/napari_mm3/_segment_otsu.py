@@ -259,13 +259,10 @@ def segmentOTSU(params, view_result: bool = False):
 
 
 class SegmentOtsu(MM3Container):
-    def __init__(self, napari_viewer: napari.Viewer):
-        super().__init__(napari_viewer)
-
-        self.viewer.grid.enabled = False
-
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
+        self.viewer.grid.enabled = False
+
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
         self.otsu_threshold_widget = FloatSpinBox(
             label="OTSU threshold",
@@ -287,7 +284,7 @@ class SegmentOtsu(MM3Container):
         self.min_object_size_widget = SpinBox(label="min object size", min=0, value=25)
         self.preview_widget = PushButton(label="generate preview", value=False)
         self.fov_widget = FOVChooser(self.valid_fovs)
-        self.view_result_widget = CheckBox(label = "view result")
+        self.view_result_widget = CheckBox(label="view result")
         self.run_widget = PushButton(label="run on chosen FOVs")
 
         self.plane_picker_widget.changed.connect(self.set_phase_plane)

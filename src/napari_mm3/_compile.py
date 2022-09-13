@@ -1377,13 +1377,12 @@ def compile(params):
             crosscorrs = None
             information("Could not load cross-correlations.")
 
-class Compile(MM3Container):
-    def __init__(self, napari_viewer: Viewer):
-        super().__init__(napari_viewer)
-        self.viewer.text_overlay.visible = False
 
+class Compile(MM3Container):
     def create_widgets(self):
         """Override method. Serves as the widget constructor. See MM3Container for more details."""
+        self.viewer.text_overlay.visible = False
+
         self.fov_widget = FOVChooser(self.valid_fovs)
         # TODO: Auto-infer?
         self.image_source_widget = ComboBox(
@@ -1454,33 +1453,6 @@ class Compile(MM3Container):
         self.set_channel_width()
         self.set_channel_separation()
 
-    def set_image_source(self):
-        self.image_source = self.image_source_widget.value
-
-    def set_phase_plane(self):
-        self.phase_plane = self.phase_plane_widget.value
-
-    # NOTE! This is different from the other functions in that it requires a parameter.
-    def set_fovs(self, new_fovs):
-        self.fovs = list(
-            set(new_fovs)
-        )  # set(new_fovs).intersection(set(self.valid_fovs))
-
-    def set_range(self):
-        self.time_range = (
-            self.time_range_widget.start.value,
-            self.time_range_widget.stop.value,
-        )
-
-    def set_seconds_per_frame(self):
-        self.seconds_per_frame = self.seconds_per_frame_widget.value
-
-    def set_channel_width(self):
-        self.channel_width = self.channel_width_widget.value
-
-    def set_channel_separation(self):
-        self.channel_separation = self.channel_separation_widget.value
-
     def run_analysis(self):
         """Performs Mother Machine Analysis"""
         # global params. Ideally, this is rendered obsolete. However, old code uses this
@@ -1526,3 +1498,30 @@ class Compile(MM3Container):
         self.viewer.window._status_bar._toggle_activity_dock(True)
 
         compile(params)
+
+    def set_image_source(self):
+        self.image_source = self.image_source_widget.value
+
+    def set_phase_plane(self):
+        self.phase_plane = self.phase_plane_widget.value
+
+    # NOTE! This is different from the other functions in that it requires a parameter.
+    def set_fovs(self, new_fovs):
+        self.fovs = list(
+            set(new_fovs)
+        )  # set(new_fovs).intersection(set(self.valid_fovs))
+
+    def set_range(self):
+        self.time_range = (
+            self.time_range_widget.start.value,
+            self.time_range_widget.stop.value,
+        )
+
+    def set_seconds_per_frame(self):
+        self.seconds_per_frame = self.seconds_per_frame_widget.value
+
+    def set_channel_width(self):
+        self.channel_width = self.channel_width_widget.value
+
+    def set_channel_separation(self):
+        self.channel_separation = self.channel_separation_widget.value

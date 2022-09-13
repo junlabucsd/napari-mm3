@@ -186,8 +186,8 @@ def regenerate_fov_specs(analysis_folder, fov, threshold, overwrite=False):
 
 
 class ChannelPicker(MM3Container):
-    def __init__(self, viewer: napari.Viewer):
-        super().__init__(viewer)
+    def create_widgets(self):
+        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
 
         self.experiment_name_widget.hide()
 
@@ -197,8 +197,6 @@ class ChannelPicker(MM3Container):
         self.viewer.text_overlay.visible = True
         self.viewer.text_overlay.color = "white"
 
-    def create_widgets(self):
-        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
         self.fov_picker_widget = FOVChooserSingle(self.valid_fovs)
         self.fov_picker_widget.connect(self.update_fov)
         self.append(self.fov_picker_widget)
