@@ -1378,6 +1378,28 @@ def compile(params):
             information("Could not load cross-correlations.")
 
 
+def load_fov(image_directory, fov_id):
+    print("getting files")
+    found_files = image_directory.glob(f"*xy{fov_id:02d}.tif")
+    found_files = [filepath.name for filepath in found_files]  # remove pre-path
+    print("sorting files")
+    found_files = sorted(found_files)  # should sort by timepoint
+
+    if len(found_files) == 0:
+        print("No data found for FOV " + str(fov_id))
+        return
+
+    image_fov_stack = []
+
+    print("Loading files")
+    for img_filename in found_files:
+        with tiff.TiffFile(image_directory / img_filename) as tif:
+            image_fov_stack.append(tif.asarray())
+
+    print("numpying files")
+    return np.array(image_fov_stack)
+
+
 class Compile(MM3Container):
     def create_widgets(self):
         """Override method. Serves as the widget constructor. See MM3Container for more details."""
@@ -1452,6 +1474,17 @@ class Compile(MM3Container):
         self.set_seconds_per_frame()
         self.set_channel_width()
         self.set_channel_separation()
+
+        self.display_image()
+
+    def display_image(self):
+        self.viewer.layers.clear()
+        self.viewer.text_overlay.visible = False
+        image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
+        images = self.viewer.add_image(np.array(image_fov_stack))
+        self.viewer.dims.current_step = (0, 0)
+        images.reset_contrast_limits()
+        images.gamma = 0.5
 
     def run_analysis(self):
         """Performs Mother Machine Analysis"""
