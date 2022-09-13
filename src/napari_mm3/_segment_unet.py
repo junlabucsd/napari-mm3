@@ -6,10 +6,12 @@ import multiprocessing
 import numpy as np
 import napari
 from magicgui import magic_factory, magicgui
+from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox, PushButton
 from napari.types import ImageData, LabelsData
 import os
 
 from pathlib import Path
+from napari import Viewer
 from skimage import segmentation, morphology
 from skimage.filters import median
 
@@ -17,6 +19,7 @@ import six
 import tifffile as tiff
 
 from ._function import information, load_specs, load_stack
+from ._deriving_widgets import FOVChooser, MM3Container, PlanePicker
 
 # loss functions for model
 def dice_coeff(y_true, y_pred):
@@ -178,10 +181,10 @@ def segmentUNet(params):
 
                 # robust normalization of peak's image stack to 1
                 # max_val = np.max(med_stack)
-                img_avg = np.mean(img_stack,axis=(1,2))
-                img_std = np.std(img_stack,axis=(1,2))
-                #permute axes to make use of numpy slicing then permute back
-                img_stack = np.transpose((np.transpose(img_stack)-img_avg)/img_std)
+                img_avg = np.mean(img_stack, axis=(1, 2))
+                img_std = np.std(img_stack, axis=(1, 2))
+                # permute axes to make use of numpy slicing then permute back
+                img_stack = np.transpose((np.transpose(img_stack) - img_avg) / img_std)
 
             # trim and pad image to correct size
             img_stack = img_stack[:, : unet_shape[0], : unet_shape[1]]
@@ -233,7 +236,7 @@ def segmentUNet(params):
                 tiff.imwrite(
                     os.path.join(params["pred_dir"], pred_filename),
                     int_preds,
-                    compression=('zlib', 4),
+                    compression=("zlib", 4),
                 )
 
             if params["interactive"]:
@@ -287,7 +290,7 @@ def segmentUNet(params):
                 tiff.imwrite(
                     os.path.join(params["seg_dir"], seg_filename),
                     segmented_imgs,
-                    compression=('zlib', 4),
+                    compression=("zlib", 4),
                 )
 
                 out_counter = 0
@@ -328,15 +331,7 @@ def segmentUNet(params):
     information("Loading experiment parameters.")
     p = params
 
-    if p["FOV"]:
-        if "-" in p["FOV"]:
-            user_spec_fovs = range(
-                int(p["FOV"].split("-")[0]), int(p["FOV"].split("-")[1]) + 1
-            )
-        else:
-            user_spec_fovs = [int(val) for val in p["FOV"].split(",")]
-    else:
-        user_spec_fovs = []
+    user_spec_fovs = params["FOV"]
 
     information("Using {} threads for multiprocessing.".format(p["num_analyzers"]))
 
@@ -385,66 +380,94 @@ def segmentUNet(params):
     information("Finished segmentation.")
 
 
-@magic_factory(
-    experiment_directory={"mode": "d"},
-    phase_plane={"choices": ["c1", "c2", "c3"]},
-    model_file={"mode": "r"},
-    cell_class_threshold={"widget_type": "FloatSlider", "max": 1},
-)
-def SegmentUnet(
-    experiment_name: str,
-    experiment_directory=Path(),
-    model_file=Path(),
-    image_directory: str = "TIFF/",
-    FOV: str = "1",
-    interactive: bool = False,
-    phase_plane="c1",
-    min_object_size: int = 25,
-    batch_size: int = 210,
-    cell_class_threshold: float = 0.60,
-    normalize_to_one: bool = False,
-    image_height: int = 256,
-    image_width: int = 32,
-):
-    global params
-    params = dict()
-    params["experiment_name"] = experiment_name
-    params["experiment_directory"] = experiment_directory
-    params["image_directory"] = image_directory
-    params["analysis_directory"] = "analysis"
-    params["output"] = "TIFF"
-    params["FOV"] = FOV
-    params["interactive"] = interactive
-    params["phase_plane"] = phase_plane
-    params["subtract"] = dict()
-    params["segment"] = dict()
-    params["segment"]["model_file"] = model_file
-    params["segment"]["trained_model_image_height"] = image_height
-    params["segment"]["trained_model_image_width"] = image_width
-    params["segment"]["batch_size"] = batch_size
-    params["segment"]["cell_class_threshold"] = cell_class_threshold
-    params["segment"]["save_predictions"] = False
-    params["segment"]["min_object_size"] = min_object_size
-    params["segment"]["normalize_to_one"] = normalize_to_one
-    params["num_analyzers"] = multiprocessing.cpu_count()
+class SegmentUnet(MM3Container):
+    def create_widgets(self):
+        self.fov_widget = FOVChooser(self.valid_fovs)
+        self.plane_widget = PlanePicker(
+            self.valid_planes,
+            label="phase plane",
+            tooltip="pick the phase plane. first channel is c1, second is c2, etc.",
+        )
+        self.model_file_widget = FileEdit(
+            mode="r",
+            label="model file",
+            tooltip="required. denotes where the model file is stored.",
+        )
+        self.min_object_size_widget = SpinBox(
+            label="min object size",
+            tooltip="the minimum size for an object to be recognized",
+            value=25,
+            min=0,
+            max=100,
+        )
+        self.batch_size_widget = SpinBox(
+            label="batch size",
+            tooltip="how large to make the batches. different speeds are faster on different computers.",
+            min=1,
+            max=9999,
+        )
+        self.cell_class_threshold_widget = FloatSlider(
+            label="cell class threshold", min=0, max=1.0, value=0.6
+        )
+        self.normalize_widget = CheckBox(label="normalize to one", value=True)
+        self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
+        self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
+        self.interactive_widget = CheckBox(label="interactive", value=False)
+        self.run_widget = PushButton(label="run")
 
-    # useful folder shorthands for opening files
-    params["TIFF_dir"] = os.path.join(
-        params["experiment_directory"], params["image_directory"]
-    )
-    params["ana_dir"] = os.path.join(
-        params["experiment_directory"], params["analysis_directory"]
-    )
-    params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
-    params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
-    params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
-    params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
-    params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
-    params["pred_dir"] = os.path.join(params["ana_dir"], "predictions")
-    params["foci_seg_dir"] = os.path.join(params["ana_dir"], "segmented_foci")
-    params["foci_pred_dir"] = os.path.join(params["ana_dir"], "predictions_foci")
-    params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
-    params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
-    params["foci_track_dir"] = os.path.join(params["ana_dir"], "tracking_foci")
+        self.append(self.fov_widget)
+        self.append(self.plane_widget)
+        self.append(self.model_file_widget)
+        self.append(self.min_object_size_widget)
+        self.append(self.batch_size_widget)
+        self.append(self.cell_class_threshold_widget)
+        self.append(self.normalize_widget)
+        self.append(self.height_widget)
+        self.append(self.width_widget)
+        self.append(self.interactive_widget)
+        self.append(self.run_widget)
 
-    segmentUNet(params)
+        self.fov_widget.connect_callback(self.set_fovs)
+        self.run_widget.changed.connect(self.run)
+
+    def run(self):
+        params = dict()
+        params["experiment_name"] = self.experiment_name
+        params["image_directory"] = self.TIFF_folder
+        params["FOV"] = self.fovs
+        params["interactive"] = self.interactive_widget.value
+        params["phase_plane"] = self.plane_widget.value
+        params["subtract"] = dict()
+        params["segment"] = dict()
+        params["segment"]["model_file"] = self.model_file_widget.value
+        params["segment"]["trained_model_image_height"] = self.height_widget.value
+        params["segment"]["trained_model_image_width"] = self.width_widget.value
+        params["segment"]["batch_size"] = self.batch_size_widget.value
+        params["segment"][
+            "cell_class_threshold"
+        ] = self.cell_class_threshold_widget.value
+        params["segment"]["save_predictions"] = False
+        params["segment"]["min_object_size"] = self.min_object_size_widget.value
+        params["segment"]["normalize_to_one"] = self.normalize_widget.value
+        params["num_analyzers"] = multiprocessing.cpu_count()
+
+        # useful folder shorthands for opening files
+        params["TIFF_dir"] = self.TIFF_folder
+        params["ana_dir"] = self.analysis_folder
+
+        params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
+        params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
+        params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
+        params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
+        params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
+        params["pred_dir"] = os.path.join(params["ana_dir"], "predictions")
+        params["foci_seg_dir"] = os.path.join(params["ana_dir"], "segmented_foci")
+        params["foci_pred_dir"] = os.path.join(params["ana_dir"], "predictions_foci")
+        params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
+        params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
+        params["foci_track_dir"] = os.path.join(params["ana_dir"], "tracking_foci")
+
+        segmentUNet(params)
+
+    def set_fovs(self, fovs):
+        self.fovs = fovs
