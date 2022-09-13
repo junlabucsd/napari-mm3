@@ -252,7 +252,6 @@ class FOVChooser(LineEdit):
     """Widget for choosing multiple FOVs."""
 
     def __init__(self, permitted_FOVs):
-        print(permitted_FOVs)
         self.min_FOV = min(permitted_FOVs)
         self.max_FOV = max(permitted_FOVs)
         label_str = f"FOVs ({self.min_FOV}-{self.max_FOV})"
