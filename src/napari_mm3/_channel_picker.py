@@ -71,29 +71,29 @@ def save_specs(analysis_folder, specs):
 
 
 def load_fov(image_directory, fov_id):
-    print("getting files")
+    information("getting files")
     found_files = image_directory.glob(f"*xy{fov_id:02d}.tif")
     found_files = [filepath.name for filepath in found_files]  # remove pre-path
-    print("sorting files")
+    information("sorting files")
     found_files = sorted(found_files)  # should sort by timepoint
 
     if len(found_files) == 0:
-        print("No data found for FOV " + str(fov_id))
+        information("No data found for FOV " + str(fov_id))
         return
 
     image_fov_stack = []
 
-    print("Loading files")
+    information("Loading files")
     for img_filename in found_files:
         with tiff.TiffFile(image_directory / img_filename) as tif:
             image_fov_stack.append(tif.asarray())
 
-    print("numpying files")
+    information("numpying files")
     return np.array(image_fov_stack)
 
 
 def load_crosscorrs(analysis_directory, fov_id=None):
-    print("Getting crosscorrs")
+    information("Getting crosscorrs")
     with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
         cross_corrs = pickle.load(data)
         if fov_id == None:
@@ -271,7 +271,7 @@ class ChannelPicker(MM3Container):
         curr_colors = [SPEC_TO_COLOR[n] for n in self.sorted_specs]
         ## update the shape color accordingly
         # clear existing shapes
-        print(self.viewer.layers)
+        # information(self.viewer.layers)
         self.viewer.layers[1].data = []
         # redraw with updated colors
         shapes_layer.add(self.coords, shape_type="rectangle", face_color=curr_colors)
@@ -281,9 +281,9 @@ class ChannelPicker(MM3Container):
             shape_i
         ]
         save_specs(self.analysis_folder, self.specs)
-        print("Saved channel classifications to specs file")
+        information("Saved channel classifications to specs file")
 
-    def update_threshold(self):
+    def update_threshold(self,shapes_layer):
         self.threshold = self.threshold_widget.value
         self.specs = regenerate_fov_specs(
             self.analysis_folder, self.cur_fov, self.threshold, overwrite=True
@@ -291,10 +291,11 @@ class ChannelPicker(MM3Container):
         self.sorted_peaks = list(sorted(self.specs[self.cur_fov].keys()))
         self.sorted_specs = [self.specs[self.cur_fov][p] for p in self.sorted_peaks]
         self.viewer.layers.pop()
-        display_rectangles(
+        shapes_layer = display_rectangles(
             self.viewer,
             self.coords,
             self.sorted_peaks,
             self.sorted_specs,
             self.crosscorrs,
         )
+        shapes_layer.mouse_drag_callbacks.append(self.update_classification)
