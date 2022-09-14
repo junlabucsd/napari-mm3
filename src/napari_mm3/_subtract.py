@@ -147,7 +147,7 @@ def subtract_fluor(params, cropped_channel, empty_channel):
 
 
 def subtract_fluor_helper(all_args):
-    return subtract_phase(*all_args)
+    return subtract_fluor(*all_args)
 
 
 # this function is used when one FOV doesn't have an empty
@@ -244,17 +244,16 @@ def subtract_fov_stack(
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
         subtract_pairs = zip(image_data, avg_empty_stack)
+        subtract_args = [(params, pair[0], pair[1]) for pair in subtract_pairs]
 
         # set up multiprocessing pool to do subtraction. Should wait until finished
         pool = Pool(processes=params["num_analyzers"])
 
         if method == "phase":
-            subtract_args = [(params, pair[0], pair[1]) for pair in subtract_pairs]
             subtracted_imgs = pool.map(
                 subtract_phase_helper, subtract_args, chunksize=10
             )
         elif method == "fluor":
-            subtract_args = [(params, pair[1], pair[0]) for pair in subtract_pairs]
             subtracted_imgs = pool.map(
                 subtract_fluor_helper, subtract_args, chunksize=10
             )
@@ -503,7 +502,7 @@ def subtract(
     fluor_mode: bool,
     preview=False,
 ):
-    """mm3_Subtract.py averages empty channels and then subtractions them from channels with cells"""
+    """mm3_Subtract.py averages empty channels and then subtracts them from channels with cells"""
 
     # Load the project parameters file
     information("Loading experiment parameters.")
@@ -663,8 +662,8 @@ class Subtract(MM3Container):
         params["num_analyzers"] = multiprocessing.cpu_count()
 
         # useful folder shorthands for opening files
-        params["TIFF_dir"] = self.image_directory
-        params["ana_dir"] = self.analysis_directory
+        params["TIFF_dir"] = self.TIFF_folder
+        params["ana_dir"] = self.analysis_folder
         params["hdf5_dir"] = params["ana_dir"] / "hdf5"
         params["chnl_dir"] = params["ana_dir"] / "channels"
         params["sub_dir"] = params["ana_dir"] / "subtracted"

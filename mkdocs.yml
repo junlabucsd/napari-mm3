@@ -5,7 +5,7 @@ site_author: Gursharan Ahir, Ryan Thiermann
 theme: readthedocs
 
 
-repo_url: https://github.com/ahirsharan/napari-mm3
+repo_url: https://github.com/junlabucsd/napari-mm3
 
 pages:
 - Home: index.md
