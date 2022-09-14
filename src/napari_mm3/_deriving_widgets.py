@@ -1,3 +1,4 @@
+from unicodedata import decimal
 from napari import Viewer
 from napari.utils.notifications import show_info
 from ._function import range_string_to_indices
@@ -146,63 +147,95 @@ class TimeRangeSelector(RangeEdit):
         )
 
 
-class FOVChooserSingle(Container):
-    def __init__(self, valid_fovs):
-        super().__init__(layout="horizontal", labels=False)
-        self.valid_fovs = valid_fovs
-        if valid_fovs != []:
-            self.min_FOV = min(self.valid_fovs)
-            self.max_FOV = max(self.valid_fovs)
-            self.name = f"FOV ({self.min_FOV}-{self.max_FOV})"
-        else:
-            self.min_FOV = "not found"
-            self.max_FOV = "not found"
-            self.name = f"FOV (unknown-unknown)"
-        self.pick_fov_widget = LineEdit(
-            value=self.min_FOV,
-            tooltip="The FOV you would like to work with.",
+class InteractiveSpinBox(Container):
+    """Our custom version of magicgui's 'SpinBox' widget.
+     * Supports floats (auto-rounds to 3 decimal points).
+     * 'Atomic' updates: If an expensive (single-thread) method is called on value change, this will work
+        as expected (unlike the default spinbox).
+    Try to only use this in contexts where you would like to perform single-threaded operations
+    upon changing a spinbox."""
+
+    def __init__(
+        self, min=0, max=99999, value=1, step=1, tooltip="", use_float=False, label=""
+    ):
+        super().__init__(
+            layout="horizontal",
+            labels=False,
+            tooltip=tooltip,
         )
-        self.next_fov_widget = PushButton(label="+")
-        self.prev_fov_widget = PushButton(label="-")
+        self.margins = (0, 0, 0, 0)
+        self.min = min
+        self.max = max
+        self.step = step
+        self.value = value
+        self.use_float = use_float
+        self.name = label
 
-        self.pick_fov_widget.changed.connect(self.set_fov)
-        self.next_fov_widget.changed.connect(self.increment_fov)
-        self.prev_fov_widget.changed.connect(self.decrement_fov)
+        self.text_widget = LineEdit(
+            value=self.value,
+        )
+        self.increment_widget = PushButton(label="+")
+        self.decrement_widget = PushButton(label="-")
 
-        self.append(self.pick_fov_widget)
-        self.append(self.next_fov_widget)
-        self.append(self.prev_fov_widget)
+        self.text_widget.changed.connect(self.set_value)
+        self.increment_widget.changed.connect(self.increment)
+        self.decrement_widget.changed.connect(self.decrement)
 
-        self.fov = self.min_FOV
+        self.append(self.text_widget)
+        self.append(self.increment_widget)
+        self.append(self.decrement_widget)
 
-    def set_fov(self):
+    def set_value(self):
         try:
-            self.fov = int(self.pick_fov_widget.value)
+            if self.use_float:
+                self.value = float(self.text_widget.value)
+            else:
+                self.value = int(self.text_widget.value)
         except:
-            # Int casting failure is not a big deal. No point throwing an exception.
-            print("Attempted to access invalid FOV")
+            # Casting failure is not a big deal. No point throwing an exception.
+            print("Failed to turn text into a number.")
             return
-        old_fov = self.fov
-        # Enforce bounds on self.fov
-        self.fov = max(self.min_FOV, self.fov)
-        self.fov = min(self.max_FOV, self.fov)
-        if self.fov != old_fov:
-            show_info("You've hit the outer edges of available FOVs!")
-        # After setting bounds, update UI accordingly
-        self.pick_fov_widget.value = self.fov
+        # Enforce bounds on self.value
+        self.value = max(self.min, self.value)
+        self.value = min(self.max, self.value)
 
-    def connect_callback(self, func):
-        self.pick_fov_widget.changed.connect(func)
+    def connect(self, func):
+        self.text_widget.changed.connect(func)
 
-    def increment_fov(self):
-        # Update UI; then, act as if the user changed the number manually
-        self.pick_fov_widget.value = self.fov + 1
-        self.set_fov()
+    def increment(self):
+        # Update internal value, then update displayed value.
+        # Desyncing the 'display' and 'internal' values allows us to display
+        # rounded floating points.
+        self.value = self.value + self.step
+        self.value = min(self.max, self.value)
+        if self.use_float:
+            self.text_widget.value = f"{self.value:.3f}"
+        else:
+            self.text_widget.value = self.value
 
-    def decrement_fov(self):
-        # Update UI; then, act as if the user changed the number manually
-        self.pick_fov_widget.value = self.fov - 1
-        self.set_fov()
+    def decrement(self):
+        # Update internal value, then update displayed value.
+        self.value = self.value - self.step
+        self.value = max(self.min, self.value)
+        if self.use_float:
+            self.text_widget.value = f"{self.value:.3f}"
+        else:
+            self.text_widget.value = self.value
+
+
+class FOVChooserSingle(InteractiveSpinBox):
+    def __init__(self, valid_fovs):
+        self.min_FOV = min(valid_fovs)
+        self.max_FOV = max(valid_fovs)
+        super().__init__(
+            label=f"FOV ({self.min_FOV}-{self.max_FOV})",
+            min=self.min_FOV,
+            max=self.max_FOV,
+            value=self.min_FOV,
+            step=1,
+            tooltip="Pick an FOV",
+            use_float=False,
+        )
 
 
 class PlanePicker(ComboBox):
@@ -219,7 +252,6 @@ class FOVChooser(LineEdit):
     """Widget for choosing multiple FOVs."""
 
     def __init__(self, permitted_FOVs):
-        print(permitted_FOVs)
         self.min_FOV = min(permitted_FOVs)
         self.max_FOV = max(permitted_FOVs)
         label_str = f"FOVs ({self.min_FOV}-{self.max_FOV})"

@@ -1,8 +1,10 @@
 from magicgui.widgets import PushButton
+from pathlib import Path
 import numpy as np
 import tifffile as tiff
 import yaml
 import os
+import re
 from napari import Viewer
 
 from ._deriving_widgets import MM3Container, FOVChooserSingle
@@ -44,9 +46,6 @@ class PeakCounter:
 
 
 class Annotate(MM3Container):
-    def __init__(self, napari_viewer: Viewer):
-        super().__init__(napari_viewer)
-
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See _deriving_widgets.MM3Container for details."""
         self.fov_widget = FOVChooserSingle(self.valid_fovs)
@@ -62,10 +61,10 @@ class Annotate(MM3Container):
             label="save", tooltip="save the current label"
         )
 
-        self.fov = self.fov_widget.fov
+        self.fov = self.fov_widget.value
         self.peak_cntr = PeakCounter(load_specs(self.analysis_folder), self.fov)
 
-        self.fov_widget.connect_callback(self.change_fov)
+        self.fov_widget.connect(self.change_fov)
         self.next_peak_widget.clicked.connect(self.next_peak)
         self.prior_peak_widget.clicked.connect(self.prior_peak)
         self.save_out_widget.changed.connect(self.save_out)
@@ -93,7 +92,7 @@ class Annotate(MM3Container):
         # Save the previous FOV. Update the current fov, reset the peak. Display the new FOV.
         self.save_out()
 
-        self.fov = self.fov_widget.fov
+        self.fov = self.fov_widget.value
         self.peak_cntr.set_fov(self.fov)
 
         self.load_data()
@@ -101,15 +100,18 @@ class Annotate(MM3Container):
     def save_out(self):
         fov = self.fov
         peak = self.peak_cntr.peak
-        training_dir = self.data_directory_widget.value / "training_data"
-        if not os.path.isdir(training_dir):
-            os.mkdir(training_dir)
+        training_dir: Path = self.analysis_folder / "training_dir"
+        if not training_dir.exists():
+            training_dir.mkdir()
 
         labels = self.viewer.layers[1].data.astype(np.uint8)
+        cur_label = labels[self.viewer.dims.current_step[0], :, :]
+
         fileout_name = (
-            training_dir / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_seg.tif"
+            training_dir
+            / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t{self.viewer.dims.current_step[0]:04d}_seg.tif"
         )
-        tiff.imsave(fileout_name, labels)
+        tiff.imsave(fileout_name, cur_label)
         print("Training data saved")
 
     def load_data(self):
@@ -121,27 +123,26 @@ class Annotate(MM3Container):
             / "channels"
             / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_c1.tif"
         )
-        mask_filename = (
-            self.analysis_folder
-            / "segmented"
-            / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_seg_otsu.tif"
-        )
 
-        with tiff.TiffFile(mask_filename) as tif:
-            mask_stack = tif.asarray()
         with tiff.TiffFile(img_filename) as tif:
             img_stack = tif.asarray()
 
         self.viewer.layers.clear()
         self.viewer.add_image(img_stack)
 
-        try:
-            self.viewer.add_labels(mask_stack, name="Labels")
-        except:
-            pass
+        training_dir = self.analysis_folder / "training_dir"
+        if not training_dir.exists():
+            training_dir.mkdir()
 
-        current_layers = [l.name for l in self.viewer.layers]
-
-        if not "Labels" in current_layers:
-            empty = np.zeros(np.shape(img_stack), dtype=int)
-            self.viewer.add_labels(empty, name="Labels")
+        # Load all masks from given fov/peak. Add them to viewer.
+        mask_filenames = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*_seg.tif"
+        filenames = list(training_dir.glob(mask_filenames))
+        get_numbers = re.compile("t(\d+)_seg.tif")
+        timestamps = [
+            int(get_numbers.findall(filename.name)[0]) for filename in filenames
+        ]
+        mask_stack = np.zeros(np.shape(img_stack), dtype=int)
+        for timestamp, filename in zip(timestamps, filenames):
+            with tiff.TiffFile(filename) as tif:
+                mask_stack[timestamp, :, :] = tif.asarray()
+        self.viewer.add_labels(mask_stack, name="Labels")

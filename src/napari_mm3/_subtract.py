@@ -54,8 +54,12 @@ def subtract_phase(params, cropped_channel, empty_channel):
     try:
         match_result = match_template(padded_chnl, empty_channel)
     except:
-        information("match_template failed. This is likely due to cropping issues with the image of the channel containing bacteria.")
-        information("Consider marking this channel as disabled in specs.yaml, or increasing the pad_size.")
+        information(
+            "match_template failed. This is likely due to cropping issues with the image of the channel containing bacteria."
+        )
+        information(
+            "Consider marking this channel as disabled in specs.yaml, or increasing the pad_size."
+        )
         raise
     # get row and colum of max correlation value in correlation array
     y, x = np.unravel_index(np.argmax(match_result), match_result.shape)
@@ -163,7 +167,9 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
             to_fov,
             color,
         )
-        tiff.imwrite(empty_dir / empty_filename, avg_empty_stack, compression=('zlib', 4))
+        tiff.imwrite(
+            empty_dir / empty_filename, avg_empty_stack, compression=("zlib", 4)
+        )
 
     if params["output"] == "HDF5":
         h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % to_fov), "r+")
@@ -270,7 +276,9 @@ def subtract_fov_stack(
                 color,
             )
             # TODO: Make this respect compression levels
-            tiff.imwrite(sub_dir / sub_filename, subtracted_stack, compression=('zlib', 4))  # save it
+            tiff.imwrite(
+                sub_dir / sub_filename, subtracted_stack, compression=("zlib", 4)
+            )  # save it
 
             # if fov_id < 3:
             if preview:
@@ -457,7 +465,9 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
             fov_id,
             color,
         )
-        tiff.imwrite(empty_dir / empty_filename, avg_empty_stack, compression=('zlib', 4))
+        tiff.imwrite(
+            empty_dir / empty_filename, avg_empty_stack, compression=("zlib", 4)
+        )
 
     if params["output"] == "HDF5":
         h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r+")
@@ -594,49 +604,10 @@ def subtract(
         pass
 
 
-def subtract_prepare_params(
-    experiment_name,
-    experiment_directory,
-    analysis_directory,
-    image_directory,
-    FOV,
-    alignment_pad,
-):
-    # global params
-    params = dict()
-    params["experiment_name"] = experiment_name
-    params["experiment_directory"] = experiment_directory
-    params["output"] = "TIFF"
-    params["FOV"] = FOV
-
-    params["subtract"] = dict()
-    params["subtract"]["do_empties"] = True
-    params["subtract"]["do_subtraction"] = True
-    params["subtract"]["alignment_pad"] = alignment_pad
-
-    params["num_analyzers"] = multiprocessing.cpu_count()
-
-    # useful folder shorthands for opening files
-    params["TIFF_dir"] = os.path.join(image_directory)
-    params["ana_dir"] = os.path.join(analysis_directory)
-    params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
-    params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
-    params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
-    params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
-    params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
-    params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
-    params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
-
-    return params
-
-
 class Subtract(MM3Container):
-    def __init__(self, napari_viewer: Viewer):
-        super().__init__(napari_viewer)
-        self.viewer.text_overlay.visible = False
-
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
+        self.viewer.text_overlay.visible = False
         self.fov_widget = FOVChooser(self.valid_fovs)
         self.alignment_pad_widget = SpinBox(
             label="alignment pad",
@@ -679,14 +650,29 @@ class Subtract(MM3Container):
         # Only need this if we will be using a progress bar, and
         # currently we don't do progress bars with multithreading.
         # self.viewer.window._status_bar._toggle_activity_dock(True)
-        params = subtract_prepare_params(
-            experiment_name=self.experiment_name,
-            experiment_directory=self.data_directory,
-            analysis_directory=self.analysis_folder,
-            image_directory=self.TIFF_folder,
-            FOV=self.fovs,
-            alignment_pad=self.alignment_pad,
-        )
+        params = dict()
+        params["experiment_name"] = self.experiment_name
+        params["output"] = "TIFF"
+        params["FOV"] = self.fovs
+
+        params["subtract"] = dict()
+        params["subtract"]["do_empties"] = True
+        params["subtract"]["do_subtraction"] = True
+        params["subtract"]["alignment_pad"] = self.alignment_pad
+
+        params["num_analyzers"] = multiprocessing.cpu_count()
+
+        # useful folder shorthands for opening files
+        params["TIFF_dir"] = self.image_directory
+        params["ana_dir"] = self.analysis_directory
+        params["hdf5_dir"] = params["ana_dir"] / "hdf5"
+        params["chnl_dir"] = params["ana_dir"] / "channels"
+        params["sub_dir"] = params["ana_dir"] / "subtracted"
+        params["empty_dir"] = params["ana_dir"] / "empties"
+        params["seg_dir"] = params["ana_dir"] / "segmented"
+        params["cell_dir"] = params["ana_dir"] / "cell_data"
+        params["track_dir"] = params["ana_dir"] / "tracking"
+
         subtract(
             params,
             self.analysis_folder,

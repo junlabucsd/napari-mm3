@@ -444,6 +444,7 @@ def make_lineages_fov(params, fov_id, specs):
 
 
 def Lineage(params):
+    """Produces a lineage image for the first valid FOV containing cells"""
     # plotting lineage trees for complete cells
     # load specs file
     with open(os.path.join(params["ana_dir"], "specs.yaml"), "r") as specs_file:
@@ -460,19 +461,18 @@ def Lineage(params):
     if not os.path.exists(lin_dir):
         os.makedirs(lin_dir)
 
-    for fov_id in sorted(specs.keys()):
-        fov_id_d = fov_id
-        # determine which peaks are to be analyzed (those which have been subtracted)
-        for peak_id, spec in six.iteritems(specs[fov_id]):
-            if (
-                spec == 1
-            ):  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
-                peak_id_d = peak_id
-                sample_img = load_stack(params, fov_id, peak_id)
+    # Find the first valid FOV with an available peak
+    for fov in params["FOV"]:
+        peak_found = False
+        # Analyze the first valid peak
+        for peak_id, spec in six.iteritems(specs[fov]):
+            if spec == 1:  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
+                sample_img = load_stack(params, fov, peak_id)
                 peak_len = np.shape(sample_img)[0]
-
+                peak_found = True
                 break
-        break
+        if peak_found:
+            break
 
     viewer = napari.current_viewer()
     viewer.layers.clear()
@@ -482,12 +482,9 @@ def Lineage(params):
     viewer.layers.clear()
 
     fig, ax = plot_lineage_images(
-        params, Cells, fov_id_d, peak_id_d, Cells2, bgcolor=params["phase_plane"]
+        params, Cells, fov, peak_id, Cells2, bgcolor=params["phase_plane"]
     )
-    lin_filename = params["experiment_name"] + "_xy%03d_p%04d_lin.png" % (
-        fov_id,
-        peak_id,
-    )
+    lin_filename = params["experiment_name"] + "_demo_image.tif"
     lin_filepath = os.path.join(lin_dir, lin_filename)
     fig.savefig(lin_filepath, dpi=75)
     plt.close(fig)
@@ -843,7 +840,6 @@ def Track_Cells(params):
         # update will add the output from make_lineages_function, which is a
         # dict of Cell entries, into Cells
         Cells.update(make_lineages_fov(params, fov_id, specs))
-
     information("Finished lineage creation.")
 
     ### Now prune and save the data.
@@ -866,11 +862,8 @@ def Track_Cells(params):
 
 
 class Track(MM3Container):
-    def __init__(self, napari_viewer: Viewer):
-        super().__init__(napari_viewer)
-        self.viewer.text_overlay.visible = False
-
     def create_widgets(self):
+        self.viewer.text_overlay.visible = False
         """Overriding method. Widget constructor. See _deriving_widgets.MM3Container for more details."""
         self.fov_widget = FOVChooser(self.valid_fovs)
         self.pxl2um_widget = FloatSpinBox(
@@ -993,7 +986,6 @@ class Track(MM3Container):
         """Performs Mother Machine Analysis"""
         params = dict()
         params["experiment_name"] = self.experiment_name
-        params["experiment_directory"] = self.data_directory
         params["FOV"] = self.fovs
         params["phase_plane"] = self.phase_plane
         params["pxl2um"] = self.pxl2um
