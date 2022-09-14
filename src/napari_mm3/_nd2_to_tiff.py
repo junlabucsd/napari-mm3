@@ -307,6 +307,7 @@ class Nd2ToTIFF(Container):
 
         if self.display_after_export_widget.value:
             self.render_images()
+        information('Finished TIFF export')
 
     def render_images(self):
         viewer = napari.current_viewer()
