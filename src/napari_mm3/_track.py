@@ -872,7 +872,6 @@ class Track(MM3Container):
             max=2.0,
             step=0.01,
             value=0.11,
-            adaptive_step=False,
             tooltip="Micrometers per pixel",
         )
         self.phase_plane_widget = PlanePicker(

@@ -64,9 +64,8 @@ def get_tif_params(params, image_filename, find_channels=True):
                 image_metadata = get_tif_metadata_elements(tif)
             elif params["TIFF_source"] == "nd2ToTIFF":
                 image_metadata = get_tif_metadata_nd2ToTIFF(tif)
-            elif params["TIFF_source"] == "TIFF":
+            elif params["TIFF_source"] == "other":
                 image_metadata = get_tif_metadata_filename(tif)
-                print("getting metadata")
 
         # look for channels if flagged
         if find_channels:
@@ -104,9 +103,9 @@ def get_tif_params(params, image_filename, find_channels=True):
 
     except:
         warning("Failed get_params for " + image_filename.split("/")[-1])
-        print(sys.exc_info()[0])
-        print(sys.exc_info()[1])
-        print(traceback.print_tb(sys.exc_info()[2]))
+        information(sys.exc_info()[0])
+        information(sys.exc_info()[1])
+        information(traceback.print_tb(sys.exc_info()[2]))
         return {
             "filepath": os.path.join(params["TIFF_dir"], image_filename),
             "analyze_success": False,
@@ -1070,7 +1069,7 @@ def compile(params):
     else:
         t_start = None
 
-    # create the subfolders if they don't
+    # create the subfolders if they don't exist
     if not os.path.exists(p["ana_dir"]):
         os.makedirs(p["ana_dir"])
     if p["output"] == "TIFF":
@@ -1084,7 +1083,7 @@ def compile(params):
     analyzed_imgs = {}  # for storing get_params pool results.
 
     ## need to stack phase and fl plane if not exported from .nd2
-    if p["TIFF_source"] == "TIFF":
+    if p["TIFF_source"] == "other":
         information("Restacking TIFFs")
         found_files = glob.glob(os.path.join(p["TIFF_dir"], "*.tif"))  # get all tiffs
         # found_files = [filepath.split('/')[-1] for filepath in found_files] # remove pre-path
@@ -1379,24 +1378,24 @@ def compile(params):
 
 
 def load_fov(image_directory, fov_id):
-    print("getting files")
+    information("getting files")
     found_files = image_directory.glob(f"*xy{fov_id:02d}.tif")
     found_files = [filepath.name for filepath in found_files]  # remove pre-path
-    print("sorting files")
+    information("sorting files")
     found_files = sorted(found_files)  # should sort by timepoint
 
     if len(found_files) == 0:
-        print("No data found for FOV " + str(fov_id))
+        information("No data found for FOV " + str(fov_id))
         return
 
     image_fov_stack = []
 
-    print("Loading files")
+    information("Loading files")
     for img_filename in found_files:
         with tiff.TiffFile(image_directory / img_filename) as tif:
             image_fov_stack.append(tif.asarray())
 
-    print("numpying files")
+    information("numpying files")
     return np.array(image_fov_stack)
 
 
@@ -1409,7 +1408,7 @@ class Compile(MM3Container):
         # TODO: Auto-infer?
         self.image_source_widget = ComboBox(
             label="image source",
-            choices=["TIFF", "nd2ToTIFF", "TIFF_from_elements"],
+            choices=["nd2ToTIFF", "TIFF_from_elements","other"],
         )
         self.phase_plane_widget = PlanePicker(
             self.valid_planes, label="phase plane channel"
@@ -1531,6 +1530,7 @@ class Compile(MM3Container):
         self.viewer.window._status_bar._toggle_activity_dock(True)
 
         compile(params)
+        information('Finished.')
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value

@@ -120,15 +120,16 @@ def nd2ToTIFF(
                 for fov_id in range(0, nd2f.sizes["m"]):  # for every FOV
                     # fov_id is the fov index according to elements, fov is the output fov ID
                     fov = fov_id + 1
-                    if not reset_numbering:
-                        out_fov_number = fov
 
                     # skip FOVs as specified above
                     if len(fov_list) > 0 and not (fov in fov_list):
                         continue
 
                     # Only want to increment this if we are saving the current image
-                    out_fov_number += 1
+                    if reset_numbering:
+                        out_fov_number += 1
+                    else:
+                        out_fov_number = fov
 
                     # set the FOV we are working on in the nd2 file object
                     nd2f.default_coords["m"] = fov_id
@@ -307,6 +308,7 @@ class Nd2ToTIFF(Container):
 
         if self.display_after_export_widget.value:
             self.render_images()
+        information('Finished TIFF export')
 
     def render_images(self):
         viewer = napari.current_viewer()
