@@ -1530,6 +1530,7 @@ class Compile(MM3Container):
         self.viewer.window._status_bar._toggle_activity_dock(True)
 
         compile(params)
+        information('Finished.')
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value
