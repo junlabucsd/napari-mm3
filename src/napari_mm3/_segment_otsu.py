@@ -262,6 +262,7 @@ class SegmentOtsu(MM3Container):
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
         self.viewer.grid.enabled = False
+        self.viewer.grid.shape = (-1, 20)
 
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
         self.otsu_threshold_widget = FloatSpinBox(
@@ -269,8 +270,7 @@ class SegmentOtsu(MM3Container):
             min=0.0,
             max=2.0,
             step=0.01,
-            value=1,
-            adaptive_step=False,
+            value=1
         )
         self.first_opening_size_widget = SpinBox(
             label="first opening size", min=0, value=2
@@ -322,7 +322,6 @@ class SegmentOtsu(MM3Container):
     def set_params(self):
         self.params = dict()
         self.params["experiment_name"] = self.experiment_name
-        self.params["experiment_directory"] = self.data_directory
         self.params["output"] = "TIFF"
         self.params["FOV"] = self.fovs
         self.params["phase_plane"] = self.phase_plane
@@ -394,7 +393,7 @@ class SegmentOtsu(MM3Container):
 
         if self.redraw_image:
             images = self.viewer.add_image(sub_stack)
-            images.gamma = 0.25
+            images.gamma = 1
             labels = self.viewer.add_labels(segmented_imgs, name="Labels")
             labels.opacity = 0.5
             self.no_redraw = False
