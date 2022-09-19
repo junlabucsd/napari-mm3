@@ -336,7 +336,7 @@ def segmentUNet(params):
     information("Using {} threads for multiprocessing.".format(p["num_analyzers"]))
 
     # create segmenteation and cell data folder if they don't exist
-    if not os.path.exists(p["seg_dir"]) and p["output"] == "TIFF":
+    if not os.path.exists(p["seg_dir"]):
         os.makedirs(p["seg_dir"])
     if not os.path.exists(p["cell_dir"]):
         os.makedirs(p["cell_dir"])
@@ -436,6 +436,7 @@ class SegmentUnet(MM3Container):
         params["experiment_name"] = self.experiment_name
         params["image_directory"] = self.TIFF_folder
         params["FOV"] = self.fovs
+        params["output"] = "TIFF"
         params["interactive"] = self.interactive_widget.value
         params["phase_plane"] = self.plane_widget.value
         params["subtract"] = dict()
