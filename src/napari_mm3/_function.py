@@ -37,25 +37,6 @@ def information(*objs):
     print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
 
 
-def julian_day_number():
-    """
-    Need this to solve a bug in pims_nd2.nd2reader.ND2_Reader instance initialization.
-    The bug is in /usr/local/lib/python2.7/site-packages/pims_nd2/ND2SDK.py in function `jdn_to_datetime_local`, when the year number in the metadata (self._lim_metadata_desc) is not in the correct range. This causes a problem when calling self.metadata.
-    https://en.wikipedia.org/wiki/Julian_day
-    """
-    dt = datetime.datetime.now()
-    tt = dt.timetuple()
-    jdn = (
-        (1461.0 * (tt.tm_year + 4800.0 + (tt.tm_mon - 14.0) / 12)) / 4.0
-        + (367.0 * (tt.tm_mon - 2.0 - 12.0 * ((tt.tm_mon - 14.0) / 12))) / 12.0
-        - (3.0 * ((tt.tm_year + 4900.0 + (tt.tm_mon - 14.0) / 12.0) / 100.0)) / 4.0
-        + tt.tm_mday
-        - 32075
-    )
-
-    return jdn
-
-
 def get_plane(filepath):
     pattern = r"(c\d+).tif"
     res = re.search(pattern, filepath, re.IGNORECASE)
@@ -849,7 +830,6 @@ def find_cells_of_birth_label(Cells, label_num=1):
 
 
 def range_string_to_indices(range_string):
-    successful = True
     try:
         range_string = range_string.replace(" ", "")
         split = range_string.split(",")
