@@ -868,6 +868,7 @@ def range_string_to_indices(range_string):
         print("Index range string valid!")
         return indices
     except:
-        print("Index range string invalid. Returning empty range until a new string is specified.")
+        print(
+            "Index range string invalid. Returning empty range until a new string is specified."
+        )
         return []
-    

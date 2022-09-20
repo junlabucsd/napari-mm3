@@ -266,11 +266,7 @@ class SegmentOtsu(MM3Container):
 
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
         self.otsu_threshold_widget = FloatSpinBox(
-            label="OTSU threshold",
-            min=0.0,
-            max=2.0,
-            step=0.01,
-            value=1
+            label="OTSU threshold", min=0.0, max=2.0, step=0.01, value=1
         )
         self.first_opening_size_widget = SpinBox(
             label="first opening size", min=0, value=2
@@ -295,6 +291,7 @@ class SegmentOtsu(MM3Container):
         self.second_opening_size_widget.changed.connect(self.set_second_opening_size)
         self.min_object_size_widget.changed.connect(self.set_min_object_size)
         self.preview_widget.clicked.connect(self.render_preview)
+        self.run_widget.clicked.connect(self.save_settings)
         self.run_widget.clicked.connect(self.run)
 
         self.append(self.plane_picker_widget)

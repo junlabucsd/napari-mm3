@@ -2,6 +2,7 @@ from unicodedata import decimal
 from napari import Viewer
 from napari.utils.notifications import show_info
 from ._function import range_string_to_indices
+from datetime import datetime
 from magicgui.widgets import (
     Container,
     FileEdit,
@@ -10,9 +11,37 @@ from magicgui.widgets import (
     RangeEdit,
     ComboBox,
 )
+from collections import namedtuple
 from pathlib import Path
+import json
 import tifffile as tiff
 import re
+
+
+def serialize_widget(widget):
+    if isinstance(widget, RangeEdit) or isinstance(widget, TimeRangeSelector):
+        print("Range edit spotted!")
+        start_value = widget.start.value
+        final_value = widget.stop.value
+        return (start_value, final_value)
+
+    if isinstance(widget, PushButton):
+        return None
+
+    return widget.value
+
+
+def apply_seralized_widget(widget, value):
+    if isinstance(widget, RangeEdit) or isinstance(widget, TimeRangeSelector):
+        print("Range edit spotted!")
+        widget.start.value = value[0]
+        widget.stop.value = value[1]
+        return
+
+    if isinstance(widget, PushButton):
+        return
+
+    widget.value = value
 
 
 def get_valid_planes(TIFF_folder):
@@ -49,18 +78,22 @@ class MM3Container(Container):
         self.analysis_folder_widget = FileEdit(
             mode="d",
             label="analysis folder",
-            tooltip="Required. Location (within working directory) for outputting analysis. If in doubt, leave as default.",
+            tooltip="Required. Location for outputting analysis. If in doubt, leave as default.",
             value=Path("./analysis"),
         )
         self.TIFF_folder_widget = FileEdit(
             mode="d",
             label="TIFF folder",
-            tooltip="Required. Location (within working directory) for the input images. If in doubt, leave as default.",
+            tooltip="Required. Location for the input images. If in doubt, leave as default.",
             value=Path("./TIFF"),
         )
         self.experiment_name_widget = LineEdit(
             label="output prefix",
             tooltip="Optional. A prefix that will be prepended to output files. If in doubt, leave blank.",
+        )
+        self.load_recent_widget = PushButton(
+            label="load last run settings",
+            tooltip="load settings from the most recent run. we look for past runs in ./.history",
         )
         self.load_data_widget = PushButton(
             label="set new directories",
@@ -75,6 +108,7 @@ class MM3Container(Container):
         self.load_data_widget.clicked.connect(self.set_valid_times)
         self.load_data_widget.clicked.connect(self.delete_extra_widgets)
         self.load_data_widget.clicked.connect(self.load_from_data_conditional)
+        self.load_recent_widget.clicked.connect(self.load_most_recent_settings)
 
         self.set_experiment_name()
         self.set_TIFF_folder()
@@ -86,6 +120,7 @@ class MM3Container(Container):
         self.append(self.experiment_name_widget)
         self.append(self.TIFF_folder_widget)
         self.append(self.analysis_folder_widget)
+        self.append(self.load_recent_widget)
         self.append(self.load_data_widget)
 
         self.load_from_data_conditional()
@@ -97,10 +132,20 @@ class MM3Container(Container):
     def create_widgets(self):
         pass
 
+    def is_preset_widget(self, widget):
+        labels = {
+            self.experiment_name_widget.label,
+            self.TIFF_folder_widget.label,
+            self.analysis_folder_widget.label,
+            self.load_data_widget.label,
+            self.load_recent_widget.label,
+        }
+        return widget.label in labels
+
     def delete_extra_widgets(self):
         """Delete any widgets that come after the 'reload directories' button.
         This allows for easy UI resets in deriving widgets (see, e.g. _track.py)"""
-        while self[-1].label != self.load_data_widget.label:
+        while not self.is_preset_widget(self[-1]):
             self.pop()
 
     def set_analysis_folder(self):
@@ -132,6 +177,68 @@ class MM3Container(Container):
             self.found_planes = True
         except:
             self.found_planes = False
+
+    def get_most_recent_run(self):
+        """Gets the parameters from the most recent run of the current
+        widget."""
+        try:
+            with open("./history.json", "r") as h:
+                history = json.load(h)
+        except:
+            return {}
+        # get the most recent run of the relevant widget.
+        old_params = {}
+        for historic_widget_name, _, params in reversed(history):
+            if historic_widget_name == self.parent.name:
+                old_params = params
+                break
+
+        return old_params
+
+    def load_most_recent_settings(self):
+        """
+        Load most most recent entry in the history file that has
+        name == 'widget_name'.
+        Apply the saved parameters to the currently extant widgets.
+        """
+        old_params = self.get_most_recent_run()
+        if old_params:
+            # assign old_params to current widgets.
+            for widget in self:
+                if self.is_preset_widget(widget):
+                    continue
+                apply_seralized_widget(widget, old_params.get(widget.label, ""))
+
+    def save_settings(self):
+        """
+        Save the current settings for all non-preset widgets.
+        name == 'widget_name'.
+        Apply the saved parameters to the currently extant widgets.
+        """
+        widget_name = self.parent.name
+        history = []
+        if Path("./history.json").exists():
+            with open("./history.json", "r") as h:
+                history = json.load(h)
+
+        # Generate a dictionary of the current parameters.
+        current_params = {}
+        for widget in self:
+            if self.is_preset_widget(widget):
+                continue
+            if isinstance(widget, PushButton):
+                continue
+            current_params[widget.label] = serialize_widget(widget)
+
+        # If the most recent run has the same parameters as our current run, do nothing.
+        old_params = self.get_most_recent_run()
+        if old_params and old_params == current_params:
+            return
+        timestamp = datetime.now()
+        history.append((widget_name, str(timestamp), current_params))
+
+        with open("./history.json", "w") as h:
+            json.dump(history, h, indent=2)
 
 
 class TimeRangeSelector(RangeEdit):

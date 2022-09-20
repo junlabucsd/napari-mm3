@@ -429,7 +429,8 @@ class SegmentUnet(MM3Container):
         self.append(self.run_widget)
 
         self.fov_widget.connect_callback(self.set_fovs)
-        self.run_widget.changed.connect(self.run)
+        self.run_widget.clicked.connect(self.save_settings)
+        self.run_widget.clicked.connect(self.run)
 
     def run(self):
         params = dict()

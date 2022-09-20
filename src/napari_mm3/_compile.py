@@ -1408,7 +1408,7 @@ class Compile(MM3Container):
         # TODO: Auto-infer?
         self.image_source_widget = ComboBox(
             label="image source",
-            choices=["nd2ToTIFF", "TIFF_from_elements","other"],
+            choices=["nd2ToTIFF", "TIFF_from_elements", "other"],
         )
         self.phase_plane_widget = PlanePicker(
             self.valid_planes, label="phase plane channel"
@@ -1455,6 +1455,7 @@ class Compile(MM3Container):
         self.seconds_per_frame_widget.changed.connect(self.set_seconds_per_frame)
         self.channel_width_widget.changed.connect(self.set_channel_width)
         self.channel_separation_widget.changed.connect(self.set_channel_separation)
+        self.run_analysis_widget.clicked.connect(self.save_settings)
         self.run_analysis_widget.clicked.connect(self.run_analysis)
 
         self.append(self.fov_widget)
@@ -1530,7 +1531,7 @@ class Compile(MM3Container):
         self.viewer.window._status_bar._toggle_activity_dock(True)
 
         compile(params)
-        information('Finished.')
+        information("Finished.")
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value

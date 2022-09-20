@@ -466,7 +466,9 @@ def Lineage(params):
         peak_found = False
         # Analyze the first valid peak
         for peak_id, spec in six.iteritems(specs[fov]):
-            if spec == 1:  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
+            if (
+                spec == 1
+            ):  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
                 sample_img = load_stack(params, fov, peak_id)
                 peak_len = np.shape(sample_img)[0]
                 peak_found = True
@@ -954,6 +956,7 @@ class Track(MM3Container):
         self.max_growth_area_widget.changed.connect(self.set_max_growth_area)
         self.min_growth_area_widget.changed.connect(self.set_min_growth_area)
         self.segmentation_method_widget.changed.connect(self.set_segmentation_method)
+        self.run_widget.clicked.connect(self.save_settings)
         self.run_widget.clicked.connect(self.run)
 
         self.append(self.fov_widget)
