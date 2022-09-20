@@ -1,7 +1,4 @@
-from unicodedata import decimal
 from napari import Viewer
-from napari.utils.notifications import show_info
-from ._function import range_string_to_indices
 from datetime import datetime
 from magicgui.widgets import (
     Container,
@@ -11,7 +8,6 @@ from magicgui.widgets import (
     RangeEdit,
     ComboBox,
 )
-from collections import namedtuple
 from pathlib import Path
 import json
 import tifffile as tiff
@@ -67,6 +63,31 @@ def _apply_seralized_widget(widget, value):
         return
 
     widget.value = value
+
+
+def range_string_to_indices(range_string):
+    try:
+        range_string = range_string.replace(" ", "")
+        split = range_string.split(",")
+        indices = []
+        for items in split:
+            # If it's a range
+            if "-" in items:
+                limits = list(map(int, items.split("-")))
+                if len(limits) == 2:
+                    # Make it an inclusive range, as users would expect
+                    limits[1] += 1
+                    indices += list(range(limits[0], limits[1]))
+            # If it's a single item.
+            else:
+                indices += [int(items)]
+        print("Index range string valid!")
+        return indices
+    except:
+        print(
+            "Index range string invalid. Returning empty range until a new string is specified."
+        )
+        return []
 
 
 class MM3Container(Container):

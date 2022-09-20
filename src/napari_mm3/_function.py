@@ -827,28 +827,3 @@ def find_cells_of_birth_label(Cells, label_num=1):
             fCells[cell_id] = Cells[cell_id]
 
     return fCells
-
-
-def range_string_to_indices(range_string):
-    try:
-        range_string = range_string.replace(" ", "")
-        split = range_string.split(",")
-        indices = []
-        for items in split:
-            # If it's a range
-            if "-" in items:
-                limits = list(map(int, items.split("-")))
-                if len(limits) == 2:
-                    # Make it an inclusive range, as users would expect
-                    limits[1] += 1
-                    indices += list(range(limits[0], limits[1]))
-            # If it's a single item.
-            else:
-                indices += [int(items)]
-        print("Index range string valid!")
-        return indices
-    except:
-        print(
-            "Index range string invalid. Returning empty range until a new string is specified."
-        )
-        return []
