@@ -1446,7 +1446,6 @@ class Compile(MM3Container):
             min=0,
             max=1,
         )
-        self.run_analysis_widget = PushButton(text="Run")
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.image_source_widget.changed.connect(self.set_image_source)
@@ -1455,8 +1454,6 @@ class Compile(MM3Container):
         self.seconds_per_frame_widget.changed.connect(self.set_seconds_per_frame)
         self.channel_width_widget.changed.connect(self.set_channel_width)
         self.channel_separation_widget.changed.connect(self.set_channel_separation)
-        self.run_analysis_widget.clicked.connect(self.save_settings)
-        self.run_analysis_widget.clicked.connect(self.run_analysis)
 
         self.append(self.fov_widget)
         self.append(self.image_source_widget)
@@ -1465,7 +1462,6 @@ class Compile(MM3Container):
         self.append(self.seconds_per_frame_widget)
         self.append(self.channel_width_widget)
         self.append(self.channel_separation_widget)
-        self.append(self.run_analysis_widget)
 
         self.set_image_source()
         self.set_phase_plane()
@@ -1477,17 +1473,8 @@ class Compile(MM3Container):
 
         self.display_image()
 
-    def display_image(self):
-        self.viewer.layers.clear()
-        self.viewer.text_overlay.visible = False
-        image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
-        images = self.viewer.add_image(np.array(image_fov_stack))
-        self.viewer.dims.current_step = (0, 0)
-        images.reset_contrast_limits()
-        images.gamma = 0.5
-
-    def run_analysis(self):
-        """Performs Mother Machine Analysis"""
+    def run(self):
+        """Overriding method. Performs Mother Machine Analysis"""
         # global params. Ideally, this is rendered obsolete. However, old code uses this
         # Fixing it up would take a very long time, and as such is being deferred to later.
         params = {
@@ -1532,6 +1519,15 @@ class Compile(MM3Container):
 
         compile(params)
         information("Finished.")
+
+    def display_image(self):
+        self.viewer.layers.clear()
+        self.viewer.text_overlay.visible = False
+        image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
+        images = self.viewer.add_image(np.array(image_fov_stack))
+        self.viewer.dims.current_step = (0, 0)
+        images.reset_contrast_limits()
+        images.gamma = 0.5
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value

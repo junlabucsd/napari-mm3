@@ -941,7 +941,6 @@ class Track(MM3Container):
         self.segmentation_method_widget = ComboBox(
             label="segmentation method", choices=["Otsu", "U-net"]
         )
-        self.run_widget = PushButton(label="Run tracking")
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.pxl2um_widget.changed.connect(self.set_pxl2um)
@@ -956,8 +955,6 @@ class Track(MM3Container):
         self.max_growth_area_widget.changed.connect(self.set_max_growth_area)
         self.min_growth_area_widget.changed.connect(self.set_min_growth_area)
         self.segmentation_method_widget.changed.connect(self.set_segmentation_method)
-        self.run_widget.clicked.connect(self.save_settings)
-        self.run_widget.clicked.connect(self.run)
 
         self.append(self.fov_widget)
         self.append(self.pxl2um_widget)
@@ -970,7 +967,6 @@ class Track(MM3Container):
         self.append(self.max_growth_area_widget)
         self.append(self.min_growth_area_widget)
         self.append(self.segmentation_method_widget)
-        self.append(self.run_widget)
 
         self.set_fovs(self.valid_fovs)
         self.set_pxl2um()
@@ -985,7 +981,7 @@ class Track(MM3Container):
         self.set_segmentation_method()
 
     def run(self):
-        """Performs Mother Machine Analysis"""
+        """Overriding method. Performs Mother Machine Analysis"""
         params = dict()
         params["experiment_name"] = self.experiment_name
         params["FOV"] = self.fovs

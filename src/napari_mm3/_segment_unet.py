@@ -414,7 +414,6 @@ class SegmentUnet(MM3Container):
         self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
         self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
         self.interactive_widget = CheckBox(label="interactive", value=False)
-        self.run_widget = PushButton(label="run")
 
         self.append(self.fov_widget)
         self.append(self.plane_widget)
@@ -426,13 +425,11 @@ class SegmentUnet(MM3Container):
         self.append(self.height_widget)
         self.append(self.width_widget)
         self.append(self.interactive_widget)
-        self.append(self.run_widget)
 
         self.fov_widget.connect_callback(self.set_fovs)
-        self.run_widget.clicked.connect(self.save_settings)
-        self.run_widget.clicked.connect(self.run)
 
     def run(self):
+        """Overriding method. Perform mother machine analysis."""
         params = dict()
         params["experiment_name"] = self.experiment_name
         params["image_directory"] = self.TIFF_folder

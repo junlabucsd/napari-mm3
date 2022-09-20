@@ -72,7 +72,6 @@ def get_valid_times(TIFF_folder):
 class MM3Container(Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__()
-        # TODO: Remove 'reload data' button. Make it all a bit more dynamic.
         self.viewer = napari_viewer
 
         self.analysis_folder_widget = FileEdit(
@@ -99,16 +98,21 @@ class MM3Container(Container):
             label="set new directories",
             tooltip="Load data from specified directories.",
         )
+        self.run_widget = PushButton(
+            label="run",
+        )
 
         self.experiment_name_widget.changed.connect(self.set_experiment_name)
         self.TIFF_folder_widget.changed.connect(self.set_TIFF_folder)
         self.analysis_folder_widget.changed.connect(self.set_analysis_folder)
+        self.load_recent_widget.clicked.connect(self.load_most_recent_settings)
         self.load_data_widget.clicked.connect(self.set_valid_fovs)
         self.load_data_widget.clicked.connect(self.set_valid_planes)
         self.load_data_widget.clicked.connect(self.set_valid_times)
         self.load_data_widget.clicked.connect(self.delete_extra_widgets)
         self.load_data_widget.clicked.connect(self.load_from_data_conditional)
-        self.load_recent_widget.clicked.connect(self.load_most_recent_settings)
+        self.run_widget.clicked.connect(self.save_settings)
+        self.run_widget.clicked.connect(self.run_conditional)
 
         self.set_experiment_name()
         self.set_TIFF_folder()
@@ -125,12 +129,22 @@ class MM3Container(Container):
 
         self.load_from_data_conditional()
 
+    def create_widgets(self):
+        """Method to override. Place all widget initialization here."""
+        pass
+
+    def run(self):
+        """Method to override. Any execution methods go here."""
+        pass
+
     def load_from_data_conditional(self):
         if self.found_planes and self.found_fovs and self.found_times:
             self.create_widgets()
+            self.append(self.run_widget)
 
-    def create_widgets(self):
-        pass
+    def run_conditional(self):
+        if self.found_planes and self.found_fovs and self.found_times:
+            self.run()
 
     def is_preset_widget(self, widget):
         labels = {

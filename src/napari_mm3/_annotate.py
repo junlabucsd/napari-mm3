@@ -48,6 +48,9 @@ class PeakCounter:
 class Annotate(MM3Container):
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See _deriving_widgets.MM3Container for details."""
+        self.load_recent_widget.hide()
+        self.run_widget.hide()
+
         self.fov_widget = FOVChooserSingle(self.valid_fovs)
         self.next_peak_widget = PushButton(
             label="next peak",

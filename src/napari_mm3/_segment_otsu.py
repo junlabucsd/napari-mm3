@@ -281,7 +281,6 @@ class SegmentOtsu(MM3Container):
         self.preview_widget = PushButton(label="generate preview", value=False)
         self.fov_widget = FOVChooser(self.valid_fovs)
         self.view_result_widget = CheckBox(label="view result")
-        self.run_widget = PushButton(label="run on chosen FOVs")
 
         self.plane_picker_widget.changed.connect(self.set_phase_plane)
         self.fov_widget.connect_callback(self.set_fovs)
@@ -291,8 +290,6 @@ class SegmentOtsu(MM3Container):
         self.second_opening_size_widget.changed.connect(self.set_second_opening_size)
         self.min_object_size_widget.changed.connect(self.set_min_object_size)
         self.preview_widget.clicked.connect(self.render_preview)
-        self.run_widget.clicked.connect(self.save_settings)
-        self.run_widget.clicked.connect(self.run)
 
         self.append(self.plane_picker_widget)
         self.append(self.otsu_threshold_widget)
@@ -303,7 +300,6 @@ class SegmentOtsu(MM3Container):
         self.append(self.preview_widget)
         self.append(self.fov_widget)
         self.append(self.view_result_widget)
-        self.append(self.run_widget)
 
         self.set_fovs(self.valid_fovs)
         self.set_phase_plane()

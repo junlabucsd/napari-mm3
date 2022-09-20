@@ -6,7 +6,6 @@ import tifffile as tiff
 
 from ._function import information, warning
 from ._deriving_widgets import MM3Container, FOVChooserSingle, InteractiveSpinBox
-from magicgui.widgets import FloatSpinBox
 
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 0.25])
 TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, 0.25])
@@ -191,6 +190,7 @@ class ChannelPicker(MM3Container):
 
         self.experiment_name_widget.hide()
         self.load_recent_widget.hide()
+        self.run_widget.hide()
 
         # Set up viewer
         self.viewer.grid.enabled = False
