@@ -1,39 +1,121 @@
 import multiprocessing
 from multiprocessing import Pool
-import napari
-import matplotlib.pyplot as plt
-import yaml
 import numpy as np
-import six
 import pickle
 import os
-import matplotlib as mpl
-import seaborn as sns
-import matplotlib.patches as mpatches
+import six
 from pathlib import Path
 from functools import partial
 
 from skimage import morphology
-from skimage.measure import regionprops
 
-from napari import Viewer
-from napari.utils import progress
 
 from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
-from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, PushButton, FileEdit
+from magicgui.widgets import SpinBox, ComboBox, FileEdit
 
-from ._function import (
+from .utils import (
     information,
-    load_specs,
-    Cell,
     load_stack,
-    load_time_table,
-    find_complete_cells,
-    find_cells_of_birth_label,
-    find_cells_of_fov_and_peak,
-    organize_cells_by_channel,
-    find_cell_intensities
 )
+
+from ._deriving_widgets import load_specs, load_time_table
+
+def find_cell_intensities(time_table, fov_id, peak_id, Cells, midline=False, channel_name='sub_c2'):
+    '''
+    Finds fluorescenct information for cells. All the cells in Cells
+    should be from one fov/peak. See the function
+    organize_cells_by_channel()
+    '''
+
+    # Load fluorescent images and segmented images for this channel
+    fl_stack = load_stack(fov_id, peak_id, color=channel_name)
+    seg_stack = load_stack(fov_id, peak_id, color='seg_unet')
+
+    # determine absolute time index
+    times_all = []
+    for fov in time_table:
+        times_all = np.append(times_all, time_table[fov].keys())
+    times_all = np.unique(times_all)
+    times_all = np.sort(times_all)
+    times_all = np.array(times_all,np.int_)
+    t0 = times_all[0] # first time index
+
+    # Loop through cells
+    for Cell in Cells.values():
+        # give this cell two lists to hold new information
+        Cell.fl_tots = [] # total fluorescence per time point
+        Cell.fl_area_avgs = [] # avg fluorescence per unit area by timepoint
+        Cell.fl_vol_avgs = [] # avg fluorescence per unit volume by timepoint
+
+        if midline:
+            Cell.mid_fl = [] # avg fluorescence of midline
+
+        # and the time points that make up this cell's life
+        for n, t in enumerate(Cell.times):
+            # create fluorescent image only for this cell and timepoint.
+            fl_image_masked = np.copy(fl_stack[t-t0])
+            fl_image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
+
+            # append total flourescent image
+            Cell.fl_tots.append(np.sum(fl_image_masked))
+            # and the average fluorescence
+            Cell.fl_area_avgs.append(np.sum(fl_image_masked) / Cell.areas[n])
+            Cell.fl_vol_avgs.append(np.sum(fl_image_masked) / Cell.volumes[n])
+
+            if midline:
+                # add the midline average by first applying morphology transform
+                bin_mask = np.copy(seg_stack[t-t0])
+                bin_mask[bin_mask != Cell.labels[n]] = 0
+                med_mask, _ = morphology.medial_axis(bin_mask, return_distance=True)
+                # med_mask[med_dist < np.floor(cap_radius/2)] = 0
+                # print(img_fluo[med_mask])
+                if (np.shape(fl_image_masked[med_mask])[0] > 0):
+                    Cell.mid_fl.append(np.nanmean(fl_image_masked[med_mask]))
+                else:
+                    Cell.mid_fl.append(0)
+
+    # The cell objects in the original dictionary will be updated,
+    # no need to return anything specifically.
+
+def organize_cells_by_channel(Cells, specs):
+    '''
+    Returns a nested dictionary where the keys are first
+    the fov_id and then the peak_id (similar to specs),
+    and the final value is a dictiary of cell objects that go in that
+    specific channel, in the same format as normal {cell_id : Cell, ...}
+    '''
+
+    # make a nested dictionary that holds lists of cells for one fov/peak
+    Cells_by_peak = {}
+    for fov_id in specs.keys():
+        Cells_by_peak[fov_id] = {}
+        for peak_id, spec in specs[fov_id].items():
+            # only make a space for channels that are analyized
+            if spec == 1:
+                Cells_by_peak[fov_id][peak_id] = {}
+
+    # organize the cells
+    for cell_id, Cell in Cells.items():
+        Cells_by_peak[Cell.fov][Cell.peak][cell_id] = Cell
+
+    # remove peaks and that do not contain cells
+    remove_fovs = []
+    for fov_id, peaks in six.iteritems(Cells_by_peak):
+        remove_peaks = []
+        for peak_id in peaks.keys():
+            if not peaks[peak_id]:
+                remove_peaks.append(peak_id)
+
+        for peak_id in remove_peaks:
+            peaks.pop(peak_id)
+
+        if not Cells_by_peak[fov_id]:
+            remove_fovs.append(fov_id)
+
+    for fov_id in remove_fovs:
+        Cells_by_peak.pop(fov_id)
+
+    return Cells_by_peak
 
 def find_cell_intensities_worker(params,fov_id, peak_id, Cells, midline=True, channel='sub_c3'):
     '''
@@ -50,7 +132,7 @@ def find_cell_intensities_worker(params,fov_id, peak_id, Cells, midline=True, ch
 
     # determine absolute time index
     # time_table = params['time_table']
-    time_table = load_time_table(params["analysis_directory"])
+    time_table = load_time_table(params["ana_dir"])
     times_all = []
     for fov in time_table:
         times_all = np.append(times_all, [int(x) for x in fov.keys()])
@@ -105,7 +187,7 @@ def find_cell_intensities_worker(params,fov_id, peak_id, Cells, midline=True, ch
     return Cells
 
 # load cell file
-def Colors(params,fl_channel,seg_method,cellfile_path):
+def colors(params,fl_channel,seg_method,cellfile_path):
     information('Loading cell data.')
     # if namespace.cellfile:
     #     cell_file_path = namespace.cellfile.name
@@ -126,7 +208,8 @@ def Colors(params,fl_channel,seg_method,cellfile_path):
     specs = load_specs()
 
     # load time table. Puts in params dictionary
-    load_time_table()
+    time_table = load_time_table(params['ana_dir'])
+    params['time_table'] = time_table
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
@@ -182,7 +265,6 @@ def Colors(params,fl_channel,seg_method,cellfile_path):
 
 class Colors(MM3Container):
     def create_widgets(self):
-        # fov_widget = FOVChooser(valid_fovs)
         self.cellfile_widget = FileEdit(
             label="cell_file",
             value=Path("."),
@@ -191,11 +273,13 @@ class Colors(MM3Container):
         
         ## allow user to choose multiple planes to analyze
         self.plane_widget = PlanePicker(
-            self.valid_planes, label="Plane to analyze"
+            self.valid_planes, label="analysis plane", tooltip="Fluoresence plane that you would like to analyze"
         )
         self.segmentation_method_widget = ComboBox(
             label="segmentation method", choices=["Otsu", "U-net"]
         )
+        print(self.valid_fovs)
+        self.fov_widget = FOVChooser(self.valid_fovs)
 
         self.set_plane()
         self.set_segmentation_method()
@@ -203,13 +287,19 @@ class Colors(MM3Container):
 
         self.plane_widget.changed.connect(self.set_plane)
         self.segmentation_method_widget.connect(self.set_segmentation_method)
-        self.cellfile_widget()
+        self.cellfile_widget.changed.connect(self.set_cellfile)
+        self.fov_widget.connect_callback(self.set_fovs)
+
+        self.append(self.plane_widget)
+        self.append(self.segmentation_method_widget)
+        self.append(self.cellfile_widget)
+        self.append(self.fov_widget)
 
 
     def set_params(self):
         self.params = {
             "experiment_name": self.experiment_name,
-            "analysis_directory": self.analysis_folder,
+            "ana_dir": self.analysis_folder,
             "FOV": self.fovs,
             "fl_plane": self.fl_plane,
             "cell_file": self.cellfile,
@@ -219,7 +309,7 @@ class Colors(MM3Container):
     def run(self):
         self.set_params()
         self.viewer.window._status_bar._toggle_activity_dock(True)
-        Colors(self,self.params)
+        colors(self,self.params)
 
     def set_plane(self):
         self.fl_plane = self.plane_widget.value
@@ -230,5 +320,7 @@ class Colors(MM3Container):
     def set_cellfile(self):
         self.cellfile = self.cellfile_widget.value
 
+    def set_fovs(self, fovs):
+        self.fovs = list(set(fovs))
     
 

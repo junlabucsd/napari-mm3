@@ -31,6 +31,21 @@ def load_specs(analysis_dir: Path):
 
     return specs
 
+# load the time table and add it to the global params
+def load_time_table(ana_dir: Path):
+    '''Add the time table dictionary to the params global dictionary.
+    This is so it can be used during Cell creation.
+    '''
+
+    # try first for yaml, then for pkl
+    try:
+        with (ana_dir / 'time_table.yaml').open('rb') as time_table_file:
+            return yaml.safe_load(time_table_file)
+    except:
+        with (ana_dir / 'time_table.pkl').open('rb') as time_table_file:
+            return pickle.load(time_table_file)
+
+
 def get_valid_planes(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
     filepaths = [f for f in found_files][0]
