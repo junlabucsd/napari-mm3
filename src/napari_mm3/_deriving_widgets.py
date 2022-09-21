@@ -1,7 +1,5 @@
-from unicodedata import decimal
 from napari import Viewer
-from napari.utils.notifications import show_info
-from ._function import range_string_to_indices
+from datetime import datetime
 from magicgui.widgets import (
     Container,
     FileEdit,
@@ -11,9 +9,27 @@ from magicgui.widgets import (
     ComboBox,
 )
 from pathlib import Path
+from .utils import warning
+import pickle
+import yaml
+import json
 import tifffile as tiff
 import re
 
+
+def load_specs(analysis_dir: Path):
+    """Load specs file which indicates which channels should be analyzed, used as empties, or ignored."""
+    try:
+        with (analysis_dir / "specs.yaml").open("r") as specs_file:
+            specs = yaml.safe_load(specs_file)
+    except:
+        try:
+            with (analysis_dir / "specs.pkl").open("rb") as specs_file:
+                specs = pickle.load(specs_file)
+        except ValueError:
+            warning("Could not load specs file.")
+
+    return specs
 
 def get_valid_planes(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
@@ -40,98 +56,259 @@ def get_valid_times(TIFF_folder):
     return (min(times), max(times))
 
 
+def _serialize_widget(widget):
+    if isinstance(widget, RangeEdit) or isinstance(widget, TimeRangeSelector):
+        print("Range edit spotted!")
+        start_value = widget.start.value
+        final_value = widget.stop.value
+        return (start_value, final_value)
+
+    if isinstance(widget, PushButton):
+        return None
+
+    return widget.value
+
+
+def _apply_seralized_widget(widget, value):
+    if isinstance(widget, RangeEdit) or isinstance(widget, TimeRangeSelector):
+        print("Range edit spotted!")
+        widget.start.value = value[0]
+        widget.stop.value = value[1]
+        return
+
+    if isinstance(widget, PushButton):
+        return
+
+    widget.value = value
+
+
+def range_string_to_indices(range_string):
+    try:
+        range_string = range_string.replace(" ", "")
+        split = range_string.split(",")
+        indices = []
+        for items in split:
+            # If it's a range
+            if "-" in items:
+                limits = list(map(int, items.split("-")))
+                if len(limits) == 2:
+                    # Make it an inclusive range, as users would expect
+                    limits[1] += 1
+                    indices += list(range(limits[0], limits[1]))
+            # If it's a single item.
+            else:
+                indices += [int(items)]
+        print("Index range string valid!")
+        return indices
+    except:
+        print(
+            "Index range string invalid. Returning empty range until a new string is specified."
+        )
+        return []
+
+
 class MM3Container(Container):
+    """
+    Preset class for MM3 widgets.
+    In order to use, extend the class and override the following methods:
+        * create_widgets: This is a constructor. If the MM3Container finds valid TIFFs, these widgets will be added to the UI
+        * run: This is the function that will be executed when the user clicks the 'run' button.
+    This class supplies the followng fields from the user directly:
+        * experiment_name (self-explanatory)
+        * analysis_folder (the location to which outputs will be written)
+        * TIFF_folder (the folder in which it will look for input TIFFs)
+    It will also acquire the following metadata for you:
+        * valid_fovs (a range of valid fovs)
+        * valid_times (a range of valid times)
+        * valid_planes (a set of valid microscopy (eg, phase, fluorescence, etc))
+    Finally, it will also automatically write any 'runs' to history.json, and give you the ability to restore the most recent run's settings.
+    """
+
     def __init__(self, napari_viewer: Viewer):
         super().__init__()
-        # TODO: Remove 'reload data' button. Make it all a bit more dynamic.
         self.viewer = napari_viewer
 
         self.analysis_folder_widget = FileEdit(
             mode="d",
             label="analysis folder",
-            tooltip="Required. Location (within working directory) for outputting analysis. If in doubt, leave as default.",
+            tooltip="Required. Location for outputting analysis. If in doubt, leave as default.",
             value=Path("./analysis"),
         )
         self.TIFF_folder_widget = FileEdit(
             mode="d",
             label="TIFF folder",
-            tooltip="Required. Location (within working directory) for the input images. If in doubt, leave as default.",
+            tooltip="Required. Location for the input images. If in doubt, leave as default.",
             value=Path("./TIFF"),
         )
         self.experiment_name_widget = LineEdit(
             label="output prefix",
             tooltip="Optional. A prefix that will be prepended to output files. If in doubt, leave blank.",
         )
+        self.load_recent_widget = PushButton(
+            label="load last run settings",
+            tooltip="load settings from the most recent run. we look for past runs in ./.history",
+        )
         self.load_data_widget = PushButton(
             label="set new directories",
             tooltip="Load data from specified directories.",
         )
+        self.run_widget = PushButton(
+            label="run",
+        )
 
-        self.experiment_name_widget.changed.connect(self.set_experiment_name)
-        self.TIFF_folder_widget.changed.connect(self.set_TIFF_folder)
-        self.analysis_folder_widget.changed.connect(self.set_analysis_folder)
-        self.load_data_widget.clicked.connect(self.set_valid_fovs)
-        self.load_data_widget.clicked.connect(self.set_valid_planes)
-        self.load_data_widget.clicked.connect(self.set_valid_times)
-        self.load_data_widget.clicked.connect(self.delete_extra_widgets)
-        self.load_data_widget.clicked.connect(self.load_from_data_conditional)
+        self.experiment_name_widget.changed.connect(self._set_experiment_name)
+        self.TIFF_folder_widget.changed.connect(self._set_TIFF_folder)
+        self.analysis_folder_widget.changed.connect(self._set_analysis_folder)
+        self.load_recent_widget.clicked.connect(self._load_most_recent_settings)
+        self.load_data_widget.clicked.connect(self._set_valid_fovs)
+        self.load_data_widget.clicked.connect(self._set_valid_planes)
+        self.load_data_widget.clicked.connect(self._set_valid_times)
+        self.load_data_widget.clicked.connect(self._delete_extra_widgets)
+        self.load_data_widget.clicked.connect(self._load_from_data_conditional)
+        self.run_widget.clicked.connect(self._save_settings)
+        self.run_widget.clicked.connect(self._run_conditional)
 
-        self.set_experiment_name()
-        self.set_TIFF_folder()
-        self.set_analysis_folder()
-        self.set_valid_fovs()
-        self.set_valid_planes()
-        self.set_valid_times()
+        self._set_experiment_name()
+        self._set_TIFF_folder()
+        self._set_analysis_folder()
+        self._set_valid_fovs()
+        self._set_valid_planes()
+        self._set_valid_times()
 
         self.append(self.experiment_name_widget)
         self.append(self.TIFF_folder_widget)
         self.append(self.analysis_folder_widget)
+        self.append(self.load_recent_widget)
         self.append(self.load_data_widget)
 
-        self.load_from_data_conditional()
-
-    def load_from_data_conditional(self):
-        if self.found_planes and self.found_fovs and self.found_times:
-            self.create_widgets()
+        self._load_from_data_conditional()
 
     def create_widgets(self):
+        """Method to override. Place all widget initialization here."""
         pass
 
-    def delete_extra_widgets(self):
+    def run(self):
+        """Method to override. Any execution methods go here."""
+        pass
+
+    def _load_from_data_conditional(self):
+        if self.found_planes and self.found_fovs and self.found_times:
+            self.create_widgets()
+            self.append(self.run_widget)
+
+    def _run_conditional(self):
+        if self.found_planes and self.found_fovs and self.found_times:
+            self.run()
+
+    def _is_preset_widget(self, widget):
+        labels = {
+            self.experiment_name_widget.label,
+            self.TIFF_folder_widget.label,
+            self.analysis_folder_widget.label,
+            self.load_data_widget.label,
+            self.load_recent_widget.label,
+        }
+        return widget.label in labels
+
+    def _delete_extra_widgets(self):
         """Delete any widgets that come after the 'reload directories' button.
         This allows for easy UI resets in deriving widgets (see, e.g. _track.py)"""
-        while self[-1].label != self.load_data_widget.label:
+        while not self._is_preset_widget(self[-1]):
             self.pop()
 
-    def set_analysis_folder(self):
+    def _set_analysis_folder(self):
         self.analysis_folder = self.analysis_folder_widget.value
 
-    def set_experiment_name(self):
+    def _set_experiment_name(self):
         self.experiment_name = self.experiment_name_widget.value
 
-    def set_TIFF_folder(self):
+    def _set_TIFF_folder(self):
         self.TIFF_folder = self.TIFF_folder_widget.value
 
-    def set_valid_fovs(self):
+    def _set_valid_fovs(self):
         try:
             self.valid_fovs = get_valid_fovs(self.TIFF_folder)
             self.found_fovs = True
         except:
             self.found_fovs = False
 
-    def set_valid_times(self):
+    def _set_valid_times(self):
         try:
             self.valid_times = get_valid_times(self.TIFF_folder)
             self.found_times = True
         except:
             self.found_times = False
 
-    def set_valid_planes(self):
+    def _set_valid_planes(self):
         try:
             self.valid_planes = get_valid_planes(self.TIFF_folder)
             self.found_planes = True
         except:
             self.found_planes = False
+
+    def _get_most_recent_run(self):
+        """
+        Gets the parameters from the most recent run of the current
+        widget.
+        """
+        try:
+            with open("./history.json", "r") as h:
+                history = json.load(h)
+        except:
+            return {}
+        # get the most recent run of the relevant widget.
+        old_params = {}
+        for historic_widget_name, _, params in reversed(history):
+            if historic_widget_name == self.parent.name:
+                old_params = params
+                break
+
+        return old_params
+
+    def _load_most_recent_settings(self):
+        """
+        Load most most recent entry in the history file that has
+        name == 'widget_name'.
+        Apply the saved parameters to the currently extant widgets.
+        """
+        old_params = self._get_most_recent_run()
+        if old_params:
+            # assign old_params to current widgets.
+            for widget in self:
+                if self._is_preset_widget(widget):
+                    continue
+                _apply_seralized_widget(widget, old_params.get(widget.label, ""))
+
+    def _save_settings(self):
+        """
+        Save the current settings for all non-preset widgets.
+        name == 'widget_name'.
+        Apply the saved parameters to the currently extant widgets.
+        """
+        widget_name = self.parent.name
+        history = []
+        if Path("./history.json").exists():
+            with open("./history.json", "r") as h:
+                history = json.load(h)
+
+        # Generate a dictionary of the current parameters.
+        current_params = {}
+        for widget in self:
+            if self._is_preset_widget(widget):
+                continue
+            if isinstance(widget, PushButton):
+                continue
+            current_params[widget.label] = _serialize_widget(widget)
+
+        # If the most recent run has the same parameters as our current run, do nothing.
+        old_params = self._get_most_recent_run()
+        if old_params and old_params == current_params:
+            return
+        timestamp = datetime.now()
+        history.append((widget_name, str(timestamp), current_params))
+
+        with open("./history.json", "w") as h:
+            json.dump(history, h, indent=2)
 
 
 class TimeRangeSelector(RangeEdit):
@@ -148,12 +325,14 @@ class TimeRangeSelector(RangeEdit):
 
 
 class InteractiveSpinBox(Container):
-    """Our custom version of magicgui's 'SpinBox' widget.
+    """
+    Our custom version of magicgui's 'SpinBox' widget.
      * Supports floats (auto-rounds to 3 decimal points).
      * 'Atomic' updates: If an expensive (single-thread) method is called on value change, this will work
         as expected (unlike the default spinbox).
     Try to only use this in contexts where you would like to perform single-threaded operations
-    upon changing a spinbox."""
+    upon changing a spinbox.
+    """
 
     def __init__(
         self, min=0, max=99999, value=1, step=1, tooltip="", use_float=False, label=""
@@ -177,15 +356,18 @@ class InteractiveSpinBox(Container):
         self.increment_widget = PushButton(label="+")
         self.decrement_widget = PushButton(label="-")
 
-        self.text_widget.changed.connect(self.set_value)
-        self.increment_widget.changed.connect(self.increment)
-        self.decrement_widget.changed.connect(self.decrement)
+        self.text_widget.changed.connect(self._set_value)
+        self.increment_widget.changed.connect(self._increment)
+        self.decrement_widget.changed.connect(self._decrement)
 
         self.append(self.text_widget)
         self.append(self.increment_widget)
         self.append(self.decrement_widget)
 
-    def set_value(self):
+    def connect(self, func):
+        self.text_widget.changed.connect(func)
+
+    def _set_value(self):
         try:
             if self.use_float:
                 self.value = float(self.text_widget.value)
@@ -199,10 +381,7 @@ class InteractiveSpinBox(Container):
         self.value = max(self.min, self.value)
         self.value = min(self.max, self.value)
 
-    def connect(self, func):
-        self.text_widget.changed.connect(func)
-
-    def increment(self):
+    def _increment(self):
         # Update internal value, then update displayed value.
         # Desyncing the 'display' and 'internal' values allows us to display
         # rounded floating points.
@@ -213,7 +392,7 @@ class InteractiveSpinBox(Container):
         else:
             self.text_widget.value = self.value
 
-    def decrement(self):
+    def _decrement(self):
         # Update internal value, then update displayed value.
         self.value = self.value - self.step
         self.value = max(self.min, self.value)
@@ -249,7 +428,12 @@ class PlanePicker(ComboBox):
 
 
 class FOVChooser(LineEdit):
-    """Widget for choosing multiple FOVs."""
+    """
+    Widget for choosing multiple FOVs.
+    Use connect_callback(...) instead of super().changed.connect(...).
+    Additionally, the input function for connect_callback accepts a single
+    parameter (the range of FOVs)
+    """
 
     def __init__(self, permitted_FOVs):
         self.min_FOV = min(permitted_FOVs)

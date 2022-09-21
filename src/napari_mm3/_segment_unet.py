@@ -5,21 +5,19 @@ import h5py
 import multiprocessing
 import numpy as np
 import napari
-from magicgui import magic_factory, magicgui
-from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox, PushButton
+from magicgui import magicgui
+from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox
 from napari.types import ImageData, LabelsData
 import os
 
-from pathlib import Path
-from napari import Viewer
 from skimage import segmentation, morphology
 from skimage.filters import median
 
 import six
 import tifffile as tiff
 
-from ._function import information, load_specs, load_stack
-from ._deriving_widgets import FOVChooser, MM3Container, PlanePicker
+from .utils import information, load_stack
+from ._deriving_widgets import FOVChooser, MM3Container, PlanePicker, load_specs
 
 # loss functions for model
 def dice_coeff(y_true, y_pred):
@@ -346,7 +344,7 @@ def segmentUNet(params):
     p["pred_img"] = "pred_unet"
 
     # load specs file
-    specs = load_specs(params)
+    specs = load_specs(params["ana_dir"])
     # print(specs) # for debugging
 
     # make list of FOVs to process (keys of channel_mask file)
@@ -414,7 +412,6 @@ class SegmentUnet(MM3Container):
         self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
         self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
         self.interactive_widget = CheckBox(label="interactive", value=False)
-        self.run_widget = PushButton(label="run")
 
         self.append(self.fov_widget)
         self.append(self.plane_widget)
@@ -426,12 +423,11 @@ class SegmentUnet(MM3Container):
         self.append(self.height_widget)
         self.append(self.width_widget)
         self.append(self.interactive_widget)
-        self.append(self.run_widget)
 
         self.fov_widget.connect_callback(self.set_fovs)
-        self.run_widget.changed.connect(self.run)
 
     def run(self):
+        """Overriding method. Perform mother machine analysis."""
         params = dict()
         params["experiment_name"] = self.experiment_name
         params["image_directory"] = self.TIFF_folder

@@ -1,5 +1,3 @@
-from magicgui import magic_factory, magicgui
-from pathlib import Path
 import multiprocessing
 import napari
 import os
@@ -15,13 +13,12 @@ from skimage.filters import threshold_otsu
 from napari.utils import progress
 
 
-from ._function import (
+from .utils import (
     information,
     warnings,
-    load_specs,
     load_stack,
 )
-from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
+from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser, load_specs
 
 # Do segmentation for an channel time stack
 def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
@@ -227,7 +224,7 @@ def segmentOTSU(params, view_result: bool = False):
     p["seg_img"] = "seg_otsu"
 
     # load specs file
-    specs = load_specs(params)
+    specs = load_specs(params["ana_dir"])
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
@@ -266,11 +263,7 @@ class SegmentOtsu(MM3Container):
 
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
         self.otsu_threshold_widget = FloatSpinBox(
-            label="OTSU threshold",
-            min=0.0,
-            max=2.0,
-            step=0.01,
-            value=1
+            label="OTSU threshold", min=0.0, max=2.0, step=0.01, value=1
         )
         self.first_opening_size_widget = SpinBox(
             label="first opening size", min=0, value=2
@@ -285,7 +278,6 @@ class SegmentOtsu(MM3Container):
         self.preview_widget = PushButton(label="generate preview", value=False)
         self.fov_widget = FOVChooser(self.valid_fovs)
         self.view_result_widget = CheckBox(label="view result")
-        self.run_widget = PushButton(label="run on chosen FOVs")
 
         self.plane_picker_widget.changed.connect(self.set_phase_plane)
         self.fov_widget.connect_callback(self.set_fovs)
@@ -295,7 +287,6 @@ class SegmentOtsu(MM3Container):
         self.second_opening_size_widget.changed.connect(self.set_second_opening_size)
         self.min_object_size_widget.changed.connect(self.set_min_object_size)
         self.preview_widget.clicked.connect(self.render_preview)
-        self.run_widget.clicked.connect(self.run)
 
         self.append(self.plane_picker_widget)
         self.append(self.otsu_threshold_widget)
@@ -306,7 +297,6 @@ class SegmentOtsu(MM3Container):
         self.append(self.preview_widget)
         self.append(self.fov_widget)
         self.append(self.view_result_widget)
-        self.append(self.run_widget)
 
         self.set_fovs(self.valid_fovs)
         self.set_phase_plane()
@@ -371,7 +361,7 @@ class SegmentOtsu(MM3Container):
         self.set_params()
         # TODO: Add ability to change these to other FOVs
         valid_fov = self.valid_fovs[0]
-        specs = load_specs(self.params)
+        specs = load_specs(self.params["ana_dir"])
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         ## pull out first fov & peak id with cells

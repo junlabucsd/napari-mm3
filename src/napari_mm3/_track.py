@@ -12,22 +12,36 @@ import matplotlib.patches as mpatches
 
 from skimage import io
 from skimage.measure import regionprops
-from napari import Viewer
 from napari.utils import progress
 
-from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
-from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, PushButton
+from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser, load_specs
+from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox
 
-from ._function import (
+from .utils import (
     information,
-    load_specs,
     Cell,
     load_stack,
-    load_time_table,
     find_complete_cells,
     find_cells_of_birth_label,
     find_cells_of_fov_and_peak,
 )
+
+
+# load the time table
+def load_time_table(ana_dir):
+    """Add the time table dictionary to the params global dictionary.
+    This is so it can be used during Cell creation.
+    """
+
+    # try first for yaml, then for pkl
+    try:
+        with open(os.path.join(ana_dir, "time_table.yaml"), "rb") as time_table_file:
+            return yaml.safe_load(time_table_file)
+    except:
+        with open(os.path.join(ana_dir, "time_table.pkl"), "rb") as time_table_file:
+            return pickle.load(time_table_file)
+
+
 
 # functions for checking if a cell has divided or not
 # this function should also take the variable t to
@@ -466,7 +480,9 @@ def Lineage(params):
         peak_found = False
         # Analyze the first valid peak
         for peak_id, spec in six.iteritems(specs[fov]):
-            if spec == 1:  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
+            if (
+                spec == 1
+            ):  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
                 sample_img = load_stack(params, fov, peak_id)
                 peak_len = np.shape(sample_img)[0]
                 peak_found = True
@@ -817,7 +833,7 @@ def Track_Cells(params):
         os.makedirs(p["cell_dir"])
 
     # load specs file
-    specs = load_specs(params)
+    specs = load_specs(params["ana_dir"])
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
@@ -939,7 +955,6 @@ class Track(MM3Container):
         self.segmentation_method_widget = ComboBox(
             label="segmentation method", choices=["Otsu", "U-net"]
         )
-        self.run_widget = PushButton(label="Run tracking")
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.pxl2um_widget.changed.connect(self.set_pxl2um)
@@ -954,7 +969,6 @@ class Track(MM3Container):
         self.max_growth_area_widget.changed.connect(self.set_max_growth_area)
         self.min_growth_area_widget.changed.connect(self.set_min_growth_area)
         self.segmentation_method_widget.changed.connect(self.set_segmentation_method)
-        self.run_widget.clicked.connect(self.run)
 
         self.append(self.fov_widget)
         self.append(self.pxl2um_widget)
@@ -967,7 +981,6 @@ class Track(MM3Container):
         self.append(self.max_growth_area_widget)
         self.append(self.min_growth_area_widget)
         self.append(self.segmentation_method_widget)
-        self.append(self.run_widget)
 
         self.set_fovs(self.valid_fovs)
         self.set_pxl2um()
@@ -982,7 +995,7 @@ class Track(MM3Container):
         self.set_segmentation_method()
 
     def run(self):
-        """Performs Mother Machine Analysis"""
+        """Overriding method. Performs Mother Machine Analysis"""
         params = dict()
         params["experiment_name"] = self.experiment_name
         params["FOV"] = self.fovs

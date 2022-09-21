@@ -9,14 +9,34 @@ import tifffile as tiff
 import re
 import io
 import numpy as np
+import datetime
 
 from dask import delayed
 from pathlib import Path
 from skimage import io
 from napari.utils import progress
 from magicgui.widgets import Container, FileEdit, CheckBox, PushButton
-from ._function import range_string_to_indices, information, julian_day_number
+from .utils import information
 from ._deriving_widgets import FOVChooser, TimeRangeSelector
+
+
+def julian_day_number():
+    """
+    Need this to solve a bug in pims_nd2.nd2reader.ND2_Reader instance initialization.
+    The bug is in /usr/local/lib/python2.7/site-packages/pims_nd2/ND2SDK.py in function `jdn_to_datetime_local`, when the year number in the metadata (self._lim_metadata_desc) is not in the correct range. This causes a problem when calling self.metadata.
+    https://en.wikipedia.org/wiki/Julian_day
+    """
+    dt = datetime.datetime.now()
+    tt = dt.timetuple()
+    jdn = (
+        (1461.0 * (tt.tm_year + 4800.0 + (tt.tm_mon - 14.0) / 12)) / 4.0
+        + (367.0 * (tt.tm_mon - 2.0 - 12.0 * ((tt.tm_mon - 14.0) / 12))) / 12.0
+        - (3.0 * ((tt.tm_year + 4900.0 + (tt.tm_mon - 14.0) / 12.0) / 100.0)) / 4.0
+        + tt.tm_mday
+        - 32075
+    )
+
+    return jdn
 
 
 def get_nd2_fovs(exp_dir):
@@ -308,7 +328,7 @@ class Nd2ToTIFF(Container):
 
         if self.display_after_export_widget.value:
             self.render_images()
-        information('Finished TIFF export')
+        information("Finished TIFF export")
 
     def render_images(self):
         viewer = napari.current_viewer()

@@ -4,9 +4,8 @@ import numpy as np
 import yaml
 import tifffile as tiff
 
-from ._function import information, warning
+from .utils import information, warning
 from ._deriving_widgets import MM3Container, FOVChooserSingle, InteractiveSpinBox
-from magicgui.widgets import FloatSpinBox
 
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 0.25])
 TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, 0.25])
@@ -190,6 +189,8 @@ class ChannelPicker(MM3Container):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
 
         self.experiment_name_widget.hide()
+        self.load_recent_widget.hide()
+        self.run_widget.hide()
 
         # Set up viewer
         self.viewer.grid.enabled = False
@@ -240,7 +241,6 @@ class ChannelPicker(MM3Container):
         self.coords = [
             [[0, p - spread], [channel_height, p + spread]] for p in self.sorted_peaks
         ]
-
         shapes_layer = display_rectangles(
             self.viewer,
             self.coords,
@@ -248,6 +248,7 @@ class ChannelPicker(MM3Container):
             self.sorted_specs,
             self.crosscorrs,
         )
+
         shapes_layer.mouse_drag_callbacks.append(self.update_classification)
 
     def update_classification(self, shapes_layer, event):
@@ -283,7 +284,7 @@ class ChannelPicker(MM3Container):
         save_specs(self.analysis_folder, self.specs)
         information("Saved channel classifications to specs file")
 
-    def update_threshold(self,shapes_layer):
+    def update_threshold(self, shapes_layer):
         self.threshold = self.threshold_widget.value
         self.specs = regenerate_fov_specs(
             self.analysis_folder, self.cur_fov, self.threshold, overwrite=True

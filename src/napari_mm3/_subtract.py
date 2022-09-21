@@ -1,9 +1,7 @@
-from magicgui import magic_factory
 from pathlib import Path
 from skimage.feature import match_template
 from multiprocessing.pool import Pool
-from napari import Viewer
-from magicgui.widgets import SpinBox, ComboBox, PushButton, CheckBox
+from magicgui.widgets import SpinBox, ComboBox, CheckBox
 
 import tifffile as tiff
 import numpy as np
@@ -13,14 +11,13 @@ import napari
 import six
 import h5py
 
-from ._function import (
+from .utils import (
     information,
     warning,
     load_stack,
-    load_specs,
 )
 
-from ._deriving_widgets import MM3Container, FOVChooser, PlanePicker
+from ._deriving_widgets import MM3Container, FOVChooser, PlanePicker, load_specs
 
 
 def subtract_phase(params, cropped_channel, empty_channel):
@@ -529,7 +526,7 @@ def subtract(
         sub_dir.mkdir()
 
     # load specs file
-    specs = load_specs(params)
+    specs = load_specs(params["ana_dir"])
 
     # make list of FOVs to process (keys of specs file)
     fov_id_list = set(sorted(specs.keys()))
@@ -625,13 +622,11 @@ class Subtract(MM3Container):
             self.valid_planes, label="subtraction plane"
         )
         self.output_display_widget = CheckBox(label="display output results")
-        self.run_button_widget = PushButton(label="Run")
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.alignment_pad_widget.changed.connect(self.set_alignment_pad)
         self.subtraction_plane_widget.changed.connect(self.set_subtraction_plane)
         self.mode_widget.changed.connect(self.set_mode)
-        self.run_button_widget.changed.connect(self.subtract)
 
         self.append(self.fov_widget)
         self.append(self.alignment_pad_widget)
@@ -645,10 +640,8 @@ class Subtract(MM3Container):
         self.set_mode()
         self.set_subtraction_plane()
 
-    def subtract(self):
-        # Only need this if we will be using a progress bar, and
-        # currently we don't do progress bars with multithreading.
-        # self.viewer.window._status_bar._toggle_activity_dock(True)
+    def run(self):
+        """Overriding method. Perform mother machine analysis."""
         params = dict()
         params["experiment_name"] = self.experiment_name
         params["output"] = "TIFF"

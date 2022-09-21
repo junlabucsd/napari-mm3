@@ -25,7 +25,36 @@ from napari import Viewer
 from napari.utils import progress
 from ._deriving_widgets import MM3Container, FOVChooser, TimeRangeSelector, PlanePicker
 
-from ._function import information, warning, get_fov, get_time, get_plane, load_stack
+from .utils import information, warning, load_stack
+
+
+#### Helpful utility functions.
+
+def get_plane(filepath):
+    pattern = r"(c\d+).tif"
+    res = re.search(pattern, filepath, re.IGNORECASE)
+    if res != None:
+        return res.group(1)
+    else:
+        return None
+
+
+def get_fov(filepath):
+    pattern = r"xy(\d+)\w*.tif"
+    res = re.search(pattern, filepath, re.IGNORECASE)
+    if res != None:
+        return int(res.group(1))
+    else:
+        return None
+
+
+def get_time(filepath):
+    pattern = r"t(\d+)xy\w+.tif"
+    res = re.search(pattern, filepath, re.IGNORECASE)
+    if res != None:
+        return np.int_(res.group(1))
+    else:
+        return None
 
 
 ### Functions for working with TIFF metadata ###
@@ -1408,7 +1437,7 @@ class Compile(MM3Container):
         # TODO: Auto-infer?
         self.image_source_widget = ComboBox(
             label="image source",
-            choices=["nd2ToTIFF", "TIFF_from_elements","other"],
+            choices=["nd2ToTIFF", "TIFF_from_elements", "other"],
         )
         self.phase_plane_widget = PlanePicker(
             self.valid_planes, label="phase plane channel"
@@ -1446,7 +1475,6 @@ class Compile(MM3Container):
             min=0,
             max=1,
         )
-        self.run_analysis_widget = PushButton(text="Run")
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.image_source_widget.changed.connect(self.set_image_source)
@@ -1455,7 +1483,6 @@ class Compile(MM3Container):
         self.seconds_per_frame_widget.changed.connect(self.set_seconds_per_frame)
         self.channel_width_widget.changed.connect(self.set_channel_width)
         self.channel_separation_widget.changed.connect(self.set_channel_separation)
-        self.run_analysis_widget.clicked.connect(self.run_analysis)
 
         self.append(self.fov_widget)
         self.append(self.image_source_widget)
@@ -1464,7 +1491,6 @@ class Compile(MM3Container):
         self.append(self.seconds_per_frame_widget)
         self.append(self.channel_width_widget)
         self.append(self.channel_separation_widget)
-        self.append(self.run_analysis_widget)
 
         self.set_image_source()
         self.set_phase_plane()
@@ -1476,17 +1502,8 @@ class Compile(MM3Container):
 
         self.display_image()
 
-    def display_image(self):
-        self.viewer.layers.clear()
-        self.viewer.text_overlay.visible = False
-        image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
-        images = self.viewer.add_image(np.array(image_fov_stack))
-        self.viewer.dims.current_step = (0, 0)
-        images.reset_contrast_limits()
-        images.gamma = 0.5
-
-    def run_analysis(self):
-        """Performs Mother Machine Analysis"""
+    def run(self):
+        """Overriding method. Performs Mother Machine Analysis"""
         # global params. Ideally, this is rendered obsolete. However, old code uses this
         # Fixing it up would take a very long time, and as such is being deferred to later.
         params = {
@@ -1530,7 +1547,16 @@ class Compile(MM3Container):
         self.viewer.window._status_bar._toggle_activity_dock(True)
 
         compile(params)
-        information('Finished.')
+        information("Finished.")
+
+    def display_image(self):
+        self.viewer.layers.clear()
+        self.viewer.text_overlay.visible = False
+        image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
+        images = self.viewer.add_image(np.array(image_fov_stack))
+        self.viewer.dims.current_step = (0, 0)
+        images.reset_contrast_limits()
+        images.gamma = 0.5
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value

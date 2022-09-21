@@ -1,15 +1,8 @@
 from __future__ import print_function, division
-import re
-import datetime
 import h5py
 import numpy as np
 import os
 
-try:
-    import cPickle as pickle
-except:
-    import pickle
-import re
 from scipy import ndimage as ndi
 from skimage import filters, morphology
 from skimage.filters import median
@@ -17,7 +10,6 @@ from skimage.filters import median
 import sys
 import time
 import warnings
-import yaml
 import tifffile as tiff
 
 import seaborn as sns
@@ -37,54 +29,8 @@ def information(*objs):
     print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
 
 
-def julian_day_number():
-    """
-    Need this to solve a bug in pims_nd2.nd2reader.ND2_Reader instance initialization.
-    The bug is in /usr/local/lib/python2.7/site-packages/pims_nd2/ND2SDK.py in function `jdn_to_datetime_local`, when the year number in the metadata (self._lim_metadata_desc) is not in the correct range. This causes a problem when calling self.metadata.
-    https://en.wikipedia.org/wiki/Julian_day
-    """
-    dt = datetime.datetime.now()
-    tt = dt.timetuple()
-    jdn = (
-        (1461.0 * (tt.tm_year + 4800.0 + (tt.tm_mon - 14.0) / 12)) / 4.0
-        + (367.0 * (tt.tm_mon - 2.0 - 12.0 * ((tt.tm_mon - 14.0) / 12))) / 12.0
-        - (3.0 * ((tt.tm_year + 4900.0 + (tt.tm_mon - 14.0) / 12.0) / 100.0)) / 4.0
-        + tt.tm_mday
-        - 32075
-    )
-
-    return jdn
-
-
-def get_plane(filepath):
-    pattern = r"(c\d+).tif"
-    res = re.search(pattern, filepath, re.IGNORECASE)
-    if res != None:
-        return res.group(1)
-    else:
-        return None
-
-
-def get_fov(filepath):
-    pattern = r"xy(\d+)\w*.tif"
-    res = re.search(pattern, filepath, re.IGNORECASE)
-    if res != None:
-        return int(res.group(1))
-    else:
-        return None
-
-
-def get_time(filepath):
-    pattern = r"t(\d+)xy\w+.tif"
-    res = re.search(pattern, filepath, re.IGNORECASE)
-    if res != None:
-        return np.int_(res.group(1))
-    else:
-        return None
-
-
 # loads and image stack from TIFF or HDF5 using mm3 conventions
-def load_stack(params, fov_id, peak_id, color="c1", image_return_number=None):
+def load_stack(params, fov_id, peak_id, color="c1"):
     """
     Loads an image stack.
 
@@ -184,38 +130,6 @@ def load_stack(params, fov_id, peak_id, color="c1", image_return_number=None):
             img_stack = h5f["channel_%04d/p%04d_%s" % (peak_id, peak_id, color)][:]
 
     return img_stack
-
-
-# load the time table and add it to the global params
-def load_time_table(ana_dir):
-    """Add the time table dictionary to the params global dictionary.
-    This is so it can be used during Cell creation.
-    """
-
-    # try first for yaml, then for pkl
-    try:
-        with open(os.path.join(ana_dir, "time_table.yaml"), "rb") as time_table_file:
-            return yaml.safe_load(time_table_file)
-    except:
-        with open(os.path.join(ana_dir, "time_table.pkl"), "rb") as time_table_file:
-            return pickle.load(time_table_file)
-
-
-# function for loading the specs file
-def load_specs(params):
-    """Load specs file which indicates which channels should be analyzed, used as empties, or ignored."""
-
-    try:
-        with open(os.path.join(params["ana_dir"], "specs.yaml"), "r") as specs_file:
-            specs = yaml.safe_load(specs_file)
-    except:
-        try:
-            with open(os.path.join(params["ana_dir"], "specs.pkl"), "rb") as specs_file:
-                specs = pickle.load(specs_file)
-        except ValueError:
-            warning("Could not load specs file.")
-
-    return specs
 
 
 ### Cell class and related functions
@@ -846,28 +760,3 @@ def find_cells_of_birth_label(Cells, label_num=1):
             fCells[cell_id] = Cells[cell_id]
 
     return fCells
-
-
-def range_string_to_indices(range_string):
-    successful = True
-    try:
-        range_string = range_string.replace(" ", "")
-        split = range_string.split(",")
-        indices = []
-        for items in split:
-            # If it's a range
-            if "-" in items:
-                limits = list(map(int, items.split("-")))
-                if len(limits) == 2:
-                    # Make it an inclusive range, as users would expect
-                    limits[1] += 1
-                    indices += list(range(limits[0], limits[1]))
-            # If it's a single item.
-            else:
-                indices += [int(items)]
-        print("Index range string valid!")
-        return indices
-    except:
-        print("Index range string invalid. Returning empty range until a new string is specified.")
-        return []
-    
