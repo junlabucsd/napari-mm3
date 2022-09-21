@@ -1,14 +1,8 @@
 from __future__ import print_function, division
-import re
 import h5py
 import numpy as np
 import os
 
-try:
-    import cPickle as pickle
-except:
-    import pickle
-import re
 from scipy import ndimage as ndi
 from skimage import filters, morphology
 from skimage.filters import median
@@ -16,7 +10,6 @@ from skimage.filters import median
 import sys
 import time
 import warnings
-import yaml
 import tifffile as tiff
 
 import seaborn as sns
