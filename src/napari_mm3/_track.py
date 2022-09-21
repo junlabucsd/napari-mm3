@@ -16,18 +16,34 @@ from napari import Viewer
 from napari.utils import progress
 
 from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
-from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, PushButton
+from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox
 
 from ._function import (
     information,
     load_specs,
     Cell,
     load_stack,
-    load_time_table,
     find_complete_cells,
     find_cells_of_birth_label,
     find_cells_of_fov_and_peak,
 )
+
+
+# load the time table
+def load_time_table(ana_dir):
+    """Add the time table dictionary to the params global dictionary.
+    This is so it can be used during Cell creation.
+    """
+
+    # try first for yaml, then for pkl
+    try:
+        with open(os.path.join(ana_dir, "time_table.yaml"), "rb") as time_table_file:
+            return yaml.safe_load(time_table_file)
+    except:
+        with open(os.path.join(ana_dir, "time_table.pkl"), "rb") as time_table_file:
+            return pickle.load(time_table_file)
+
+
 
 # functions for checking if a cell has divided or not
 # this function should also take the variable t to

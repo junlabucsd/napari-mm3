@@ -1,6 +1,5 @@
 from __future__ import print_function, division
 import re
-import datetime
 import h5py
 import numpy as np
 import os
@@ -35,33 +34,6 @@ def warning(*objs):
 
 def information(*objs):
     print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
-
-
-def get_plane(filepath):
-    pattern = r"(c\d+).tif"
-    res = re.search(pattern, filepath, re.IGNORECASE)
-    if res != None:
-        return res.group(1)
-    else:
-        return None
-
-
-def get_fov(filepath):
-    pattern = r"xy(\d+)\w*.tif"
-    res = re.search(pattern, filepath, re.IGNORECASE)
-    if res != None:
-        return int(res.group(1))
-    else:
-        return None
-
-
-def get_time(filepath):
-    pattern = r"t(\d+)xy\w+.tif"
-    res = re.search(pattern, filepath, re.IGNORECASE)
-    if res != None:
-        return np.int_(res.group(1))
-    else:
-        return None
 
 
 # loads and image stack from TIFF or HDF5 using mm3 conventions
@@ -165,21 +137,6 @@ def load_stack(params, fov_id, peak_id, color="c1", image_return_number=None):
             img_stack = h5f["channel_%04d/p%04d_%s" % (peak_id, peak_id, color)][:]
 
     return img_stack
-
-
-# load the time table and add it to the global params
-def load_time_table(ana_dir):
-    """Add the time table dictionary to the params global dictionary.
-    This is so it can be used during Cell creation.
-    """
-
-    # try first for yaml, then for pkl
-    try:
-        with open(os.path.join(ana_dir, "time_table.yaml"), "rb") as time_table_file:
-            return yaml.safe_load(time_table_file)
-    except:
-        with open(os.path.join(ana_dir, "time_table.pkl"), "rb") as time_table_file:
-            return pickle.load(time_table_file)
 
 
 # function for loading the specs file

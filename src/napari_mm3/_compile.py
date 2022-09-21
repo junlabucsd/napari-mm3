@@ -25,7 +25,36 @@ from napari import Viewer
 from napari.utils import progress
 from ._deriving_widgets import MM3Container, FOVChooser, TimeRangeSelector, PlanePicker
 
-from ._function import information, warning, get_fov, get_time, get_plane, load_stack
+from ._function import information, warning, load_stack
+
+
+#### Helpful utility functions.
+
+def get_plane(filepath):
+    pattern = r"(c\d+).tif"
+    res = re.search(pattern, filepath, re.IGNORECASE)
+    if res != None:
+        return res.group(1)
+    else:
+        return None
+
+
+def get_fov(filepath):
+    pattern = r"xy(\d+)\w*.tif"
+    res = re.search(pattern, filepath, re.IGNORECASE)
+    if res != None:
+        return int(res.group(1))
+    else:
+        return None
+
+
+def get_time(filepath):
+    pattern = r"t(\d+)xy\w+.tif"
+    res = re.search(pattern, filepath, re.IGNORECASE)
+    if res != None:
+        return np.int_(res.group(1))
+    else:
+        return None
 
 
 ### Functions for working with TIFF metadata ###
