@@ -26,9 +26,6 @@ contributions:
   - id: napari-mm3.ChannelPicker
     title: Sort channels
     python_name: napari_mm3._channel_picker:ChannelPicker
-  # - id: napari-mm3.DebugOtsu
-  #   title: Performs Mother Machine analysis
-  #   python_name: napari_mm3._function:DebugOtsu
   widgets:
   - command: napari-mm3.Nd2ToTIFF
     display_name: nd2ToTIFF
@@ -54,6 +51,3 @@ contributions:
   - command: napari-mm3.Annotate
     display_name: Annotate
     autogenerate: False
-  # - command: napari-mm3.DebugOtsu
-  #   display_name: DebugOtsu
-  #   autogenerate: False

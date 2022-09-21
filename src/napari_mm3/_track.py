@@ -17,7 +17,7 @@ from napari.utils import progress
 from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser, load_specs
 from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox
 
-from ._function import (
+from .utils import (
     information,
     Cell,
     load_stack,

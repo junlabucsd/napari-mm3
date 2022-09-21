@@ -25,7 +25,7 @@ from napari import Viewer
 from napari.utils import progress
 from ._deriving_widgets import MM3Container, FOVChooser, TimeRangeSelector, PlanePicker
 
-from ._function import information, warning, load_stack
+from .utils import information, warning, load_stack
 
 
 #### Helpful utility functions.

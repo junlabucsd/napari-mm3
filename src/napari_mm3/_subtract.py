@@ -11,7 +11,7 @@ import napari
 import six
 import h5py
 
-from ._function import (
+from .utils import (
     information,
     warning,
     load_stack,

@@ -4,7 +4,7 @@ import numpy as np
 import yaml
 import tifffile as tiff
 
-from ._function import information, warning
+from .utils import information, warning
 from ._deriving_widgets import MM3Container, FOVChooserSingle, InteractiveSpinBox
 
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 0.25])

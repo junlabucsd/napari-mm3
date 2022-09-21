@@ -9,7 +9,7 @@ from magicgui.widgets import (
     ComboBox,
 )
 from pathlib import Path
-from ._function import warning
+from .utils import warning
 import pickle
 import yaml
 import json

@@ -16,7 +16,7 @@ from skimage.filters import median
 import six
 import tifffile as tiff
 
-from ._function import information, load_stack
+from .utils import information, load_stack
 from ._deriving_widgets import FOVChooser, MM3Container, PlanePicker, load_specs
 
 # loss functions for model

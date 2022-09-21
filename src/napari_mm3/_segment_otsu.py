@@ -13,7 +13,7 @@ from skimage.filters import threshold_otsu
 from napari.utils import progress
 
 
-from ._function import (
+from .utils import (
     information,
     warnings,
     load_stack,
