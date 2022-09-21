@@ -26,6 +26,9 @@ contributions:
   - id: napari-mm3.ChannelPicker
     title: Sort channels
     python_name: napari_mm3._channel_picker:ChannelPicker
+  - id: napari-mm3.Colors
+    title: Analyze fluorescence images
+    python_name: napari_mm3._colors:Colors
   # - id: napari-mm3.DebugOtsu
   #   title: Performs Mother Machine analysis
   #   python_name: napari_mm3._function:DebugOtsu
@@ -53,6 +56,9 @@ contributions:
     autogenerate: False
   - command: napari-mm3.Annotate
     display_name: Annotate
+    autogenerate: False
+  - command: napari-mm3.Colors
+    display_name: Colors
     autogenerate: False
   # - command: napari-mm3.DebugOtsu
   #   display_name: DebugOtsu
