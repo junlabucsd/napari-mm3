@@ -1,5 +1,3 @@
-from magicgui import magic_factory, magicgui
-from pathlib import Path
 import multiprocessing
 import napari
 import os
@@ -18,10 +16,9 @@ from napari.utils import progress
 from ._function import (
     information,
     warnings,
-    load_specs,
     load_stack,
 )
-from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
+from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser, load_specs
 
 # Do segmentation for an channel time stack
 def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
@@ -227,7 +224,7 @@ def segmentOTSU(params, view_result: bool = False):
     p["seg_img"] = "seg_otsu"
 
     # load specs file
-    specs = load_specs(params)
+    specs = load_specs(params["ana_dir"])
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
@@ -364,7 +361,7 @@ class SegmentOtsu(MM3Container):
         self.set_params()
         # TODO: Add ability to change these to other FOVs
         valid_fov = self.valid_fovs[0]
-        specs = load_specs(self.params)
+        specs = load_specs(self.params["ana_dir"])
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         ## pull out first fov & peak id with cells

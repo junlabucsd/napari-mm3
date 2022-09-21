@@ -37,7 +37,7 @@ def information(*objs):
 
 
 # loads and image stack from TIFF or HDF5 using mm3 conventions
-def load_stack(params, fov_id, peak_id, color="c1", image_return_number=None):
+def load_stack(params, fov_id, peak_id, color="c1"):
     """
     Loads an image stack.
 
@@ -137,23 +137,6 @@ def load_stack(params, fov_id, peak_id, color="c1", image_return_number=None):
             img_stack = h5f["channel_%04d/p%04d_%s" % (peak_id, peak_id, color)][:]
 
     return img_stack
-
-
-# function for loading the specs file
-def load_specs(params):
-    """Load specs file which indicates which channels should be analyzed, used as empties, or ignored."""
-
-    try:
-        with open(os.path.join(params["ana_dir"], "specs.yaml"), "r") as specs_file:
-            specs = yaml.safe_load(specs_file)
-    except:
-        try:
-            with open(os.path.join(params["ana_dir"], "specs.pkl"), "rb") as specs_file:
-                specs = pickle.load(specs_file)
-        except ValueError:
-            warning("Could not load specs file.")
-
-    return specs
 
 
 ### Cell class and related functions

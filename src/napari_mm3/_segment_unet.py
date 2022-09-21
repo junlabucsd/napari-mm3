@@ -5,21 +5,19 @@ import h5py
 import multiprocessing
 import numpy as np
 import napari
-from magicgui import magic_factory, magicgui
-from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox, PushButton
+from magicgui import magicgui
+from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox
 from napari.types import ImageData, LabelsData
 import os
 
-from pathlib import Path
-from napari import Viewer
 from skimage import segmentation, morphology
 from skimage.filters import median
 
 import six
 import tifffile as tiff
 
-from ._function import information, load_specs, load_stack
-from ._deriving_widgets import FOVChooser, MM3Container, PlanePicker
+from ._function import information, load_stack
+from ._deriving_widgets import FOVChooser, MM3Container, PlanePicker, load_specs
 
 # loss functions for model
 def dice_coeff(y_true, y_pred):
@@ -346,7 +344,7 @@ def segmentUNet(params):
     p["pred_img"] = "pred_unet"
 
     # load specs file
-    specs = load_specs(params)
+    specs = load_specs(params["ana_dir"])
     # print(specs) # for debugging
 
     # make list of FOVs to process (keys of channel_mask file)

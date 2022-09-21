@@ -1,9 +1,7 @@
-from magicgui import magic_factory
 from pathlib import Path
 from skimage.feature import match_template
 from multiprocessing.pool import Pool
-from napari import Viewer
-from magicgui.widgets import SpinBox, ComboBox, PushButton, CheckBox
+from magicgui.widgets import SpinBox, ComboBox, CheckBox
 
 import tifffile as tiff
 import numpy as np
@@ -17,10 +15,9 @@ from ._function import (
     information,
     warning,
     load_stack,
-    load_specs,
 )
 
-from ._deriving_widgets import MM3Container, FOVChooser, PlanePicker
+from ._deriving_widgets import MM3Container, FOVChooser, PlanePicker, load_specs
 
 
 def subtract_phase(params, cropped_channel, empty_channel):
@@ -529,7 +526,7 @@ def subtract(
         sub_dir.mkdir()
 
     # load specs file
-    specs = load_specs(params)
+    specs = load_specs(params["ana_dir"])
 
     # make list of FOVs to process (keys of specs file)
     fov_id_list = set(sorted(specs.keys()))

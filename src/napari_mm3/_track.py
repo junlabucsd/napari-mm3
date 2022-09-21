@@ -12,15 +12,13 @@ import matplotlib.patches as mpatches
 
 from skimage import io
 from skimage.measure import regionprops
-from napari import Viewer
 from napari.utils import progress
 
-from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
+from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser, load_specs
 from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox
 
 from ._function import (
     information,
-    load_specs,
     Cell,
     load_stack,
     find_complete_cells,
@@ -835,7 +833,7 @@ def Track_Cells(params):
         os.makedirs(p["cell_dir"])
 
     # load specs file
-    specs = load_specs(params)
+    specs = load_specs(params["ana_dir"])
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])

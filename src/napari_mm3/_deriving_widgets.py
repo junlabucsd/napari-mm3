@@ -9,10 +9,27 @@ from magicgui.widgets import (
     ComboBox,
 )
 from pathlib import Path
+from ._function import warning
+import pickle
+import yaml
 import json
 import tifffile as tiff
 import re
 
+
+def load_specs(analysis_dir: Path):
+    """Load specs file which indicates which channels should be analyzed, used as empties, or ignored."""
+    try:
+        with (analysis_dir / "specs.yaml").open("r") as specs_file:
+            specs = yaml.safe_load(specs_file)
+    except:
+        try:
+            with (analysis_dir / "specs.pkl").open("rb") as specs_file:
+                specs = pickle.load(specs_file)
+        except ValueError:
+            warning("Could not load specs file.")
+
+    return specs
 
 def get_valid_planes(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
