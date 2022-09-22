@@ -633,7 +633,6 @@ class Subtract(MM3Container):
         self.append(self.mode_widget)
         self.append(self.subtraction_plane_widget)
         self.append(self.output_display_widget)
-        self.append(self.run_button_widget)
 
         self.set_fovs(self.valid_fovs)
         self.set_alignment_pad()

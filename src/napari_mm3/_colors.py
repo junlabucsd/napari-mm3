@@ -20,7 +20,7 @@ from .utils import (
 
 from ._deriving_widgets import load_specs, load_time_table
 
-def find_cell_intensities(time_table, fov_id, peak_id, Cells, midline=False, channel_name='sub_c2'):
+def find_cell_intensities(params, time_table, fov_id, peak_id, Cells, midline=False, channel_name='sub_c2'):
     '''
     Finds fluorescenct information for cells. All the cells in Cells
     should be from one fov/peak. See the function
@@ -28,15 +28,16 @@ def find_cell_intensities(time_table, fov_id, peak_id, Cells, midline=False, cha
     '''
 
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(fov_id, peak_id, color=channel_name)
-    seg_stack = load_stack(fov_id, peak_id, color='seg_unet')
+    fl_stack = load_stack(params, fov_id, peak_id, color=channel_name)
+    seg_stack = load_stack(params, fov_id, peak_id, color='seg_unet')
 
     # determine absolute time index
     times_all = []
     for fov in time_table:
-        times_all = np.append(times_all, time_table[fov].keys())
+        times_all = np.append(times_all, list(time_table[fov].keys()))
     times_all = np.unique(times_all)
     times_all = np.sort(times_all)
+    print(times_all)
     times_all = np.array(times_all,np.int_)
     t0 = times_all[0] # first time index
 
@@ -127,11 +128,10 @@ def find_cell_intensities_worker(params,fov_id, peak_id, Cells, midline=True, ch
     '''
     information('Processing peak {} in FOV {}'.format(peak_id, fov_id))
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(fov_id, peak_id, color=channel)
-    seg_stack = load_stack(fov_id, peak_id, color='seg_otsu')
+    fl_stack = load_stack(params, fov_id, peak_id, color=channel)
+    seg_stack = load_stack(params, fov_id, peak_id, color='seg_otsu')
 
     # determine absolute time index
-    # time_table = params['time_table']
     time_table = load_time_table(params["ana_dir"])
     times_all = []
     for fov in time_table:
@@ -205,7 +205,7 @@ def colors(params,fl_channel,seg_method,cellfile_path):
     #     seg_method = 'seg_otsu'
 
     # load specs file
-    specs = load_specs()
+    specs = load_specs(params['ana_dir'])
 
     # load time table. Puts in params dictionary
     time_table = load_time_table(params['ana_dir'])
@@ -254,7 +254,7 @@ def colors(params,fl_channel,seg_method,cellfile_path):
                 information('Processing FOV {}.'.format(fov_id))
                 for peak_id, Cells in Cells_by_peak[fov_id].items():
                     information('Processing peak {}.'.format(peak_id))
-                    find_cell_intensities(fov_id, peak_id, Cells, seg_method=seg_method,midline=False,channel_name=fl_channel)
+                    find_cell_intensities(params, time_table, fov_id, peak_id, Cells, midline=False,channel_name=fl_channel)
 
     # Just the complete cells, those with mother and daugther
     cell_filename = os.path.basename(cellfile_path)
@@ -284,9 +284,10 @@ class Colors(MM3Container):
         self.set_plane()
         self.set_segmentation_method()
         self.set_cellfile()
+        self.set_fovs(self.valid_fovs)
 
         self.plane_widget.changed.connect(self.set_plane)
-        self.segmentation_method_widget.connect(self.set_segmentation_method)
+        self.segmentation_method_widget.changed.connect(self.set_segmentation_method)
         self.cellfile_widget.changed.connect(self.set_cellfile)
         self.fov_widget.connect_callback(self.set_fovs)
 
@@ -297,19 +298,25 @@ class Colors(MM3Container):
 
 
     def set_params(self):
+        # These have been wittled down to bare minimum.
         self.params = {
             "experiment_name": self.experiment_name,
             "ana_dir": self.analysis_folder,
             "FOV": self.fovs,
             "fl_plane": self.fl_plane,
             "cell_file": self.cellfile,
-            "num_analyzers": multiprocessing.cpu_count()
+            "num_analyzers": multiprocessing.cpu_count(),
+            "output": "TIFF",
+            "chnl_dir": self.analysis_folder / "channels",
+            "seg_dir": self.analysis_folder / "segmented",
+            "cell_dir": self.analysis_folder / "cell_data",
         }
 
     def run(self):
         self.set_params()
         self.viewer.window._status_bar._toggle_activity_dock(True)
-        colors(self,self.params)
+
+        colors(self.params,self.fl_plane,self.segmentation_method,str(self.cellfile))
 
     def set_plane(self):
         self.fl_plane = self.plane_widget.value

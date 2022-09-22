@@ -81,6 +81,10 @@ def _serialize_widget(widget):
     if isinstance(widget, PushButton):
         return None
 
+    if isinstance(widget, FileEdit):
+        print(str(widget.value))
+        return str(widget.value)
+
     return widget.value
 
 
