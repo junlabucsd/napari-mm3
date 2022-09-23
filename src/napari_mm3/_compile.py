@@ -373,6 +373,7 @@ def channel_xcorr(params, fov_id, peak_id):
         # use match_template to find all cross correlations for the
         # current image against the first image.
         xcorr_array.append(np.max(match_template(first_img, img)))
+    print(xcorr_array)
 
     return xcorr_array
 
@@ -1343,7 +1344,7 @@ def compile(params):
                 information("Calculating cross correlations for peak %d." % peak_id)
 
                 # linear loop
-                # crosscorrs[fov_id][peak_id] = channel_xcorr(fov_id, peak_id)
+                # crosscorrs[fov_id][peak_id] = channel_xcorr(params, fov_id, peak_id)
 
                 # multiprocessing verion
                 crosscorrs[fov_id][peak_id] = pool.apply_async(
@@ -1533,14 +1534,14 @@ class Compile(MM3Container):
             "num_analyzers": multiprocessing.cpu_count(),
             "TIFF_dir": self.TIFF_folder,
             "ana_dir": self.analysis_folder,
-            "hdf5_dir": os.path.join(self.analysis_folder, "hdf5"),
-            "chnl_dir": os.path.join(self.analysis_folder, "channels"),
-            "empty_dir": os.path.join(self.analysis_folder, "empties"),
-            "sub_dir": os.path.join(self.analysis_folder, "subtracted"),
-            "seg_dir": os.path.join(self.analysis_folder, "segmented"),
-            "pred_dir": os.path.join(self.analysis_folder, "predictions"),
-            "cell_dir": os.path.join(self.analysis_folder, "cell_data"),
-            "track_dir": os.path.join(self.analysis_folder, "tracking"),
+            "hdf5_dir": self.analysis_folder/ "hdf5",
+            "chnl_dir": self.analysis_folder/ "channels",
+            "empty_dir": self.analysis_folder/ "empties",
+            "sub_dir": self.analysis_folder/ "subtracted",
+            "seg_dir": self.analysis_folder / "segmented",
+            "pred_dir": self.analysis_folder/ "predictions",
+            "cell_dir": self.analysis_folder/ "cell_data",
+            "track_dir":self.analysis_folder/ "tracking",
             # use jd time in image metadata to make time table. Set to false if no jd time
             "use_jd": self.image_source in {"nd2ToTIFF", "TIFF_from_elements"},
         }

@@ -6,6 +6,7 @@ import os
 from scipy import ndimage as ndi
 from skimage import filters, morphology
 from skimage.filters import median
+from pathlib import Path
 
 import sys
 import time
@@ -28,6 +29,23 @@ def warning(*objs):
 def information(*objs):
     print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
 
+
+def load_tiff(tiff_location: Path):
+    with tiff.TiffFile(tiff_location) as tif:
+        return tif.asarray()
+
+
+def load_hdf5(hdf5_location: Path, dataset_name: str):
+    with h5py.File(hdf5_location, "r") as h5f:
+        return h5f[dataset_name]
+
+
+def gen_empty_tiff_filename(prefix: str, fov_id: int, color: str):
+    return f"{prefix}_xy{fov_id:03d}_{color}.tif"
+
+
+def gen_tiff_filename(prefix, fov_id:int, peak_id:int, color: str):
+    return f"{prefix}_xy{fov_id:03d}_p{peak_id:04d}_{color}.tif"
 
 # loads and image stack from TIFF or HDF5 using mm3 conventions
 def load_stack(params, fov_id, peak_id, color="c1"):
@@ -59,45 +77,21 @@ def load_stack(params, fov_id, peak_id, color="c1"):
     # things are slightly different for empty channels
     if "empty" in color:
         if params["output"] == "TIFF":
-            img_filename = params["experiment_name"] + "_xy%03d_%s.tif" % (
-                fov_id,
-                color,
-            )
-
-            with tiff.TiffFile(os.path.join(params["empty_dir"], img_filename)) as tif:
-                img_stack = tif.asarray()
+            img_name = gen_empty_tiff_filename(params["experiment_name"], fov_id, color)
+            return load_tiff(params["empty_dir"] / img_name)
 
         if params["output"] == "HDF5":
-            with h5py.File(
-                os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r"
-            ) as h5f:
-                img_stack = h5f[color][:]
-
-        return img_stack
+            return load_hdf5(params["hdf5_dir"] / f"xy{fov_id:03d}.hdf5", color)
 
     # load normal images for either TIFF or HDF5
     if params["output"] == "TIFF":
+        img_filename = gen_tiff_filename(params["experiment_name"], fov_id, peak_id, color)
         if color[0] == "c":
             img_dir = params["chnl_dir"]
-            img_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-                fov_id,
-                peak_id,
-                color,
-            )
         elif "sub" in color:
             img_dir = params["sub_dir"]
-            img_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-                fov_id,
-                peak_id,
-                color,
-            )
         elif "foci" in color:
             img_dir = params["foci_seg_dir"]
-            img_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-                fov_id,
-                peak_id,
-                color,
-            )
         elif "seg" in color:
             last = "seg_otsu"
             if "seg_img" in params.keys():
@@ -106,30 +100,14 @@ def load_stack(params, fov_id, peak_id, color="c1"):
                 last = params["track"]["seg_img"]
 
             img_dir = params["seg_dir"]
-            img_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-                fov_id,
-                peak_id,
-                last,
-            )
-        else:
-            img_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-                fov_id,
-                peak_id,
-                color,
-            )
+            img_filename = gen_tiff_filename(params["experiment_name"], fov_id, peak_id, last)
 
-        with tiff.TiffFile(os.path.join(img_dir, img_filename)) as tif:
-            img_stack = tif.asarray()
+        return load_tiff(img_dir / img_filename)
 
     if params["output"] == "HDF5":
-        with h5py.File(
-            os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r"
-        ) as h5f:
-            # normal naming
-            # need to use [:] to get a copy, else it references the closed hdf5 dataset
-            img_stack = h5f["channel_%04d/p%04d_%s" % (peak_id, peak_id, color)][:]
-
-    return img_stack
+        dataset_name = f"channel_{peak_id:04d}/p{peak_id:04d}_{color}"
+        filename = f"xy{fov_id:03d}.hdf5"
+        return load_hdf5(params["hdf5_dir"] / filename, dataset_name)
 
 
 ### Cell class and related functions
