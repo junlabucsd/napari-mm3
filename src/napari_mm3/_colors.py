@@ -16,11 +16,12 @@ from magicgui.widgets import SpinBox, ComboBox, FileEdit
 from .utils import (
     information,
     load_stack,
+    warning,
 )
 
 from ._deriving_widgets import load_specs, load_time_table
 
-def find_cell_intensities(params, time_table, fov_id, peak_id, Cells, midline=False, channel_name='sub_c2'):
+def find_cell_intensities(params, time_table, fov_id, peak_id, Cells, midline=False, channel_name='c2'):
     '''
     Finds fluorescenct information for cells. All the cells in Cells
     should be from one fov/peak. See the function
@@ -28,7 +29,14 @@ def find_cell_intensities(params, time_table, fov_id, peak_id, Cells, midline=Fa
     '''
 
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(params, fov_id, peak_id, color=channel_name)
+    try:
+        sub_channel = 'sub_'+ channel_name
+        fl_stack = load_stack(params, fov_id, peak_id, color=sub_channel)
+        information('Loading subtracted channel to analyze.')
+    except FileNotFoundError:
+        warning("Could not find subtracted channel! Skipping.")
+        return
+
     seg_stack = load_stack(params, fov_id, peak_id, color='seg_unet')
 
     # determine absolute time index
@@ -37,7 +45,6 @@ def find_cell_intensities(params, time_table, fov_id, peak_id, Cells, midline=Fa
         times_all = np.append(times_all, list(time_table[fov].keys()))
     times_all = np.unique(times_all)
     times_all = np.sort(times_all)
-    print(times_all)
     times_all = np.array(times_all,np.int_)
     t0 = times_all[0] # first time index
 
@@ -118,7 +125,7 @@ def organize_cells_by_channel(Cells, specs):
 
     return Cells_by_peak
 
-def find_cell_intensities_worker(params,fov_id, peak_id, Cells, midline=True, channel='sub_c3'):
+def find_cell_intensities_worker(params,fov_id, peak_id, Cells, midline=True, channel='c2'):
     '''
     Finds fluorescenct information for cells. All the cells in Cells
     should be from one fov/peak. See the function
@@ -158,7 +165,7 @@ def find_cell_intensities_worker(params,fov_id, peak_id, Cells, midline=True, ch
             fl_image_masked = np.copy(fl_stack[t-t0])
             fl_image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
 
-            # append total flourescent image
+            # append total fluorescent image
             fl_tots.append(np.sum(fl_image_masked))
             # and the average fluorescence
             fl_area.append(np.sum(fl_image_masked) / Cell.areas[n])
@@ -169,8 +176,6 @@ def find_cell_intensities_worker(params,fov_id, peak_id, Cells, midline=True, ch
                 bin_mask = np.copy(seg_stack[t-t0])
                 bin_mask[bin_mask != Cell.labels[n]] = 0
                 med_mask, _ = morphology.medial_axis(bin_mask, return_distance=True)
-                # med_mask[med_dist < np.floor(cap_radius/2)] = 0
-                # print(img_fluo[med_mask])
                 if (np.shape(fl_image_masked[med_mask])[0] > 0):
                     Cell.mid_fl.append(np.nanmean(fl_image_masked[med_mask]))
                 else:
@@ -179,11 +184,8 @@ def find_cell_intensities_worker(params,fov_id, peak_id, Cells, midline=True, ch
         Cell.setattr('fl_tots_c{0}'.format(channel),fl_tots)
         Cell.setattr('fl_area_c{0}'.format(channel),fl_area)
         Cell.setattr('fl_vol_c{0}'.format(channel),fl_vol)
-        
-
-
-    # return the cell object to the pool initiated by mm3_Colors.
     
+    # return the cell object to the pool initiated by mm3_Colors.
     return Cells
 
 # load cell file
@@ -233,7 +235,6 @@ def colors(params,fl_channel,seg_method,cellfile_path):
             fov_ids = [fov_id] * len(peak_ids)
 
             Cells_to_pool += zip(fov_ids, peak_ids, peak_id_Cells)
-        # print(Cells_to_pool[0:5])
         pool = Pool(processes=params['num_analyzers'])
 
         mapfunc = partial(find_cell_intensities_worker, params,fl_channel,seg_method,cellfile_path)
@@ -267,7 +268,7 @@ class Colors(MM3Container):
     def create_widgets(self):
         self.cellfile_widget = FileEdit(
             label="cell_file",
-            value=Path("."),
+            value=Path("./analysis/cell_data/complete_cells.pkl"),
             tooltip="Cell file to be analyzed",
         )
         
@@ -278,7 +279,6 @@ class Colors(MM3Container):
         self.segmentation_method_widget = ComboBox(
             label="segmentation method", choices=["Otsu", "U-net"]
         )
-        print(self.valid_fovs)
         self.fov_widget = FOVChooser(self.valid_fovs)
 
         self.set_plane()
@@ -310,6 +310,7 @@ class Colors(MM3Container):
             "chnl_dir": self.analysis_folder / "channels",
             "seg_dir": self.analysis_folder / "segmented",
             "cell_dir": self.analysis_folder / "cell_data",
+            "sub_dir": self.analysis_folder / "subtracted"
         }
 
     def run(self):
