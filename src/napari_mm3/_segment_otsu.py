@@ -327,13 +327,13 @@ class SegmentOtsu(MM3Container):
         # useful folder shorthands for opening files
         self.params["TIFF_dir"] = self.TIFF_folder
         self.params["ana_dir"] = self.analysis_folder
-        self.params["hdf5_dir"] = os.path.join(self.params["ana_dir"], "hdf5")
-        self.params["chnl_dir"] = os.path.join(self.params["ana_dir"], "channels")
-        self.params["empty_dir"] = os.path.join(self.params["ana_dir"], "empties")
-        self.params["sub_dir"] = os.path.join(self.params["ana_dir"], "subtracted")
-        self.params["seg_dir"] = os.path.join(self.params["ana_dir"], "segmented")
-        self.params["cell_dir"] = os.path.join(self.params["ana_dir"], "cell_data")
-        self.params["track_dir"] = os.path.join(self.params["ana_dir"], "tracking")
+        self.params["hdf5_dir"] = self.params["ana_dir"] / "hdf5"
+        self.params["chnl_dir"] = self.params["ana_dir"] / "channels"
+        self.params["empty_dir"] = self.params["ana_dir"] / "empties"
+        self.params["sub_dir"] = self.params["ana_dir"] / "subtracted"
+        self.params["seg_dir"] = self.params["ana_dir"] / "segmented"
+        self.params["cell_dir"] = self.params["ana_dir"] / "cell_data"
+        self.params["track_dir"] = self.params["ana_dir"] / "tracking"
 
     def set_phase_plane(self):
         self.phase_plane = self.plane_picker_widget.value

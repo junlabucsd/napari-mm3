@@ -35,10 +35,10 @@ def load_time_table(ana_dir):
 
     # try first for yaml, then for pkl
     try:
-        with open(os.path.join(ana_dir, "time_table.yaml"), "rb") as time_table_file:
+        with open(ana_dir / "time_table.yaml", "rb") as time_table_file:
             return yaml.safe_load(time_table_file)
     except:
-        with open(os.path.join(ana_dir, "time_table.pkl"), "rb") as time_table_file:
+        with open(ana_dir / "time_table.pkl", "rb") as time_table_file:
             return pickle.load(time_table_file)
 
 
@@ -461,12 +461,12 @@ def Lineage(params):
     """Produces a lineage image for the first valid FOV containing cells"""
     # plotting lineage trees for complete cells
     # load specs file
-    with open(os.path.join(params["ana_dir"], "specs.yaml"), "r") as specs_file:
+    with open(params["ana_dir"] / "specs.yaml", "r") as specs_file:
         specs = yaml.safe_load(specs_file)
-    with open(os.path.join(params["cell_dir"], "all_cells.pkl"), "rb") as cell_file:
+    with open(params["cell_dir"] / "all_cells.pkl", "rb") as cell_file:
         Cells = pickle.load(cell_file)
     with open(
-        os.path.join(params["cell_dir"], "complete_cells.pkl"), "rb"
+        params["cell_dir"]/ "complete_cells.pkl", "rb"
     ) as cell_file:
         Cells2 = pickle.load(cell_file)
         Cells2 = find_cells_of_birth_label(Cells2, label_num=[1, 2])
@@ -501,7 +501,7 @@ def Lineage(params):
         params, Cells, fov, peak_id, Cells2, bgcolor=params["phase_plane"]
     )
     lin_filename = params["experiment_name"] + "_demo_image.tif"
-    lin_filepath = os.path.join(lin_dir, lin_filename)
+    lin_filepath = lin_dir / lin_filename
     fig.savefig(lin_filepath, dpi=75)
     plt.close(fig)
 
@@ -866,12 +866,12 @@ def Track_Cells(params):
 
     ### save the cell data. Use the script mm3_OutputData for additional outputs.
     # All cell data (includes incomplete cells)
-    with open(p["cell_dir"] + "/all_cells.pkl", "wb") as cell_file:
+    with open(p["cell_dir"] / "all_cells.pkl", "wb") as cell_file:
         pickle.dump(Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     # Just the complete cells, those with mother and daugther
     # This is a dictionary of cell objects.
-    with open(os.path.join(p["cell_dir"], "complete_cells.pkl"), "wb") as cell_file:
+    with open(p["cell_dir"] / "complete_cells.pkl", "wb") as cell_file:
         pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     information("Finished curating and saving cell data.")
@@ -1019,13 +1019,13 @@ class Track(MM3Container):
         # useful folder shorthands for opening files
         params["TIFF_dir"] = self.TIFF_folder
         params["ana_dir"] = self.analysis_folder
-        params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
-        params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
-        params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
-        params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
-        params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
-        params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
-        params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
+        params["hdf5_dir"] = params["ana_dir"] / "hdf5"
+        params["chnl_dir"] = params["ana_dir"] / "channels"
+        params["empty_dir"] = params["ana_dir"] / "empties"
+        params["sub_dir"] = params["ana_dir"] / "subtracted"
+        params["seg_dir"] = params["ana_dir"] / "segmented"
+        params["cell_dir"] = params["ana_dir"] / "cell_data"
+        params["track_dir"] = params["ana_dir"] / "tracking"
 
         self.viewer.window._status_bar._toggle_activity_dock(True)
         Track_Cells(params)
