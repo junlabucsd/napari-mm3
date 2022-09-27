@@ -232,7 +232,7 @@ def segmentUNet(params):
                     os.makedirs(params["pred_dir"])
                 int_preds = (predictions * 255).astype("uint8")
                 tiff.imwrite(
-                    os.path.join(params["pred_dir"], pred_filename),
+                    params["pred_dir"] / pred_filename,
                     int_preds,
                     compression=("zlib", 4),
                 )
@@ -286,7 +286,7 @@ def segmentUNet(params):
                     params["seg_img"],
                 )
                 tiff.imwrite(
-                    os.path.join(params["seg_dir"], seg_filename),
+                    params["seg_dir"] / seg_filename,
                     segmented_imgs,
                     compression=("zlib", 4),
                 )
@@ -307,7 +307,7 @@ def segmentUNet(params):
 
             if params["output"] == "HDF5":
                 h5f = h5py.File(
-                    os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r+"
+                    params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+"
                 )
                 # put segmented channel in correct group
                 h5g = h5f["channel_%04d" % peak_id]
@@ -453,17 +453,17 @@ class SegmentUnet(MM3Container):
         params["TIFF_dir"] = self.TIFF_folder
         params["ana_dir"] = self.analysis_folder
 
-        params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
-        params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
-        params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
-        params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
-        params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
-        params["pred_dir"] = os.path.join(params["ana_dir"], "predictions")
-        params["foci_seg_dir"] = os.path.join(params["ana_dir"], "segmented_foci")
-        params["foci_pred_dir"] = os.path.join(params["ana_dir"], "predictions_foci")
-        params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
-        params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
-        params["foci_track_dir"] = os.path.join(params["ana_dir"], "tracking_foci")
+        params["hdf5_dir"] = params["ana_dir"]/ "hdf5"
+        params["chnl_dir"] = params["ana_dir"]/ "channels"
+        params["empty_dir"] = params["ana_dir"]/ "empties"
+        params["sub_dir"] = params["ana_dir"]/ "subtracted"
+        params["seg_dir"] = params["ana_dir"]/ "segmented"
+        params["pred_dir"] = params["ana_dir"]/ "predictions"
+        params["foci_seg_dir"] = params["ana_dir"]/ "segmented_foci"
+        params["foci_pred_dir"] = params["ana_dir"]/ "predictions_foci"
+        params["cell_dir"] = params["ana_dir"]/ "cell_data"
+        params["track_dir"] = params["ana_dir"] / "tracking"
+        params["foci_track_dir"] = params["ana_dir"] / "tracking_foci"
 
         segmentUNet(params)
 

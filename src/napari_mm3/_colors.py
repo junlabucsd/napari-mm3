@@ -193,7 +193,7 @@ def colors(params,fl_channel,seg_method,cellfile_path):
     #     cell_file_path = namespace.cellfile.name
     # else:
     #     warning('No cell file specified. Using complete_cells.pkl.')
-    #     cell_file_path = os.path.join(p['cell_dir'], 'complete_cells.pkl')
+    #     cell_file_path = p['cell_dir'] / 'complete_cells.pkl'
 
     with open(cellfile_path, 'rb') as cell_file:
         Complete_Cells = pickle.load(cell_file)
@@ -258,7 +258,7 @@ def colors(params,fl_channel,seg_method,cellfile_path):
 
     # Just the complete cells, those with mother and daugther
     cell_filename = os.path.basename(cellfile_path)
-    with open(os.path.join(params['cell_dir'], cell_filename[:-4] + '_fl.pkl'), 'wb') as cell_file:
+    with open(params['cell_dir'] / (cell_filename[:-4] + '_fl.pkl'), 'wb') as cell_file:
         pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     information('Finished.')

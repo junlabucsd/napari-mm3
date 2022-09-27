@@ -169,7 +169,7 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
         )
 
     if params["output"] == "HDF5":
-        h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % to_fov), "r+")
+        h5f = h5py.File(params["hdf5_dir"] / ("xy%03d.hdf5" % to_fov), "r+")
 
         # delete the dataset if it exists (important for debug)
         if "empty_%s" % color in h5f:
@@ -286,7 +286,7 @@ def subtract_fov_stack(
 
         if params["output"] == "HDF5":
             h5f = h5py.File(
-                os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r+"
+                params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+"
             )
 
             # put subtracted channel in correct group
@@ -466,7 +466,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
         )
 
     if params["output"] == "HDF5":
-        h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r+")
+        h5f = h5py.File(params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+")
 
         # delete the dataset if it exists (important for debug)
         if "empty_%s" % color in h5f:

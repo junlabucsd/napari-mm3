@@ -86,7 +86,7 @@ def get_tif_params(params, image_filename, find_channels=True):
 
     try:
         # open up file and get metadata
-        with tiff.TiffFile(os.path.join(params["TIFF_dir"], image_filename)) as tif:
+        with tiff.TiffFile(params["TIFF_dir"]/ image_filename) as tif:
             image_data = tif.asarray()
 
             if params["TIFF_source"] == "TIFF_from_elements":
@@ -118,7 +118,7 @@ def get_tif_params(params, image_filename, find_channels=True):
 
         # return the file name, the data for the channels in that image, and the metadata
         return {
-            "filepath": os.path.join(params["TIFF_dir"], image_filename),
+            "filepath": params["TIFF_dir"] / image_filename,
             "fov": image_metadata["fov"],  # fov id
             "t": image_metadata["t"],  # time point
             "jd": image_metadata["jd"],  # absolute julian time
@@ -136,7 +136,7 @@ def get_tif_params(params, image_filename, find_channels=True):
         information(sys.exc_info()[1])
         information(traceback.print_tb(sys.exc_info()[2]))
         return {
-            "filepath": os.path.join(params["TIFF_dir"], image_filename),
+            "filepath": params["TIFF_dir"] / image_filename,
             "analyze_success": False,
         }
 
@@ -495,7 +495,7 @@ def hdf5_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_
 
     # create the HDF5 file for the FOV, first time this is being done.
     with h5py.File(
-        os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "w", libver="earliest"
+        params["hdf5_dir"]/( "xy%03d.hdf5" % fov_id), "w", libver="earliest"
     ) as h5f:
 
         # add in metadata for this FOV
@@ -642,11 +642,8 @@ def tiff_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_
         for color_index in range(channel_stack.shape[3]):
             # this is the filename for the channel
             # # chnl_dir and p will be looked for in the scope above (__main__)
-            channel_filename = os.path.join(
-                params["chnl_dir"],
-                params["experiment_name"]
-                + "_xy%03d_p%04d_c%1d.tif" % (fov_id, peak, color_index + 1),
-            )
+            channel_filename = (params["chnl_dir"] /
+                (params["experiment_name"] + "_xy%03d_p%04d_c%1d.tif" % (fov_id, peak, color_index + 1)))
             # save stack
             tiff.imwrite(
                 channel_filename,
@@ -1115,7 +1112,7 @@ def compile(params):
     ## need to stack phase and fl plane if not exported from .nd2
     if p["TIFF_source"] == "other":
         information("Restacking TIFFs")
-        found_files = glob.glob(os.path.join(p["TIFF_dir"], "*.tif"))  # get all tiffs
+        found_files = list(p["TIFF_dir"].glob("*.tif"))
         # found_files = [filepath.split('/')[-1] for filepath in found_files] # remove pre-path
         found_files = sorted(found_files)  # should sort by timepoint
 
