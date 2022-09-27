@@ -636,6 +636,47 @@ def filter_cells_containing_val_in_attr(Cells, attr, val):
     return Filtered_Cells
 
 
+def organize_cells_by_channel(Cells, specs):
+    '''
+    Returns a nested dictionary where the keys are first
+    the fov_id and then the peak_id (similar to specs),
+    and the final value is a dictiary of cell objects that go in that
+    specific channel, in the same format as normal {cell_id : Cell, ...}
+    '''
+
+    # make a nested dictionary that holds lists of cells for one fov/peak
+    Cells_by_peak = {}
+    for fov_id in specs.keys():
+        Cells_by_peak[fov_id] = {}
+        for peak_id, spec in specs[fov_id].items():
+            # only make a space for channels that are analyized
+            if spec == 1:
+                Cells_by_peak[fov_id][peak_id] = {}
+
+    # organize the cells
+    for cell_id, Cell in Cells.items():
+        Cells_by_peak[Cell.fov][Cell.peak][cell_id] = Cell
+
+    # remove peaks and that do not contain cells
+    remove_fovs = []
+    for fov_id, peaks in Cells_by_peak.items():
+        remove_peaks = []
+        for peak_id in peaks.keys():
+            if not peaks[peak_id]:
+                remove_peaks.append(peak_id)
+
+        for peak_id in remove_peaks:
+            peaks.pop(peak_id)
+
+        if not Cells_by_peak[fov_id]:
+            remove_fovs.append(fov_id)
+
+    for fov_id in remove_fovs:
+        Cells_by_peak.pop(fov_id)
+
+    return Cells_by_peak
+
+
 def find_all_cell_intensities(
     Cells,
     params,
