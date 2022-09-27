@@ -922,7 +922,7 @@ class Track(MM3Container):
             "be considered to start potential new cells. Does not apply to daughters",
         )
         self.max_growth_length_widget = FloatSpinBox(
-            label="max growth length (um)",
+            label="max growth length (ratio)",
             value=1.5,
             min=0,
             max=20,
@@ -930,7 +930,7 @@ class Track(MM3Container):
             "existing potential cell. Unit is ratio.",
         )
         self.min_growth_length_widget = FloatSpinBox(
-            label="min growth length (um)",
+            label="min growth length (ratio)",
             value=0.7,
             min=0,
             max=20,
@@ -938,7 +938,7 @@ class Track(MM3Container):
             "existing potential cell. Unit is ratio.",
         )
         self.max_growth_area_widget = FloatSpinBox(
-            label="max growth area (um^2)",
+            label="max growth area (ratio)",
             value=1.5,
             min=0,
             max=20,
@@ -946,7 +946,7 @@ class Track(MM3Container):
             "existing potential cell. Unit is ratio.",
         )
         self.min_growth_area_widget = FloatSpinBox(
-            label="min growth area (um^2)",
+            label="min growth area (ratio)",
             value=0.7,
             min=0,
             max=20,
