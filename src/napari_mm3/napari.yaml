@@ -29,6 +29,9 @@ contributions:
   - id: napari-mm3.Colors
     title: Analyze fluorescence images
     python_name: napari_mm3._colors:Colors
+  - id: napari-mm3.Foci
+    title: Detect and track foci
+    python_name: napari_mm3._foci:Foci
   # - id: napari-mm3.DebugOtsu
   #   title: Performs Mother Machine analysis
   #   python_name: napari_mm3._function:DebugOtsu
@@ -59,6 +62,9 @@ contributions:
     autogenerate: False
   - command: napari-mm3.Colors
     display_name: Colors
+    autogenerate: False
+  - command: napari-mm3.Foci
+    display_name: Foci
     autogenerate: False
   # - command: napari-mm3.DebugOtsu
   #   display_name: DebugOtsu
