@@ -1,4 +1,5 @@
 from __future__ import print_function, division
+from functools import wraps
 import h5py
 import numpy as np
 import os
@@ -568,7 +569,23 @@ def find_complete_cells(Cells):
     return Complete_Cells
 
 
+class Cells(dict):
+    def __init__(self, dict_):
+        super().__init__(dict_)
+
+def cellsmethod(func):
+    """Decorator to dynamically add a given function as a method to 'Cells'"""
+
+    @wraps(func) # Copies the docstring, etc, from 'func' to 'wrapper'
+    def wrapper(self, *args, **kwargs):
+        return Cells(func(self, *args, **kwargs))
+    # Add 'wrapper' to Cells
+    setattr(Cells, func.__name__, wrapper)
+    return func # returning func means func can still be used normally
+
+
 # finds cells whose birth label is 1
+@cellsmethod
 def find_mother_cells(Cells):
     """Return only cells whose starting region label is 1."""
 
@@ -581,6 +598,7 @@ def find_mother_cells(Cells):
     return Mother_Cells
 
 
+@cellsmethod
 def filter_cells(Cells, attr, val, idx=None, debug=False):
     """Return only cells whose designated attribute equals "val"."""
 
@@ -600,6 +618,7 @@ def filter_cells(Cells, attr, val, idx=None, debug=False):
     return Filtered_Cells
 
 
+@cellsmethod
 def filter_cells_containing_val_in_attr(Cells, attr, val):
     """Return only cells that have val in list attribute, attr."""
 
@@ -614,6 +633,7 @@ def filter_cells_containing_val_in_attr(Cells, attr, val):
     return Filtered_Cells
 
 
+@cellsmethod
 def organize_cells_by_channel(Cells, specs):
     '''
     Returns a nested dictionary where the keys are first
@@ -655,6 +675,7 @@ def organize_cells_by_channel(Cells, specs):
     return Cells_by_peak
 
 
+@cellsmethod
 def find_all_cell_intensities(
     Cells,
     params,
@@ -746,6 +767,7 @@ def find_all_cell_intensities(
     return
 
 
+@cellsmethod
 def find_cells_of_fov_and_peak(Cells, fov_id, peak_id):
     """Return only cells from a specific fov/peak
     Parameters
@@ -763,6 +785,7 @@ def find_cells_of_fov_and_peak(Cells, fov_id, peak_id):
     return fCells
 
 
+@cellsmethod
 def find_cells_of_birth_label(Cells, label_num=1):
     """Return only cells whose starting region label is given.
     If no birth_label is given, returns the mother cells.
