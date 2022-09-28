@@ -4,26 +4,17 @@ from __future__ import print_function
 import sys
 import os
 from pathlib import Path
-import inspect
-import argparse
-import yaml
 import numpy as np
 from napari.utils import progress
 
-try:
-    import cPickle as pickle
-except:
-    import pickle
-import scipy.io as sio
+import pickle
 import multiprocessing
 from multiprocessing import Pool
 from skimage.feature import blob_log  # used for foci finding
 from scipy.optimize import leastsq  # fitting 2d gaussian
 
-from matplotlib.patches import Ellipse
 
-
-from .utils import information, load_stack, organize_cells_by_channel
+from .utils import organize_cells_by_channel
 
 from ._deriving_widgets import (
     MM3Container,
@@ -31,6 +22,8 @@ from ._deriving_widgets import (
     FOVChooser,
     load_specs,
     load_time_table,
+    information,
+    load_stack,
 )
 from magicgui.widgets import SpinBox, ComboBox, FileEdit, FloatSpinBox, PushButton
 

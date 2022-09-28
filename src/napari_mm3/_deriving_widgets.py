@@ -9,12 +9,89 @@ from magicgui.widgets import (
     ComboBox,
 )
 from pathlib import Path
-from .utils import warning
+from .utils import load_tiff, load_hdf5, gen_tiff_filename
 import pickle
 import yaml
 import json
 import tifffile as tiff
 import re
+import time
+import sys
+
+# print a warning
+def warning(*objs):
+    print(time.strftime("%H:%M:%S WARNING:", time.localtime()), *objs, file=sys.stderr)
+
+
+def information(*objs):
+    print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
+
+
+def load_stack(params, prefix, fov_id, peak_id, postfix="c1", use_unet=False):
+    """
+    Loads an image stack.
+
+    Supports reading TIFF stacks or HDF5 files.
+
+    Parameters
+    ----------
+    fov_id : int
+        The FOV id
+    peak_id : int
+        The peak (channel) id. Dummy None value incase color='empty'
+    postfix : str
+        The image stack type to return. Can be:
+        c1 : phase stack
+        cN : where n is an integer for arbitrary color channel
+        sub_cN : subtracted images
+        seg_cN : segmented images
+        empty : get the empty channel for this fov, slightly different
+
+    Returns
+    -------
+    image_stack : np.ndarray
+        The image stack through time. Shape is (t, y, x)
+    """
+
+    # things are slightly different for empty channels
+    if "empty" in postfix:
+        if params["output"] == "TIFF":
+            img_name = gen_tiff_filename(
+                prefix=params["experiment_name"], fov=fov_id, postfix=postfix
+            )
+            return load_tiff(params["empty_dir"] / img_name)
+
+        if params["output"] == "HDF5":
+            return load_hdf5(params["hdf5_dir"] / f"xy{fov_id:03d}.hdf5", postfix)
+
+    # load normal images for either TIFF or HDF5
+    if params["output"] == "TIFF":
+        img_filename = gen_tiff_filename(
+            params["experiment_name"], fov_id, peak_id, postfix
+        )
+        if postfix[0] == "c":
+            img_dir = params["chnl_dir"]
+        elif "sub" in postfix:
+            img_dir = params["sub_dir"]
+        elif "foci" in postfix:
+            img_dir = params["foci_seg_dir"]
+        elif "seg" in postfix:
+            postfix = "seg_otsu"
+            if "seg_img" in params.keys():
+                postfix = params["seg_img"]
+            if "track" in params.keys():
+                postfix = params["track"]["seg_img"]
+
+            img_dir = params["seg_dir"]
+        img_filename = gen_tiff_filename(
+            prefix=params["experiment_name"], fov=fov_id, peak=peak_id, postfix=postfix
+        )
+        return load_tiff(img_dir / img_filename)
+
+    if params["output"] == "HDF5":
+        dataset_name = f"channel_{peak_id:04d}/p{peak_id:04d}_{postfix}"
+        filename = f"xy{fov_id:03d}.hdf5"
+        return load_hdf5(params["hdf5_dir"] / filename, dataset_name)
 
 
 def load_specs(analysis_dir: Path):
@@ -31,18 +108,19 @@ def load_specs(analysis_dir: Path):
 
     return specs
 
+
 # load the time table and add it to the global params
 def load_time_table(ana_dir: Path):
-    '''Add the time table dictionary to the params global dictionary.
+    """Add the time table dictionary to the params global dictionary.
     This is so it can be used during Cell creation.
-    '''
+    """
 
     # try first for yaml, then for pkl
     try:
-        with (ana_dir / 'time_table.yaml').open('rb') as time_table_file:
+        with (ana_dir / "time_table.yaml").open("rb") as time_table_file:
             return yaml.safe_load(time_table_file)
     except:
-        with (ana_dir / 'time_table.pkl').open('rb') as time_table_file:
+        with (ana_dir / "time_table.pkl").open("rb") as time_table_file:
             return pickle.load(time_table_file)
 
 

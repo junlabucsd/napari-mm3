@@ -4,8 +4,13 @@ import numpy as np
 import yaml
 import tifffile as tiff
 
-from .utils import information, warning
-from ._deriving_widgets import MM3Container, FOVChooserSingle, InteractiveSpinBox
+from ._deriving_widgets import (
+    MM3Container,
+    FOVChooserSingle,
+    InteractiveSpinBox,
+    information,
+    warning,
+)
 
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 0.25])
 TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, 0.25])

@@ -19,16 +19,22 @@ from multiprocessing import Pool
 from pathlib import Path
 from pprint import pprint
 from scipy.signal import find_peaks_cwt
-from magicgui import magic_factory
 from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, ComboBox
 from napari import Viewer
 from napari.utils import progress
-from ._deriving_widgets import MM3Container, FOVChooser, TimeRangeSelector, PlanePicker
-
-from .utils import information, warning, load_stack
+from ._deriving_widgets import (
+    MM3Container,
+    FOVChooser,
+    TimeRangeSelector,
+    PlanePicker,
+    information,
+    warning,
+    load_stack,
+)
 
 
 #### Helpful utility functions.
+
 
 def get_plane(filepath):
     pattern = r"(c\d+).tif"
@@ -86,7 +92,7 @@ def get_tif_params(params, image_filename, find_channels=True):
 
     try:
         # open up file and get metadata
-        with tiff.TiffFile(params["TIFF_dir"]/ image_filename) as tif:
+        with tiff.TiffFile(params["TIFF_dir"] / image_filename) as tif:
             image_data = tif.asarray()
 
             if params["TIFF_source"] == "TIFF_from_elements":
@@ -495,7 +501,7 @@ def hdf5_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_
 
     # create the HDF5 file for the FOV, first time this is being done.
     with h5py.File(
-        params["hdf5_dir"]/( "xy%03d.hdf5" % fov_id), "w", libver="earliest"
+        params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "w", libver="earliest"
     ) as h5f:
 
         # add in metadata for this FOV
@@ -642,8 +648,10 @@ def tiff_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_
         for color_index in range(channel_stack.shape[3]):
             # this is the filename for the channel
             # # chnl_dir and p will be looked for in the scope above (__main__)
-            channel_filename = (params["chnl_dir"] /
-                (params["experiment_name"] + "_xy%03d_p%04d_c%1d.tif" % (fov_id, peak, color_index + 1)))
+            channel_filename = params["chnl_dir"] / (
+                params["experiment_name"]
+                + "_xy%03d_p%04d_c%1d.tif" % (fov_id, peak, color_index + 1)
+            )
             # save stack
             tiff.imwrite(
                 channel_filename,
@@ -1531,14 +1539,14 @@ class Compile(MM3Container):
             "num_analyzers": multiprocessing.cpu_count(),
             "TIFF_dir": self.TIFF_folder,
             "ana_dir": self.analysis_folder,
-            "hdf5_dir": self.analysis_folder/ "hdf5",
-            "chnl_dir": self.analysis_folder/ "channels",
-            "empty_dir": self.analysis_folder/ "empties",
-            "sub_dir": self.analysis_folder/ "subtracted",
+            "hdf5_dir": self.analysis_folder / "hdf5",
+            "chnl_dir": self.analysis_folder / "channels",
+            "empty_dir": self.analysis_folder / "empties",
+            "sub_dir": self.analysis_folder / "subtracted",
             "seg_dir": self.analysis_folder / "segmented",
-            "pred_dir": self.analysis_folder/ "predictions",
-            "cell_dir": self.analysis_folder/ "cell_data",
-            "track_dir":self.analysis_folder/ "tracking",
+            "pred_dir": self.analysis_folder / "predictions",
+            "cell_dir": self.analysis_folder / "cell_data",
+            "track_dir": self.analysis_folder / "tracking",
             # use jd time in image metadata to make time table. Set to false if no jd time
             "use_jd": self.image_source in {"nd2ToTIFF", "TIFF_from_elements"},
         }

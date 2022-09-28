@@ -16,8 +16,14 @@ from skimage.filters import median
 import six
 import tifffile as tiff
 
-from .utils import information, load_stack
-from ._deriving_widgets import FOVChooser, MM3Container, PlanePicker, load_specs
+from ._deriving_widgets import (
+    FOVChooser,
+    MM3Container,
+    PlanePicker,
+    load_specs,
+    information,
+    load_stack,
+)
 
 # loss functions for model
 def dice_coeff(y_true, y_pred):
@@ -306,9 +312,7 @@ def segmentUNet(params):
                     out_counter += 1
 
             if params["output"] == "HDF5":
-                h5f = h5py.File(
-                    params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+"
-                )
+                h5f = h5py.File(params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+")
                 # put segmented channel in correct group
                 h5g = h5f["channel_%04d" % peak_id]
                 # delete the dataset if it exists (important for debug)
@@ -453,15 +457,15 @@ class SegmentUnet(MM3Container):
         params["TIFF_dir"] = self.TIFF_folder
         params["ana_dir"] = self.analysis_folder
 
-        params["hdf5_dir"] = params["ana_dir"]/ "hdf5"
-        params["chnl_dir"] = params["ana_dir"]/ "channels"
-        params["empty_dir"] = params["ana_dir"]/ "empties"
-        params["sub_dir"] = params["ana_dir"]/ "subtracted"
-        params["seg_dir"] = params["ana_dir"]/ "segmented"
-        params["pred_dir"] = params["ana_dir"]/ "predictions"
-        params["foci_seg_dir"] = params["ana_dir"]/ "segmented_foci"
-        params["foci_pred_dir"] = params["ana_dir"]/ "predictions_foci"
-        params["cell_dir"] = params["ana_dir"]/ "cell_data"
+        params["hdf5_dir"] = params["ana_dir"] / "hdf5"
+        params["chnl_dir"] = params["ana_dir"] / "channels"
+        params["empty_dir"] = params["ana_dir"] / "empties"
+        params["sub_dir"] = params["ana_dir"] / "subtracted"
+        params["seg_dir"] = params["ana_dir"] / "segmented"
+        params["pred_dir"] = params["ana_dir"] / "predictions"
+        params["foci_seg_dir"] = params["ana_dir"] / "segmented_foci"
+        params["foci_pred_dir"] = params["ana_dir"] / "predictions_foci"
+        params["cell_dir"] = params["ana_dir"] / "cell_data"
         params["track_dir"] = params["ana_dir"] / "tracking"
         params["foci_track_dir"] = params["ana_dir"] / "tracking_foci"
 

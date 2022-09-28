@@ -10,11 +10,17 @@ from skimage import morphology
 
 
 from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
-from magicgui.widgets import SpinBox, ComboBox, FileEdit
+from magicgui.widgets import ComboBox, FileEdit
 
-from .utils import information, load_stack, warning, organize_cells_by_channel
+from .utils import organize_cells_by_channel
 
-from ._deriving_widgets import load_specs, load_time_table
+from ._deriving_widgets import (
+    load_specs,
+    load_time_table,
+    information,
+    warning,
+    load_stack,
+)
 
 
 def find_cell_intensities(
@@ -235,7 +241,7 @@ def colors(params, fl_channel, seg_method, cellfile_path):
 
     # Just the complete cells, those with mother and daugther
     cell_filename = os.path.basename(cellfile_path)
-    with open(params['cell_dir'] / (cell_filename[:-4] + '_fl.pkl'), "wb") as cell_file:
+    with open(params["cell_dir"] / (cell_filename[:-4] + "_fl.pkl"), "wb") as cell_file:
         pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     information("Finished.")

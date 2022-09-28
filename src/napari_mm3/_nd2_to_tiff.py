@@ -16,8 +16,7 @@ from pathlib import Path
 from skimage import io
 from napari.utils import progress
 from magicgui.widgets import Container, FileEdit, CheckBox, PushButton
-from .utils import information
-from ._deriving_widgets import FOVChooser, TimeRangeSelector
+from ._deriving_widgets import FOVChooser, TimeRangeSelector, information
 
 
 def julian_day_number():

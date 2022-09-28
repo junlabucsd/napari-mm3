@@ -14,13 +14,18 @@ from skimage import io
 from skimage.measure import regionprops
 from napari.utils import progress
 
-from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser, load_specs
+from ._deriving_widgets import (
+    MM3Container,
+    PlanePicker,
+    FOVChooser,
+    load_specs,
+    information,
+    load_stack,
+)
 from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox
 
 from .utils import (
-    information,
     Cell,
-    load_stack,
     find_complete_cells,
     find_cells_of_birth_label,
     find_cells_of_fov_and_peak,
@@ -40,7 +45,6 @@ def load_time_table(ana_dir):
     except:
         with open(ana_dir / "time_table.pkl", "rb") as time_table_file:
             return pickle.load(time_table_file)
-
 
 
 # functions for checking if a cell has divided or not
@@ -465,9 +469,7 @@ def Lineage(params):
         specs = yaml.safe_load(specs_file)
     with open(params["cell_dir"] / "all_cells.pkl", "rb") as cell_file:
         Cells = pickle.load(cell_file)
-    with open(
-        params["cell_dir"]/ "complete_cells.pkl", "rb"
-    ) as cell_file:
+    with open(params["cell_dir"] / "complete_cells.pkl", "rb") as cell_file:
         Cells2 = pickle.load(cell_file)
         Cells2 = find_cells_of_birth_label(Cells2, label_num=[1, 2])
 

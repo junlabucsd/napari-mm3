@@ -13,12 +13,15 @@ from skimage.filters import threshold_otsu
 from napari.utils import progress
 
 
-from .utils import (
+from ._deriving_widgets import (
+    MM3Container,
+    PlanePicker,
+    FOVChooser,
+    load_specs,
     information,
     warnings,
     load_stack,
 )
-from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser, load_specs
 
 # Do segmentation for an channel time stack
 def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):

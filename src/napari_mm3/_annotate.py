@@ -3,9 +3,7 @@ from pathlib import Path
 import numpy as np
 import tifffile as tiff
 import yaml
-import os
 import re
-from napari import Viewer
 
 from ._deriving_widgets import MM3Container, FOVChooserSingle
 

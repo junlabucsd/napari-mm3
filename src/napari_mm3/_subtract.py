@@ -6,18 +6,19 @@ from magicgui.widgets import SpinBox, ComboBox, CheckBox
 import tifffile as tiff
 import numpy as np
 import multiprocessing
-import os
 import napari
 import six
 import h5py
 
-from .utils import (
+from ._deriving_widgets import (
+    MM3Container,
+    FOVChooser,
+    PlanePicker,
+    load_specs,
     information,
     warning,
     load_stack,
 )
-
-from ._deriving_widgets import MM3Container, FOVChooser, PlanePicker, load_specs
 
 
 def subtract_phase(params, cropped_channel, empty_channel):
@@ -285,9 +286,7 @@ def subtract_fov_stack(
                 )
 
         if params["output"] == "HDF5":
-            h5f = h5py.File(
-                params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+"
-            )
+            h5f = h5py.File(params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+")
 
             # put subtracted channel in correct group
             h5g = h5f["channel_%04d" % peak_id]
