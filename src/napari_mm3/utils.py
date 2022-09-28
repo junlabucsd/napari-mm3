@@ -53,7 +53,7 @@ class Cell:
     """
 
     # initialize (birth) the cell
-    def __init__(self, params, time_table, cell_id, region, t, parent_id=None):
+    def __init__(self, pxl2um, time_table, cell_id, region, t, parent_id=None):
         """The cell must be given a unique cell_id and passed the region
         information from the segmentation
 
@@ -80,7 +80,7 @@ class Cell:
         # id
         self.id = cell_id
 
-        self.params = params
+        self.pxl2um = pxl2um
         self.time_table = time_table
 
         # identification convenience
@@ -198,10 +198,10 @@ class Cell:
 
         # flesh out the stats for this cell
         # size at birth
-        self.sb = self.lengths[0] * self.params["pxl2um"]
+        self.sb = self.lengths[0] * self.pxl2um
 
         # force the division length to be the combined lengths of the daughters
-        self.sd = (daughter1.lengths[0] + daughter2.lengths[0]) * self.params["pxl2um"]
+        self.sd = (daughter1.lengths[0] + daughter2.lengths[0]) * self.pxl2um
 
         # delta is here for convenience
         self.delta = self.sd - self.sb
@@ -210,11 +210,11 @@ class Cell:
         self.tau = np.float64((self.abs_times[-1] - self.abs_times[0]) / 60.0)
 
         # include the data points from the daughters
-        self.lengths_w_div = [l * self.params["pxl2um"] for l in self.lengths] + [
+        self.lengths_w_div = [l * self.pxl2um for l in self.lengths] + [
             self.sd
         ]
-        self.widths_w_div = [w * self.params["pxl2um"] for w in self.widths] + [
-            ((daughter1.widths[0] + daughter2.widths[0]) / 2) * self.params["pxl2um"]
+        self.widths_w_div = [w * self.pxl2um for w in self.widths] + [
+            ((daughter1.widths[0] + daughter2.widths[0]) / 2) * self.pxl2um
         ]
 
         # volumes for all timepoints, in um^3

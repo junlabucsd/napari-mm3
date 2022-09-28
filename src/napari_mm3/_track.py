@@ -241,7 +241,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                     # Create cell and put in cell dictionary
                     cell_id = create_cell_id(region, t, peak_id, fov_id)
                     Cells[cell_id] = Cell(
-                        params, time_table, cell_id, region, t, parent_id=None
+                        params["pxl2um"], time_table, cell_id, region, t, parent_id=None
                     )
 
                     # add thes id to list of current leaves
@@ -299,7 +299,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         ):
                             cell_id = create_cell_id(region, t, peak_id, fov_id)
                             Cells[cell_id] = Cell(
-                                params, time_table, cell_id, region, t, parent_id=None
+                                params["pxl2um"], time_table, cell_id, region, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
                         else:
@@ -341,7 +341,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         daughter1_id = create_cell_id(region1, t, peak_id, fov_id)
                         daughter2_id = create_cell_id(region2, t, peak_id, fov_id)
                         Cells[daughter1_id] = Cell(
-                            params,
+                            params["pxl2um"],
                             time_table,
                             daughter1_id,
                             region1,
@@ -349,7 +349,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                             parent_id=leaf_id,
                         )
                         Cells[daughter2_id] = Cell(
-                            params,
+                            params["pxl2um"],
                             time_table,
                             daughter2_id,
                             region2,
@@ -387,7 +387,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         ):
                             cell_id = create_cell_id(region2, t, peak_id, fov_id)
                             Cells[cell_id] = Cell(
-                                params, time_table, cell_id, region2, t, parent_id=None
+                                params["pxl2um"], time_table, cell_id, region2, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
 
@@ -401,7 +401,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         ):
                             cell_id = create_cell_id(region1, t, peak_id, fov_id)
                             Cells[cell_id] = Cell(
-                                params, time_table, cell_id, region1, t, parent_id=None
+                                params["pxl2um"], time_table, cell_id, region1, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
 
