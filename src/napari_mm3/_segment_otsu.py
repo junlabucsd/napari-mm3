@@ -20,7 +20,7 @@ from ._deriving_widgets import (
     load_specs,
     information,
     warnings,
-    load_stack,
+    load_stack_params,
 )
 
 # Do segmentation for an channel time stack
@@ -39,7 +39,7 @@ def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
     information("Segmenting FOV %d, channel %d." % (fov_id, peak_id))
 
     # load subtracted images
-    sub_stack = load_stack(
+    sub_stack = load_stack_params(
         params, fov_id, peak_id, color="sub_{}".format(params["phase_plane"])
     )
 
@@ -368,7 +368,7 @@ class SegmentOtsu(MM3Container):
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         ## pull out first fov & peak id with cells
-        sub_stack = load_stack(
+        sub_stack = load_stack_params(
             self.params,
             valid_fov,
             valid_peak,

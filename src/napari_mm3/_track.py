@@ -20,7 +20,7 @@ from ._deriving_widgets import (
     FOVChooser,
     load_specs,
     information,
-    load_stack,
+    load_stack_params,
 )
 from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox
 
@@ -207,7 +207,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
     information("Creating lineage for FOV %d, channel %d." % (fov_id, peak_id))
 
     # load segmented data
-    image_data_seg = load_stack(
+    image_data_seg = load_stack_params(
         params, fov_id, peak_id, color=params["track"]["seg_img"]
     )
     # image_data_seg = load_stack(params, fov_id, peak_id, color='seg')
@@ -485,7 +485,7 @@ def Lineage(params):
             if (
                 spec == 1
             ):  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
-                sample_img = load_stack(params, fov, peak_id)
+                sample_img = load_stack_params(params, fov, peak_id)
                 peak_len = np.shape(sample_img)[0]
                 peak_found = True
                 break
@@ -555,10 +555,10 @@ def plot_lineage_images(
     Cells = find_cells_of_fov_and_peak(Cells, fov_id, peak_id)
 
     # load subtracted and segmented data
-    image_data_bg = load_stack(params, fov_id, peak_id, color=bgcolor)
+    image_data_bg = load_stack_params(params, fov_id, peak_id, color=bgcolor)
 
     if fgcolor:
-        image_data_seg = load_stack(params, fov_id, peak_id, color=fgcolor)
+        image_data_seg = load_stack_params(params, fov_id, peak_id, color=fgcolor)
 
     if trim_time:
         image_data_bg = image_data_bg[time_set[0] : time_set[1]]

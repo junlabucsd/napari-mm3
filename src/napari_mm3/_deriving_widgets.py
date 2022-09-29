@@ -27,8 +27,9 @@ def information(*objs):
     print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
 
 
-def load_stack(params, prefix, fov_id, peak_id, postfix="c1", use_unet=False):
+def load_stack_params(params, fov_id, peak_id, postfix="c1"):
     """
+    Deprecated.
     Loads an image stack.
 
     Supports reading TIFF stacks or HDF5 files.
