@@ -23,29 +23,50 @@ https://napari.org/plugins/stable/index.html
 
 ## Installation
 
-Ensure python and napari are installed in your system. To install the plugin, use:
+Load up a new environment. You can do this via conda, pipenv, or some other environment manager.
+Ensure python and napari are installed in your system. 
+
+To install the plugin, use:
 
 ``` pip install napari-mm3```
+
+There are two common issues here:
+* Missing PyQt5 -- resolve with `pip install PyQt5`.
+* Missing tensor flow -- resolve with, eg, `conda install tensorflow`
 
 ## Contributing
 
 Contributions are very welcome. Tests can be run with [tox], please ensure
 the coverage at least stays the same before you submit a pull request.
+To get started, clone the repo, and use `pip install -e .` to make napari use the local version.
 
 
 ## Workflow
 
 Generally, there is one widget for each process.
 
-**Basic workflow is as follows:**
+**Basic overview is as follows:**
 
-1. Locate channels, create channel stacks, and return metadata (Compile widget).
-2. User guided selection of empty and full channels (ChannelSorter widget).
-3. Subtract phase contrast images (Subtract widget).
-4. Segment images (Segment widget).
-5. Create cell lineages
+This assumes you are using Otsu segmentation -- the procedure can be modified if you are using U-Net.
+0. [nd2ToTIFF](#nd2ToTIFF) -- Turn your microscopy data into TIFFs. 
+1. [Compile](#compile) -- Locate traps, separate them into their own TIFFs, and return metadata.
+2. [PickChannels](#pickchannels) -- User guided selection of empty and full traps.
+3. [Subtract](#subtract) -- Remove (via subtraction) empty traps from the background of traps that contain cells. 
+4. [SegmentOtsu](#segment) -- Use Otsu segmentation to segment cells.
+5. [Track](#track) -- Acquire individual cell properties and track lineages.
 
-mm3 currently currently takes individual TIFF images as its input. If there are multiple color layers, then each TIFF image should be a stack of planes corresponding to a color. The quality of your images is important for mm3 to work properly.
+Additionally, we have a few widgets to assist in other tasks that may come up:
+6. Annotate -- annotate images for ML (U-Net or similar) training purposes.
+7. SegmentUnet -- Run U-Net segmentation (you will need to supply your own model)
+8. Colors -- Calculate fluorescence information.
+9. Foci -- We use this to track `foci' (bright fluorescent spots) inside of cells.
+
+<a name="nd2ToTIFF"></a>
+### 0. Generating a TIFF stack 
+
+mm3 currently currently takes individual TIFF images as its input. 
+If there are multiple color layers, then each TIFF image should be a stack of planes corresponding to a color. 
+The quality of your images is important for mm3 to work properly.
 
 The working directory now contains:
 ```
@@ -54,6 +75,7 @@ The working directory now contains:
 ├── TIFF
 ```
 
+ <a name="compile"></a>
 ### 1. Locate channels, create channel stacks, and return metadata (Compile widget).
 <img width="1187" alt="fov_inspect1" src="https://user-images.githubusercontent.com/40699438/177629474-5fd7ee80-682e-4aaa-bf6e-dd547e40c458.png">
 
@@ -83,7 +105,8 @@ The working directory now contains:
 │   └── channels
 ```
 
-### 2. User guided selection of empty and full channels (ChannelSorter).
+<a name="pickchannels"></a> 
+### 2. User guided selection of empty and full channels (PickChannels). 
 <img width="1177" alt="channel_picker" src="https://user-images.githubusercontent.com/40699438/177629496-73b6c4cf-7427-41e6-ac20-720b6fbf2ba1.png">
 
 The Compile widget identifies all growth channels, regardless of if they contain or do not contain cells. ChannelSorter first attempts to guess, and then presents the user with a GUI to decide which channels should be analyzed, which channels should be ignored, and which channels should be used as empty channels during subtraction. This information is contained within the specs.yaml file.
@@ -115,7 +138,8 @@ The working directory is now:
 │   ├── specs.yaml
 ```
 
-### 3. Subtract phase contrast images (Subtract widget).
+<a name="subtract"></a> 
+### 3. Subtract phase contrast images (Subtract widget). 
 <img width="1183" alt="subtract" src="https://user-images.githubusercontent.com/40699438/177629512-c5ba4abd-0e03-4540-a4bb-7414ad0560d0.png">
 
 Downstream analysis of phase contrast (brightfield) images requires background subtraction to remove artifacts of the PDMS device in the images. 
@@ -140,7 +164,8 @@ The working directory is now:
 │   └── subtracted
 ```
 
-### 4. Segment images (SegmentOTSU or SegmentUnet).
+<a name="segmentotsu"></a> 
+### 4. Segment images (SegmentOTSU or SegmentUnet). 
 
 <img width="1486" alt="otsu" src="https://user-images.githubusercontent.com/40699438/177629756-2bf87d2e-6ec8-4580-8675-648d68b29cb5.png">
 <img width="1180" alt="unet" src="https://user-images.githubusercontent.com/40699438/177629546-81c2f826-73e8-41ef-adbd-7ceb191db461.png">
@@ -179,7 +204,8 @@ The working directory is now:
 ```
 
 
-### 5. Create cell lineages (Track widget).
+<a name="track"></a> 
+### 5. Create cell lineages (Track widget). 
 
 <img width="1188" alt="lineage" src="https://user-images.githubusercontent.com/40699438/177629704-b866d74e-cd80-4171-a6cf-92a887617160.png">
 
