@@ -67,9 +67,6 @@ def load_stack_params(params, fov_id, peak_id, postfix="c1"):
 
     # load normal images for either TIFF or HDF5
     if params["output"] == "TIFF":
-        img_filename = gen_tiff_filename(
-            params["experiment_name"], fov_id, peak_id, postfix
-        )
         if postfix[0] == "c":
             img_dir = params["chnl_dir"]
         elif "sub" in postfix:
@@ -82,8 +79,8 @@ def load_stack_params(params, fov_id, peak_id, postfix="c1"):
                 postfix = params["seg_img"]
             if "track" in params.keys():
                 postfix = params["track"]["seg_img"]
-
             img_dir = params["seg_dir"]
+
         img_filename = gen_tiff_filename(
             prefix=params["experiment_name"], fov=fov_id, peak=peak_id, postfix=postfix
         )

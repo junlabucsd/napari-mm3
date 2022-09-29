@@ -8,7 +8,7 @@ from scipy import ndimage as ndi
 from skimage import filters, morphology
 from skimage.filters import median
 from pathlib import Path
-from ._deriving_widgets import warning, load_stack_params
+from ._deriving_widgets import warning
 
 import warnings
 import tifffile as tiff
@@ -632,7 +632,8 @@ def organize_cells_by_channel(cells, specs) -> dict:
 @cellsmethod
 def find_all_cell_intensities(
     cells,
-    params,
+    intensity_directory,
+    seg_directory,
     specs,
     channel_name="sub_c2",
     apply_background_correction=True,
@@ -658,7 +659,7 @@ def find_all_cell_intensities(
                 )
             )
             # Load fluorescent images and segmented images for this channel
-            fl_stack = load_stack_params(params, fov_id, peak_id, postfix=channel_name)
+            fl_stack = load_tiff_stack_simple(intensity_directory, fov=fov_id, peak=peak_id, postfix=channel_name)
             corrected_stack = np.zeros(fl_stack.shape)
 
             for frame in range(fl_stack.shape[0]):
@@ -679,7 +680,7 @@ def find_all_cell_intensities(
                 else:
                     corrected_stack[frame, :, :] = median_filtered
 
-            seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_unet")
+            seg_stack = load_tiff_stack_simple(seg_directory, fov=fov_id, peak=peak_id, postfix=channel_name)
 
             # evaluate whether each cell is in this fov/peak combination
             for _, cell in cells.items():
