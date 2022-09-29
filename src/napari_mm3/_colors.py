@@ -35,13 +35,13 @@ def find_cell_intensities(
     # Load fluorescent images and segmented images for this channel
     try:
         sub_channel = "sub_" + channel_name
-        fl_stack = load_stack_params(params, fov_id, peak_id, color=sub_channel)
+        fl_stack = load_stack_params(params, fov_id, peak_id, postfix=sub_channel)
         information("Loading subtracted channel to analyze.")
     except FileNotFoundError:
         warning("Could not find subtracted channel! Skipping.")
         return
 
-    seg_stack = load_stack_params(params, fov_id, peak_id, color="seg_unet")
+    seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_unet")
 
     # determine absolute time index
     times_all = []
@@ -102,8 +102,8 @@ def find_cell_intensities_worker(
     """
     information("Processing peak {} in FOV {}".format(peak_id, fov_id))
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack_params(params, fov_id, peak_id, color=channel)
-    seg_stack = load_stack_params(params, fov_id, peak_id, color="seg_otsu")
+    fl_stack = load_stack_params(params, fov_id, peak_id, postfix=channel)
+    seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_otsu")
 
     # determine absolute time index
     time_table = load_time_table(params["ana_dir"])

@@ -658,7 +658,7 @@ def find_all_cell_intensities(
                 )
             )
             # Load fluorescent images and segmented images for this channel
-            fl_stack = load_stack_params(params, fov_id, peak_id, color=channel_name)
+            fl_stack = load_stack_params(params, fov_id, peak_id, postfix=channel_name)
             corrected_stack = np.zeros(fl_stack.shape)
 
             for frame in range(fl_stack.shape[0]):
@@ -679,7 +679,7 @@ def find_all_cell_intensities(
                 else:
                     corrected_stack[frame, :, :] = median_filtered
 
-            seg_stack = load_stack_params(params, fov_id, peak_id, color="seg_unet")
+            seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_unet")
 
             # evaluate whether each cell is in this fov/peak combination
             for _, cell in cells.items():

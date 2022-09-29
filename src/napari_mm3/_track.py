@@ -208,7 +208,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
 
     # load segmented data
     image_data_seg = load_stack_params(
-        params, fov_id, peak_id, color=params["track"]["seg_img"]
+        params, fov_id, peak_id, postfix=params["track"]["seg_img"]
     )
     # image_data_seg = load_stack(params, fov_id, peak_id, color='seg')
 
@@ -555,10 +555,10 @@ def plot_lineage_images(
     Cells = find_cells_of_fov_and_peak(Cells, fov_id, peak_id)
 
     # load subtracted and segmented data
-    image_data_bg = load_stack_params(params, fov_id, peak_id, color=bgcolor)
+    image_data_bg = load_stack_params(params, fov_id, peak_id, postfix=bgcolor)
 
     if fgcolor:
-        image_data_seg = load_stack_params(params, fov_id, peak_id, color=fgcolor)
+        image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=fgcolor)
 
     if trim_time:
         image_data_bg = image_data_bg[time_set[0] : time_set[1]]

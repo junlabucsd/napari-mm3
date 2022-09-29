@@ -40,7 +40,7 @@ def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
 
     # load subtracted images
     sub_stack = load_stack_params(
-        params, fov_id, peak_id, color="sub_{}".format(params["phase_plane"])
+        params, fov_id, peak_id, postfix="sub_{}".format(params["phase_plane"])
     )
 
     # # set up multiprocessing pool to do segmentation. Will do everything before going on.
@@ -372,7 +372,7 @@ class SegmentOtsu(MM3Container):
             self.params,
             valid_fov,
             valid_peak,
-            color="sub_{}".format(self.params["phase_plane"]),
+            postfix="sub_{}".format(self.params["phase_plane"]),
         )
 
         # image by image for debug

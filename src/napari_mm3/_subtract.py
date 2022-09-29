@@ -156,7 +156,7 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
     information(
         "Loading empty stack from FOV {} to save for FOV {}.".format(from_fov, to_fov)
     )
-    avg_empty_stack = load_stack_params(params, from_fov, 0, color="empty_{}".format(color))
+    avg_empty_stack = load_stack_params(params, from_fov, 0, postfix="empty_{}".format(color))
 
     # save out data
     if params["output"] == "TIFF":
@@ -218,7 +218,7 @@ def subtract_fov_stack(
     information("Subtracting peaks for FOV %d." % fov_id)
 
     # load empty stack feed dummy peak number to get empty
-    avg_empty_stack = load_stack_params(params, fov_id, 0, color="empty_{}".format(color))
+    avg_empty_stack = load_stack_params(params, fov_id, 0, postfix="empty_{}".format(color))
 
     # determine which peaks are to be analyzed
     ana_peak_ids = []
@@ -237,7 +237,7 @@ def subtract_fov_stack(
     for peak_id in ana_peak_ids:
         information("Subtracting peak %d." % peak_id)
 
-        image_data = load_stack_params(params, fov_id, peak_id, color=color)
+        image_data = load_stack_params(params, fov_id, peak_id, postfix=color)
 
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
@@ -423,7 +423,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
         information("One empty channel (%d) designated for FOV %d." % (peak_id, fov_id))
 
         # load the one phase contrast as the empties
-        avg_empty_stack = load_stack_params(params, fov_id, peak_id, color=color)
+        avg_empty_stack = load_stack_params(params, fov_id, peak_id, postfix=color)
 
     # but if there is more than one empty you need to align and average them per timepoint
     elif len(empty_peak_ids) > 1:
@@ -431,7 +431,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
         empty_stacks = []  # list which holds phase image stacks of designated empties
         for peak_id in empty_peak_ids:
             # load data and append to list
-            image_data = load_stack_params(params, fov_id, peak_id, color=color)
+            image_data = load_stack_params(params, fov_id, peak_id, postfix=color)
 
             empty_stacks.append(image_data)
 

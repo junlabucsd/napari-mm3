@@ -83,11 +83,11 @@ def foci_analysis(
 
     # Import segmented and fluorescenct images
     image_data_seg = load_stack_params(
-        params, fov_id, peak_id, color="seg_{}".format(seg_method)
+        params, fov_id, peak_id, postfix="seg_{}".format(seg_method)
     )
 
     image_data_FL = load_stack_params(
-        params, fov_id, peak_id, color="sub_{}".format(params["foci_plane"])
+        params, fov_id, peak_id, postfix="sub_{}".format(params["foci_plane"])
     )
 
     # determine absolute time index
@@ -160,9 +160,9 @@ def foci_analysis_pool(fov_id, peak_id, Cells, params, seg_method, time_table):
     This function works on a single peak and all the cells therein."""
 
     # Import segmented and fluorescenct images
-    image_data_seg = load_stack_params(params, fov_id, peak_id, color=seg_method)
+    image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=seg_method)
     image_data_FL = load_stack_params(
-        params, fov_id, peak_id, color="sub_{}".format(params["foci_plane"])
+        params, fov_id, peak_id, postfix="sub_{}".format(params["foci_plane"])
     )
 
     # Load time table to determine first image index.
@@ -372,7 +372,7 @@ def foci_lap(img, img_foci, cell, t, params, preview=False):
 def kymograph(fov_id, peak_id, params):
 
     sub_stack_fl = load_stack_params(
-        params, fov_id, peak_id, color="sub_" + params["foci_plane"]
+        params, fov_id, peak_id, postfix="sub_" + params["foci_plane"]
     )
     fl_proj = np.transpose(np.max(sub_stack_fl, axis=2))
 

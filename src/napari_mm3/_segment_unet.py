@@ -120,7 +120,7 @@ def segmentUNet(params):
             if spec == 1:
                 break  # just break out with the current peak_id
 
-        img_stack = load_stack_params(params, fov_id, peak_id, color=color)
+        img_stack = load_stack_params(params, fov_id, peak_id, postfix=color)
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
 
@@ -173,7 +173,7 @@ def segmentUNet(params):
         for peak_id in ana_peak_ids:
             information("Segmenting peak {}.".format(peak_id))
 
-            img_stack = load_stack_params(params, fov_id, peak_id, color=params["phase_plane"])
+            img_stack = load_stack_params(params, fov_id, peak_id, postfix=params["phase_plane"])
 
             if params["segment"]["normalize_to_one"]:
                 med_stack = np.zeros(img_stack.shape)
