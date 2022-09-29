@@ -2,6 +2,7 @@ from __future__ import print_function, division
 from functools import wraps
 import numpy as np
 import pandas as pd
+import six
 
 from scipy import ndimage as ndi
 from skimage import filters, morphology
@@ -726,15 +727,7 @@ def find_cells_of_fov_and_peak(cells, fov_id, peak_id) -> Cells:
 
 # TODO: List of ALL cell properties
 @cellsmethod
-def cells2df(cells, columns) -> pd.DataFrame:
-    """
-    Take cell data (a dicionary of Cell objects) and return a dataframe.
-
-    rescale : boolean
-        If rescale is set to True, then the 6 major parameters are rescaled by their mean.
-    """
-    # columns to include
-    columns = [
+def cells2df(cells, columns = [
         "fov",
         "peak",
         "birth_label",
@@ -748,7 +741,13 @@ def cells2df(cells, columns) -> pd.DataFrame:
         "elong_rate",
         "septum_position",
     ]
+) -> pd.DataFrame:
+    """
+    Take cell data (a dicionary of Cell objects) and return a dataframe.
 
+    rescale : boolean
+        If rescale is set to True, then the 6 major parameters are rescaled by their mean.
+    """
     # Make dataframe for plotting variables
     cells_dict = {cell_id: vars(cell) for cell_id, cell in cells.items()}
     df = pd.DataFrame(
@@ -757,3 +756,118 @@ def cells2df(cells, columns) -> pd.DataFrame:
     df = df.sort_values(by=["fov", "peak", "birth_time", "birth_label"])
     df = df[columns].apply(pd.to_numeric)
     return df
+
+
+def find_last_daughter(cell, Cells):
+    '''Finds the last daughter in a lineage starting with a earlier cell.
+    Helper function for find_continuous_lineages'''
+
+    # go into the daugther cell if the daughter exists
+    if cell.daughters[0] in Cells:
+        cell = Cells[cell.daughters[0]]
+        cell = find_last_daughter(cell, Cells)
+    else:
+        # otherwise just give back this cell
+        return cell
+
+    # finally, return the deepest cell
+    return cell
+
+
+def find_cells_born_after(cells, born_after=None):
+    '''
+    Returns Cells dictionary of cells with a birth_time after the value specified
+    '''
+
+    if born_after == None:
+        return cells
+
+    return {cell_id : cell for cell_id, cell in six.iteritems(cells) if cell.birth_time >= born_after}
+
+
+def lineages_to_dict(lineages):
+    '''Converts the lineage structure of cells organized by peak back
+    to a dictionary of cells. Useful for filtering but then using the
+    dictionary based plotting functions'''
+
+    Cells = {}
+
+    for fov, peaks in six.iteritems(lineages):
+        for peak, cells in six.iteritems(peaks):
+            Cells.update(cells)
+
+    return Cells
+
+
+def find_continuous_lineages(cells, specs, t1=0, t2=1000):
+    '''
+    Uses a recursive function to only return cells that have continuous
+    lineages between two time points. Takes a "lineage" form of Cells and
+    returns a dictionary of the same format. Good for plotting
+    with saw_tooth_plot()
+    t1 : int
+        First cell in lineage must be born before this time point
+    t2 : int
+        Last cell in lineage must be born after this time point
+    '''
+
+    Lineages = organize_cells_by_channel(cells, specs)
+
+    # This is a mirror of the lineages dictionary, just for the continuous cells
+    Continuous_Lineages = {}
+
+    for fov, peaks in six.iteritems(Lineages):
+       # print("fov = {:d}".format(fov))
+        # Create a dictionary to hold this FOV
+        Continuous_Lineages[fov] = {}
+
+        for peak, cells in six.iteritems(peaks):
+           # print("{:<4s}peak = {:d}".format("",peak))
+            # sort the cells by time in a list for this peak
+            cells_sorted = [(cell_id, cell) for cell_id, cell in six.iteritems(cells)]
+            cells_sorted = sorted(cells_sorted, key=lambda x: x[1].birth_time)
+
+            # Sometimes there are not any cells for the channel even if it was to be analyzed
+            if not cells_sorted:
+                continue
+
+            # look through list to find the cell born immediately before t1
+            # and divides after t1, but not after t2
+            for i, cell_data in enumerate(cells_sorted):
+                cell_id, cell = cell_data
+                if cell.birth_time < t1 and t1 <= cell.division_time < t2:
+                    first_cell_index = i
+                    break
+
+            # filter cell_sorted or skip if you got to the end of the list
+            if i == len(cells_sorted) - 1:
+                continue
+            else:
+                cells_sorted = cells_sorted[i:]
+
+            # get the first cell and it's last contiguous daughter
+            first_cell = cells_sorted[0][1]
+            last_daughter = find_last_daughter(first_cell, cells)
+
+            # check to the daughter makes the second cut off
+            if last_daughter.birth_time > t2:
+                # print(fov, peak, 'Made it')
+
+                # now retrieve only those cells within the two times
+                # use the function to easily return in dictionary format
+                cells_cont = find_cells_born_after(cells, born_after=t1)
+                # Cells_cont = find_cells_born_before(Cells_cont, born_before=t2)
+
+                # append the first cell which was filtered out in the above step
+                cells_cont[first_cell.id] = first_cell
+
+                # and add it to the big dictionary
+                Continuous_Lineages[fov][peak] = cells_cont
+
+        # remove keys that do not have any lineages
+        if not Continuous_Lineages[fov]:
+            Continuous_Lineages.pop(fov)
+
+    cells = lineages_to_dict(Continuous_Lineages) # revert back to return
+
+    return cells
