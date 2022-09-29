@@ -45,7 +45,7 @@ To get started, clone the repo, and use `pip install -e .` to make napari use th
 
 Generally, there is one widget for each process.
 
-**Basic overview is as follows:**
+### Workflow overview 
 
 This assumes you are using Otsu segmentation -- the procedure can be modified if you are using U-Net.
 0. [nd2ToTIFF](#nd2ToTIFF) -- Turn your microscopy data into TIFFs. 
@@ -56,10 +56,19 @@ This assumes you are using Otsu segmentation -- the procedure can be modified if
 5. [Track](#track) -- Acquire individual cell properties and track lineages.
 
 Additionally, we have a few widgets to assist in other tasks that may come up:
+
 6. Annotate -- annotate images for ML (U-Net or similar) training purposes.
 7. SegmentUnet -- Run U-Net segmentation (you will need to supply your own model)
 8. Colors -- Calculate fluorescence information.
 9. Foci -- We use this to track `foci' (bright fluorescent spots) inside of cells.
+
+For additional information, you may wish to refer to the following documents:
+
+[Input image guidelines](/docs/Input-images-guidelines.md)
+
+[File structure](/docs/Guide-to-folders-and-files.md)
+
+[Output file structure](/docs/Cell_data_description.md)
 
 <a name="nd2ToTIFF"></a>
 ### 0. Generating a TIFF stack 
