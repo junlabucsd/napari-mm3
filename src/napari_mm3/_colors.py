@@ -10,11 +10,17 @@ from skimage import morphology
 
 
 from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
-from magicgui.widgets import SpinBox, ComboBox, FileEdit
+from magicgui.widgets import ComboBox, FileEdit
 
-from .utils import information, load_stack, warning, organize_cells_by_channel
+from .utils import organize_cells_by_channel
 
-from ._deriving_widgets import load_specs, load_time_table
+from ._deriving_widgets import (
+    load_specs,
+    load_time_table,
+    information,
+    warning,
+    load_stack_params,
+)
 
 
 def find_cell_intensities(
@@ -29,13 +35,13 @@ def find_cell_intensities(
     # Load fluorescent images and segmented images for this channel
     try:
         sub_channel = "sub_" + channel_name
-        fl_stack = load_stack(params, fov_id, peak_id, color=sub_channel)
+        fl_stack = load_stack_params(params, fov_id, peak_id, postfix=sub_channel)
         information("Loading subtracted channel to analyze.")
     except FileNotFoundError:
         warning("Could not find subtracted channel! Skipping.")
         return
 
-    seg_stack = load_stack(params, fov_id, peak_id, color="seg_unet")
+    seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_unet")
 
     # determine absolute time index
     times_all = []
@@ -96,8 +102,8 @@ def find_cell_intensities_worker(
     """
     information("Processing peak {} in FOV {}".format(peak_id, fov_id))
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(params, fov_id, peak_id, color=channel)
-    seg_stack = load_stack(params, fov_id, peak_id, color="seg_otsu")
+    fl_stack = load_stack_params(params, fov_id, peak_id, postfix=channel)
+    seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_otsu")
 
     # determine absolute time index
     time_table = load_time_table(params["ana_dir"])
@@ -157,7 +163,7 @@ def colors(params, fl_channel, seg_method, cellfile_path):
     #     cell_file_path = namespace.cellfile.name
     # else:
     #     warning('No cell file specified. Using complete_cells.pkl.')
-    #     cell_file_path = os.path.join(p['cell_dir'], 'complete_cells.pkl')
+    #     cell_file_path = p['cell_dir'] / 'complete_cells.pkl'
 
     with open(cellfile_path, "rb") as cell_file:
         Complete_Cells = pickle.load(cell_file)
@@ -235,9 +241,7 @@ def colors(params, fl_channel, seg_method, cellfile_path):
 
     # Just the complete cells, those with mother and daugther
     cell_filename = os.path.basename(cellfile_path)
-    with open(
-        os.path.join(params["cell_dir"], cell_filename[:-4] + "_fl.pkl"), "wb"
-    ) as cell_file:
+    with open(params["cell_dir"] / (cell_filename[:-4] + "_fl.pkl"), "wb") as cell_file:
         pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     information("Finished.")

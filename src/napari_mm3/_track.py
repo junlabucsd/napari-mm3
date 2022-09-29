@@ -14,13 +14,18 @@ from skimage import io
 from skimage.measure import regionprops
 from napari.utils import progress
 
-from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser, load_specs
+from ._deriving_widgets import (
+    MM3Container,
+    PlanePicker,
+    FOVChooser,
+    load_specs,
+    information,
+    load_stack_params,
+)
 from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox
 
 from .utils import (
-    information,
     Cell,
-    load_stack,
     find_complete_cells,
     find_cells_of_birth_label,
     find_cells_of_fov_and_peak,
@@ -35,12 +40,11 @@ def load_time_table(ana_dir):
 
     # try first for yaml, then for pkl
     try:
-        with open(os.path.join(ana_dir, "time_table.yaml"), "rb") as time_table_file:
+        with open(ana_dir / "time_table.yaml", "rb") as time_table_file:
             return yaml.safe_load(time_table_file)
     except:
-        with open(os.path.join(ana_dir, "time_table.pkl"), "rb") as time_table_file:
+        with open(ana_dir / "time_table.pkl", "rb") as time_table_file:
             return pickle.load(time_table_file)
-
 
 
 # functions for checking if a cell has divided or not
@@ -203,8 +207,8 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
     information("Creating lineage for FOV %d, channel %d." % (fov_id, peak_id))
 
     # load segmented data
-    image_data_seg = load_stack(
-        params, fov_id, peak_id, color=params["track"]["seg_img"]
+    image_data_seg = load_stack_params(
+        params, fov_id, peak_id, postfix=params["track"]["seg_img"]
     )
     # image_data_seg = load_stack(params, fov_id, peak_id, color='seg')
 
@@ -237,7 +241,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                     # Create cell and put in cell dictionary
                     cell_id = create_cell_id(region, t, peak_id, fov_id)
                     Cells[cell_id] = Cell(
-                        params, time_table, cell_id, region, t, parent_id=None
+                        params["pxl2um"], time_table, cell_id, region, t, parent_id=None
                     )
 
                     # add thes id to list of current leaves
@@ -295,7 +299,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         ):
                             cell_id = create_cell_id(region, t, peak_id, fov_id)
                             Cells[cell_id] = Cell(
-                                params, time_table, cell_id, region, t, parent_id=None
+                                params["pxl2um"], time_table, cell_id, region, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
                         else:
@@ -337,7 +341,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         daughter1_id = create_cell_id(region1, t, peak_id, fov_id)
                         daughter2_id = create_cell_id(region2, t, peak_id, fov_id)
                         Cells[daughter1_id] = Cell(
-                            params,
+                            params["pxl2um"],
                             time_table,
                             daughter1_id,
                             region1,
@@ -345,7 +349,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                             parent_id=leaf_id,
                         )
                         Cells[daughter2_id] = Cell(
-                            params,
+                            params["pxl2um"],
                             time_table,
                             daughter2_id,
                             region2,
@@ -383,7 +387,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         ):
                             cell_id = create_cell_id(region2, t, peak_id, fov_id)
                             Cells[cell_id] = Cell(
-                                params, time_table, cell_id, region2, t, parent_id=None
+                                params["pxl2um"], time_table, cell_id, region2, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
 
@@ -397,7 +401,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         ):
                             cell_id = create_cell_id(region1, t, peak_id, fov_id)
                             Cells[cell_id] = Cell(
-                                params, time_table, cell_id, region1, t, parent_id=None
+                                params["pxl2um"], time_table, cell_id, region1, t, parent_id=None
                             )
                             cell_leaves.append(cell_id)  # add to leaves
 
@@ -461,13 +465,11 @@ def Lineage(params):
     """Produces a lineage image for the first valid FOV containing cells"""
     # plotting lineage trees for complete cells
     # load specs file
-    with open(os.path.join(params["ana_dir"], "specs.yaml"), "r") as specs_file:
+    with open(params["ana_dir"] / "specs.yaml", "r") as specs_file:
         specs = yaml.safe_load(specs_file)
-    with open(os.path.join(params["cell_dir"], "all_cells.pkl"), "rb") as cell_file:
+    with open(params["cell_dir"] / "all_cells.pkl", "rb") as cell_file:
         Cells = pickle.load(cell_file)
-    with open(
-        os.path.join(params["cell_dir"], "complete_cells.pkl"), "rb"
-    ) as cell_file:
+    with open(params["cell_dir"] / "complete_cells.pkl", "rb") as cell_file:
         Cells2 = pickle.load(cell_file)
         Cells2 = find_cells_of_birth_label(Cells2, label_num=[1, 2])
 
@@ -483,7 +485,7 @@ def Lineage(params):
             if (
                 spec == 1
             ):  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
-                sample_img = load_stack(params, fov, peak_id)
+                sample_img = load_stack_params(params, fov, peak_id)
                 peak_len = np.shape(sample_img)[0]
                 peak_found = True
                 break
@@ -501,7 +503,7 @@ def Lineage(params):
         params, Cells, fov, peak_id, Cells2, bgcolor=params["phase_plane"]
     )
     lin_filename = params["experiment_name"] + "_demo_image.tif"
-    lin_filepath = os.path.join(lin_dir, lin_filename)
+    lin_filepath = lin_dir / lin_filename
     fig.savefig(lin_filepath, dpi=75)
     plt.close(fig)
 
@@ -553,10 +555,10 @@ def plot_lineage_images(
     Cells = find_cells_of_fov_and_peak(Cells, fov_id, peak_id)
 
     # load subtracted and segmented data
-    image_data_bg = load_stack(params, fov_id, peak_id, color=bgcolor)
+    image_data_bg = load_stack_params(params, fov_id, peak_id, postfix=bgcolor)
 
     if fgcolor:
-        image_data_seg = load_stack(params, fov_id, peak_id, color=fgcolor)
+        image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=fgcolor)
 
     if trim_time:
         image_data_bg = image_data_bg[time_set[0] : time_set[1]]
@@ -866,12 +868,12 @@ def Track_Cells(params):
 
     ### save the cell data. Use the script mm3_OutputData for additional outputs.
     # All cell data (includes incomplete cells)
-    with open(p["cell_dir"] + "/all_cells.pkl", "wb") as cell_file:
+    with open(p["cell_dir"] / "all_cells.pkl", "wb") as cell_file:
         pickle.dump(Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     # Just the complete cells, those with mother and daugther
     # This is a dictionary of cell objects.
-    with open(os.path.join(p["cell_dir"], "complete_cells.pkl"), "wb") as cell_file:
+    with open(p["cell_dir"] / "complete_cells.pkl", "wb") as cell_file:
         pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     information("Finished curating and saving cell data.")
@@ -1019,13 +1021,13 @@ class Track(MM3Container):
         # useful folder shorthands for opening files
         params["TIFF_dir"] = self.TIFF_folder
         params["ana_dir"] = self.analysis_folder
-        params["hdf5_dir"] = os.path.join(params["ana_dir"], "hdf5")
-        params["chnl_dir"] = os.path.join(params["ana_dir"], "channels")
-        params["empty_dir"] = os.path.join(params["ana_dir"], "empties")
-        params["sub_dir"] = os.path.join(params["ana_dir"], "subtracted")
-        params["seg_dir"] = os.path.join(params["ana_dir"], "segmented")
-        params["cell_dir"] = os.path.join(params["ana_dir"], "cell_data")
-        params["track_dir"] = os.path.join(params["ana_dir"], "tracking")
+        params["hdf5_dir"] = params["ana_dir"] / "hdf5"
+        params["chnl_dir"] = params["ana_dir"] / "channels"
+        params["empty_dir"] = params["ana_dir"] / "empties"
+        params["sub_dir"] = params["ana_dir"] / "subtracted"
+        params["seg_dir"] = params["ana_dir"] / "segmented"
+        params["cell_dir"] = params["ana_dir"] / "cell_data"
+        params["track_dir"] = params["ana_dir"] / "tracking"
 
         self.viewer.window._status_bar._toggle_activity_dock(True)
         Track_Cells(params)

@@ -4,26 +4,17 @@ from __future__ import print_function
 import sys
 import os
 from pathlib import Path
-import inspect
-import argparse
-import yaml
 import numpy as np
 from napari.utils import progress
 
-try:
-    import cPickle as pickle
-except:
-    import pickle
-import scipy.io as sio
+import pickle
 import multiprocessing
 from multiprocessing import Pool
 from skimage.feature import blob_log  # used for foci finding
 from scipy.optimize import leastsq  # fitting 2d gaussian
 
-from matplotlib.patches import Ellipse
 
-
-from .utils import information, load_stack, organize_cells_by_channel
+from .utils import organize_cells_by_channel
 
 from ._deriving_widgets import (
     MM3Container,
@@ -31,6 +22,8 @@ from ._deriving_widgets import (
     FOVChooser,
     load_specs,
     load_time_table,
+    information,
+    load_stack_params,
 )
 from magicgui.widgets import SpinBox, ComboBox, FileEdit, FloatSpinBox, PushButton
 
@@ -89,12 +82,12 @@ def foci_analysis(
     #     os.makedirs(foci_dir)
 
     # Import segmented and fluorescenct images
-    image_data_seg = load_stack(
-        params, fov_id, peak_id, color="seg_{}".format(seg_method)
+    image_data_seg = load_stack_params(
+        params, fov_id, peak_id, postfix="seg_{}".format(seg_method)
     )
 
-    image_data_FL = load_stack(
-        params, fov_id, peak_id, color="sub_{}".format(params["foci_plane"])
+    image_data_FL = load_stack_params(
+        params, fov_id, peak_id, postfix="sub_{}".format(params["foci_plane"])
     )
 
     # determine absolute time index
@@ -167,9 +160,9 @@ def foci_analysis_pool(fov_id, peak_id, Cells, params, seg_method, time_table):
     This function works on a single peak and all the cells therein."""
 
     # Import segmented and fluorescenct images
-    image_data_seg = load_stack(params, fov_id, peak_id, color=seg_method)
-    image_data_FL = load_stack(
-        params, fov_id, peak_id, color="sub_{}".format(params["foci_plane"])
+    image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=seg_method)
+    image_data_FL = load_stack_params(
+        params, fov_id, peak_id, postfix="sub_{}".format(params["foci_plane"])
     )
 
     # Load time table to determine first image index.
@@ -378,8 +371,8 @@ def foci_lap(img, img_foci, cell, t, params, preview=False):
 
 def kymograph(fov_id, peak_id, params):
 
-    sub_stack_fl = load_stack(
-        params, fov_id, peak_id, color="sub_" + params["foci_plane"]
+    sub_stack_fl = load_stack_params(
+        params, fov_id, peak_id, postfix="sub_" + params["foci_plane"]
     )
     fl_proj = np.transpose(np.max(sub_stack_fl, axis=2))
 

@@ -5,6 +5,7 @@ import six
 import tifffile as tiff
 import h5py
 import numpy as np
+import warnings
 
 from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, CheckBox
 from scipy import ndimage as ndi
@@ -13,12 +14,14 @@ from skimage.filters import threshold_otsu
 from napari.utils import progress
 
 
-from .utils import (
+from ._deriving_widgets import (
+    MM3Container,
+    PlanePicker,
+    FOVChooser,
+    load_specs,
     information,
-    warnings,
-    load_stack,
+    load_stack_params,
 )
-from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser, load_specs
 
 # Do segmentation for an channel time stack
 def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
@@ -36,8 +39,8 @@ def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
     information("Segmenting FOV %d, channel %d." % (fov_id, peak_id))
 
     # load subtracted images
-    sub_stack = load_stack(
-        params, fov_id, peak_id, color="sub_{}".format(params["phase_plane"])
+    sub_stack = load_stack_params(
+        params, fov_id, peak_id, postfix="sub_{}".format(params["phase_plane"])
     )
 
     # # set up multiprocessing pool to do segmentation. Will do everything before going on.
@@ -327,13 +330,13 @@ class SegmentOtsu(MM3Container):
         # useful folder shorthands for opening files
         self.params["TIFF_dir"] = self.TIFF_folder
         self.params["ana_dir"] = self.analysis_folder
-        self.params["hdf5_dir"] = os.path.join(self.params["ana_dir"], "hdf5")
-        self.params["chnl_dir"] = os.path.join(self.params["ana_dir"], "channels")
-        self.params["empty_dir"] = os.path.join(self.params["ana_dir"], "empties")
-        self.params["sub_dir"] = os.path.join(self.params["ana_dir"], "subtracted")
-        self.params["seg_dir"] = os.path.join(self.params["ana_dir"], "segmented")
-        self.params["cell_dir"] = os.path.join(self.params["ana_dir"], "cell_data")
-        self.params["track_dir"] = os.path.join(self.params["ana_dir"], "tracking")
+        self.params["hdf5_dir"] = self.params["ana_dir"] / "hdf5"
+        self.params["chnl_dir"] = self.params["ana_dir"] / "channels"
+        self.params["empty_dir"] = self.params["ana_dir"] / "empties"
+        self.params["sub_dir"] = self.params["ana_dir"] / "subtracted"
+        self.params["seg_dir"] = self.params["ana_dir"] / "segmented"
+        self.params["cell_dir"] = self.params["ana_dir"] / "cell_data"
+        self.params["track_dir"] = self.params["ana_dir"] / "tracking"
 
     def set_phase_plane(self):
         self.phase_plane = self.plane_picker_widget.value
@@ -365,11 +368,11 @@ class SegmentOtsu(MM3Container):
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         ## pull out first fov & peak id with cells
-        sub_stack = load_stack(
+        sub_stack = load_stack_params(
             self.params,
             valid_fov,
             valid_peak,
-            color="sub_{}".format(self.params["phase_plane"]),
+            postfix="sub_{}".format(self.params["phase_plane"]),
         )
 
         # image by image for debug

@@ -1,14 +1,13 @@
 from __future__ import print_function, division
-import h5py
+from functools import wraps
 import numpy as np
-import os
+import pandas as pd
 
 from scipy import ndimage as ndi
 from skimage import filters, morphology
 from skimage.filters import median
+from pathlib import Path
 
-import sys
-import time
 import warnings
 import tifffile as tiff
 
@@ -17,119 +16,17 @@ import seaborn as sns
 sns.set(style="ticks", color_codes=True)
 sns.set_palette("deep")
 
-### functions ###########################################################
-# alert the user what is up
-
-# print a warning
-def warning(*objs):
-    print(time.strftime("%H:%M:%S WARNING:", time.localtime()), *objs, file=sys.stderr)
+TIFF_FILE_FORMAT_PEAK = "%s_xy%03d_p%04d_%s.tif"
+TIFF_FILE_FORMAT_NO_PEAK = "%s_xy%03d_%s.tif"
 
 
-def information(*objs):
-    print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
+def load_tiff_stack_simple(dir: Path, prefix, fov, postfix, peak=None):
+    filename = TIFF_FILE_FORMAT_NO_PEAK % (prefix, fov, postfix)
+    if peak:
+        filename = TIFF_FILE_FORMAT_PEAK % (prefix, fov, peak, postfix)
 
-
-# loads and image stack from TIFF or HDF5 using mm3 conventions
-def load_stack(params, fov_id, peak_id, color="c1"):
-    """
-    Loads an image stack.
-
-    Supports reading TIFF stacks or HDF5 files.
-
-    Parameters
-    ----------
-    fov_id : int
-        The FOV id
-    peak_id : int
-        The peak (channel) id. Dummy None value incase color='empty'
-    color : str
-        The image stack type to return. Can be:
-        c1 : phase stack
-        cN : where n is an integer for arbitrary color channel
-        sub : subtracted images
-        seg : segmented images
-        empty : get the empty channel for this fov, slightly different
-
-    Returns
-    -------
-    image_stack : np.ndarray
-        The image stack through time. Shape is (t, y, x)
-    """
-
-    # things are slightly different for empty channels
-    if "empty" in color:
-        if params["output"] == "TIFF":
-            img_filename = params["experiment_name"] + "_xy%03d_%s.tif" % (
-                fov_id,
-                color,
-            )
-
-            with tiff.TiffFile(os.path.join(params["empty_dir"], img_filename)) as tif:
-                img_stack = tif.asarray()
-
-        if params["output"] == "HDF5":
-            with h5py.File(
-                os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r"
-            ) as h5f:
-                img_stack = h5f[color][:]
-
-        return img_stack
-
-    # load normal images for either TIFF or HDF5
-    if params["output"] == "TIFF":
-        if color[0] == "c":
-            img_dir = params["chnl_dir"]
-            img_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-                fov_id,
-                peak_id,
-                color,
-            )
-        elif "sub" in color:
-            img_dir = params["sub_dir"]
-            img_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-                fov_id,
-                peak_id,
-                color,
-            )
-        elif "foci" in color:
-            img_dir = params["foci_seg_dir"]
-            img_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-                fov_id,
-                peak_id,
-                color,
-            )
-        elif "seg" in color:
-            last = "seg_otsu"
-            if "seg_img" in params.keys():
-                last = params["seg_img"]
-            if "track" in params.keys():
-                last = params["track"]["seg_img"]
-
-            img_dir = params["seg_dir"]
-            img_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-                fov_id,
-                peak_id,
-                last,
-            )
-        else:
-            img_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-                fov_id,
-                peak_id,
-                color,
-            )
-
-        with tiff.TiffFile(os.path.join(img_dir, img_filename)) as tif:
-            img_stack = tif.asarray()
-
-    if params["output"] == "HDF5":
-        with h5py.File(
-            os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r"
-        ) as h5f:
-            # normal naming
-            # need to use [:] to get a copy, else it references the closed hdf5 dataset
-            img_stack = h5f["channel_%04d/p%04d_%s" % (peak_id, peak_id, color)][:]
-
-    return img_stack
+    with tiff.TiffFile(dir / filename) as tif:
+        return tif.asarray()
 
 
 ### Cell class and related functions
@@ -209,7 +106,7 @@ class Cell:
     """
 
     # initialize (birth) the cell
-    def __init__(self, params, time_table, cell_id, region, t, parent_id=None):
+    def __init__(self, pxl2um, time_table, cell_id, region, t, parent_id=None):
         """The cell must be given a unique cell_id and passed the region
         information from the segmentation
 
@@ -236,7 +133,7 @@ class Cell:
         # id
         self.id = cell_id
 
-        self.params = params
+        self.pxl2um = pxl2um
         self.time_table = time_table
 
         # identification convenience
@@ -265,7 +162,7 @@ class Cell:
         # calculating cell length and width by using Feret Diamter. These values are in pixels
         length_tmp, width_tmp = feretdiameter(region)
         if length_tmp == None:
-            warning("feretdiameter() failed for " + self.id + " at t=" + str(t) + ".")
+            print("feretdiameter() failed for " + self.id + " at t=" + str(t) + ".")
         self.lengths = [length_tmp]
         self.widths = [width_tmp]
 
@@ -315,7 +212,7 @@ class Cell:
         # calculating cell length and width by using Feret Diamter
         length_tmp, width_tmp = feretdiameter(region)
         if length_tmp == None:
-            warning("feretdiameter() failed for " + self.id + " at t=" + str(t) + ".")
+            print("feretdiameter() failed for " + self.id + " at t=" + str(t) + ".")
         self.lengths.append(length_tmp)
         self.widths.append(width_tmp)
         self.volumes.append(
@@ -354,10 +251,10 @@ class Cell:
 
         # flesh out the stats for this cell
         # size at birth
-        self.sb = self.lengths[0] * self.params["pxl2um"]
+        self.sb = self.lengths[0] * self.pxl2um
 
         # force the division length to be the combined lengths of the daughters
-        self.sd = (daughter1.lengths[0] + daughter2.lengths[0]) * self.params["pxl2um"]
+        self.sd = (daughter1.lengths[0] + daughter2.lengths[0]) * self.pxl2um
 
         # delta is here for convenience
         self.delta = self.sd - self.sb
@@ -366,11 +263,11 @@ class Cell:
         self.tau = np.float64((self.abs_times[-1] - self.abs_times[0]) / 60.0)
 
         # include the data points from the daughters
-        self.lengths_w_div = [l * self.params["pxl2um"] for l in self.lengths] + [
+        self.lengths_w_div = [l * self.pxl2um for l in self.lengths] + [
             self.sd
         ]
-        self.widths_w_div = [w * self.params["pxl2um"] for w in self.widths] + [
-            ((daughter1.widths[0] + daughter2.widths[0]) / 2) * self.params["pxl2um"]
+        self.widths_w_div = [w * self.pxl2um for w in self.widths] + [
+            ((daughter1.widths[0] + daughter2.widths[0]) / 2) * self.pxl2um
         ]
 
         # volumes for all timepoints, in um^3
@@ -393,7 +290,7 @@ class Cell:
 
         except:
             self.elong_rate = np.float64("NaN")
-            warning("Elongation rate calculate failed for {}.".format(self.id))
+            print("Elongation rate calculate failed for {}.".format(self.id))
 
         # calculate the septum position as a number between 0 and 1
         # which indicates the size of daughter closer to the closed end
@@ -643,39 +540,59 @@ def cell_growth_func(t, sb, elong_rate):
 
 
 ### functions for pruning a dictionary of cells
+class Cells(dict):
+    def __init__(self, dict_):
+        super().__init__(dict_)
+
+
+def cellsmethod(func):
+    """Decorator to dynamically add a given function as a method to 'Cells'"""
+
+    @wraps(func)  # Copies the docstring, etc, from 'func' to 'wrapper'
+    def wrapper(self, *args, **kwargs):
+        return Cells(func(self, *args, **kwargs))
+
+    # Add 'wrapper' to Cells
+    setattr(Cells, func.__name__, wrapper)
+    return func  # returning func means func can still be used normally
+
+
 # find cells with both a mother and two daughters
-def find_complete_cells(Cells):
+@cellsmethod
+def find_complete_cells(cells):
     """Go through a dictionary of cells and return another dictionary
     that contains just those with a parent and daughters"""
 
-    Complete_Cells = {}
+    Complete_cells = {}
 
-    for cell_id in Cells:
-        if Cells[cell_id].daughters and Cells[cell_id].parent:
-            Complete_Cells[cell_id] = Cells[cell_id]
+    for cell_id in cells:
+        if cells[cell_id].daughters and cells[cell_id].parent:
+            Complete_cells[cell_id] = cells[cell_id]
 
-    return Complete_Cells
+    return Complete_cells
 
 
 # finds cells whose birth label is 1
-def find_mother_cells(Cells):
+@cellsmethod
+def find_mother_cells(cells):
     """Return only cells whose starting region label is 1."""
 
-    Mother_Cells = {}
+    Mother_cells = {}
 
-    for cell_id in Cells:
-        if Cells[cell_id].birth_label == 1:
-            Mother_Cells[cell_id] = Cells[cell_id]
+    for cell_id in cells:
+        if cells[cell_id].birth_label == 1:
+            Mother_cells[cell_id] = cells[cell_id]
 
-    return Mother_Cells
+    return Mother_cells
 
 
-def filter_cells(Cells, attr, val, idx=None, debug=False):
+@cellsmethod
+def filter_cells(cells, attr, val, idx=None, debug=False) -> Cells:
     """Return only cells whose designated attribute equals "val"."""
 
-    Filtered_Cells = {}
+    Filtered_cells = {}
 
-    for cell_id, cell in Cells.items():
+    for cell_id, cell in cells.items():
 
         at_val = getattr(cell, attr)
         if debug:
@@ -684,26 +601,48 @@ def filter_cells(Cells, attr, val, idx=None, debug=False):
         if idx is not None:
             at_val = at_val[idx]
         if at_val == val:
-            Filtered_Cells[cell_id] = cell
+            Filtered_cells[cell_id] = cell
 
-    return Filtered_Cells
+    return Filtered_cells
 
 
-def filter_cells_containing_val_in_attr(Cells, attr, val):
+@cellsmethod
+def filter_cells_containing_val_in_attr(cells, attr, val) -> Cells:
     """Return only cells that have val in list attribute, attr."""
 
-    Filtered_Cells = {}
+    Filtered_cells = {}
 
-    for cell_id, cell in Cells.items():
+    for cell_id, cell in cells.items():
 
         at_list = getattr(cell, attr)
         if val in at_list:
-            Filtered_Cells[cell_id] = cell
+            Filtered_cells[cell_id] = cell
 
-    return Filtered_Cells
+    return Filtered_cells
 
 
-def organize_cells_by_channel(Cells, specs):
+@cellsmethod
+def find_cells_of_birth_label(cells, label_num=1) -> Cells:
+    """Return only cells whose starting region label is given.
+    If no birth_label is given, returns the mother cells.
+    label_num can also be a list to include cells of many birth labels
+    """
+
+    fcells = {}  # f is for filtered
+
+    if type(label_num) is int:
+        label_num = [label_num]
+
+    for cell_id in cells:
+        if cells[cell_id].birth_label in label_num:
+            fcells[cell_id] = cells[cell_id]
+
+    return fcells
+
+    return fcells
+
+@cellsmethod
+def organize_cells_by_channel(cells, specs) -> dict:
     """
     Returns a nested dictionary where the keys are first
     the fov_id and then the peak_id (similar to specs),
@@ -712,21 +651,21 @@ def organize_cells_by_channel(Cells, specs):
     """
 
     # make a nested dictionary that holds lists of cells for one fov/peak
-    Cells_by_peak = {}
+    cells_by_peak = {}
     for fov_id in specs.keys():
-        Cells_by_peak[fov_id] = {}
+        cells_by_peak[fov_id] = {}
         for peak_id, spec in specs[fov_id].items():
             # only make a space for channels that are analyized
             if spec == 1:
-                Cells_by_peak[fov_id][peak_id] = {}
+                cells_by_peak[fov_id][peak_id] = {}
 
     # organize the cells
-    for cell_id, Cell in Cells.items():
-        Cells_by_peak[Cell.fov][Cell.peak][cell_id] = Cell
+    for cell_id, Cell in cells.items():
+        cells_by_peak[Cell.fov][Cell.peak][cell_id] = Cell
 
     # remove peaks and that do not contain cells
     remove_fovs = []
-    for fov_id, peaks in Cells_by_peak.items():
+    for fov_id, peaks in cells_by_peak.items():
         remove_peaks = []
         for peak_id in peaks.keys():
             if not peaks[peak_id]:
@@ -735,25 +674,26 @@ def organize_cells_by_channel(Cells, specs):
         for peak_id in remove_peaks:
             peaks.pop(peak_id)
 
-        if not Cells_by_peak[fov_id]:
+        if not cells_by_peak[fov_id]:
             remove_fovs.append(fov_id)
 
     for fov_id in remove_fovs:
-        Cells_by_peak.pop(fov_id)
+        cells_by_peak.pop(fov_id)
 
-    return Cells_by_peak
+    return cells_by_peak
 
 
+@cellsmethod
 def find_all_cell_intensities(
-    Cells,
-    params,
+    cells,
+    intensity_directory,
+    seg_directory,
     specs,
-    time_table,
     channel_name="sub_c2",
     apply_background_correction=True,
 ):
     """
-    Finds fluorescenct information for cells. All the cells in Cells
+    Finds fluorescenct information for cells. All the cells in cells
     should be from one fov/peak.
     """
 
@@ -773,7 +713,7 @@ def find_all_cell_intensities(
                 )
             )
             # Load fluorescent images and segmented images for this channel
-            fl_stack = load_stack(params, fov_id, peak_id, color=channel_name)
+            fl_stack = load_tiff_stack_simple(intensity_directory, fov=fov_id, peak=peak_id, postfix=channel_name)
             corrected_stack = np.zeros(fl_stack.shape)
 
             for frame in range(fl_stack.shape[0]):
@@ -794,10 +734,10 @@ def find_all_cell_intensities(
                 else:
                     corrected_stack[frame, :, :] = median_filtered
 
-            seg_stack = load_stack(params, fov_id, peak_id, color="seg_unet")
+            seg_stack = load_tiff_stack_simple(seg_directory, fov=fov_id, peak=peak_id, postfix=channel_name)
 
             # evaluate whether each cell is in this fov/peak combination
-            for cell_id, cell in Cells.items():
+            for _, cell in cells.items():
 
                 cell_fov = cell.fov
                 if cell_fov != fov_id:
@@ -832,10 +772,10 @@ def find_all_cell_intensities(
 
     # The cell objects in the original dictionary will be updated,
     # no need to return anything specifically.
-    return
 
 
-def find_cells_of_fov_and_peak(Cells, fov_id, peak_id):
+@cellsmethod
+def find_cells_of_fov_and_peak(cells, fov_id, peak_id) -> Cells:
     """Return only cells from a specific fov/peak
     Parameters
     ----------
@@ -843,28 +783,45 @@ def find_cells_of_fov_and_peak(Cells, fov_id, peak_id):
     peak_id : int correstonging to peak
     """
 
-    fCells = {}  # f is for filtered
+    fcells = {}  # f is for filtered
 
-    for cell_id in Cells:
-        if Cells[cell_id].fov == fov_id and Cells[cell_id].peak == peak_id:
-            fCells[cell_id] = Cells[cell_id]
+    for cell_id in cells:
+        if cells[cell_id].fov == fov_id and cells[cell_id].peak == peak_id:
+            fcells[cell_id] = cells[cell_id]
 
-    return fCells
+    return fcells
 
 
-def find_cells_of_birth_label(Cells, label_num=1):
-    """Return only cells whose starting region label is given.
-    If no birth_label is given, returns the mother cells.
-    label_num can also be a list to include cells of many birth labels
+# TODO: List of ALL cell properties
+@cellsmethod
+def cells2df(cells, columns) -> pd.DataFrame:
     """
+    Take cell data (a dicionary of Cell objects) and return a dataframe.
 
-    fCells = {}  # f is for filtered
+    rescale : boolean
+        If rescale is set to True, then the 6 major parameters are rescaled by their mean.
+    """
+    # columns to include
+    columns = [
+        "fov",
+        "peak",
+        "birth_label",
+        "birth_time",
+        "division_time",
+        "sb",
+        "sd",
+        "width",
+        "delta",
+        "tau",
+        "elong_rate",
+        "septum_position",
+    ]
 
-    if type(label_num) is int:
-        label_num = [label_num]
-
-    for cell_id in Cells:
-        if Cells[cell_id].birth_label in label_num:
-            fCells[cell_id] = Cells[cell_id]
-
-    return fCells
+    # Make dataframe for plotting variables
+    cells_dict = {cell_id: vars(cell) for cell_id, cell in cells.items()}
+    df = pd.DataFrame(
+        cells_dict
+    ).transpose()  # must be transposed so data is in columns
+    df = df.sort_values(by=["fov", "peak", "birth_time", "birth_label"])
+    df = df[columns].apply(pd.to_numeric)
+    return df

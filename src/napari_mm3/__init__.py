@@ -1,6 +1,7 @@
 __version__ = "0.0.7"
 __all__ = [
     "Cell",
+    "Cells",
     "feretdiameter",
     "cell_growth_func",
     "find_complete_cells",
@@ -14,6 +15,7 @@ __all__ = [
 
 from .utils import (
     Cell,
+    Cells,
     feretdiameter,
     cell_growth_func,
     find_complete_cells,
