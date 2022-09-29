@@ -1,0 +1,34 @@
+# Compile
+
+This script takes raw TIFF files, finds growth channels, cuts them out, and saves image stacks across time for each growth channel. It does this by first locating the growth channels, then creating a cutting mask for each FOV that is applied to all time points. In addition, it extracts and saves image metadata as well as a time table which maps picture time point to wall time.
+
+**Input**
+* Individual TIFF files. TIFFs should be separated by time point and FOV, but multiple colors should be stacked in one image.
+
+**Output**
+* Stacked TIFFs through time for each channel (colors saved in separate stacks). These are saved to the `channels/` subfolder in the analysis directory.
+* Metadata for each TIFF in a Python dictionary. These are saved as `TIFF_metadata.pkl` and `.txt`. The pickle file is read by subsequent scripts, the text file is simply for the user (true of all metadata files).
+* Channel masks for each FOV. These are saved as `channel_masks.pkl` and `.txt`. A Python dictionary that records the location of the channels in each FOV. Is a nested dictionaries of FOVs and then channel peaks. The final values are 4 pixel coordinates, ((y1, y2), (x1, x2)).
+* Time table for all time points and FOVs. These are saved as `time_table.pkl` and `.txt`. A Python dictionary by FOV which maps the actual time (elapsed seconds since the start of the experiment) each nominal time point was taken.
+
+**Parameters**
+
+Pay special attention to the following:
+
+* `TIFF_source` needs to be specified to indicate how the script should look for TIFF metadata. Choices are `elements`, `nd2ToTIFF` or `other`.
+* `channel_width`, `channel_separation`, and `channel_detection_snr`, which are used to help find the channels.
+* `channel_length_pad` and `channel_width_pad` will increase the size of your channel slices.
+
+**Hardcoded parameters**
+
+There are few hardcoded parameters at the start of the executable Python script (right after __main__).
+
+* `do_metadata` : Determine metadata or not. If this is False, it will attempt to load the metadata from a previous run of mm3_Compile.py
+* `do_time_table` : Calculate the time table or not.
+* `do_channel_masks` : Calculate consensus channel masks or not. Again, if False it will look to load this information.
+* `do_slicing`: Slice the TIFFs or not.
+* `t_end` : Will only analyze images up to this time point. Useful for debugging.
+
+## Notes on use
+
+Three types of TIFF files can be handled by this script. One are TIFFs that have been exported by the nd2ToTIFF widget. These TIFFs have their metadata saved in the header of each file. The second is TIFF files which have been exported by Nikon Elements. Finally, if the TIFFs were obtained by another method, the widget will attempt to infer the time stamp and field of view from the TIFF names. In this case, the imaging time interval and pixel-to-uM ratio must be provided by the user as parameters.
