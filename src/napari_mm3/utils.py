@@ -1,6 +1,5 @@
 from __future__ import print_function, division
 from functools import wraps
-import h5py
 import numpy as np
 import pandas as pd
 
@@ -8,7 +7,6 @@ from scipy import ndimage as ndi
 from skimage import filters, morphology
 from skimage.filters import median
 from pathlib import Path
-from ._deriving_widgets import warning
 
 import warnings
 import tifffile as tiff
@@ -22,25 +20,13 @@ TIFF_FILE_FORMAT_PEAK = "%s_xy%03d_p%04d_%s.tif"
 TIFF_FILE_FORMAT_NO_PEAK = "%s_xy%03d_%s.tif"
 
 
-def gen_tiff_filename(prefix, fov_id: int, postfix: str, peak_id: int = None):
-    if peak_id:
-        return TIFF_FILE_FORMAT_PEAK.format(prefix, fov_id, peak_id, postfix)
-    return TIFF_FILE_FORMAT_NO_PEAK.format(prefix, fov_id, peak_id, postfix)
-
-
 def load_tiff_stack_simple(dir: Path, prefix, fov, postfix, peak=None):
-    filename = gen_tiff_filename(dir, prefix, fov, postfix, peak)
-    return load_tiff(dir / filename)
+    filename = TIFF_FILE_FORMAT_NO_PEAK % (prefix, fov, postfix)
+    if peak:
+        filename = TIFF_FILE_FORMAT_PEAK % (prefix, fov, peak, postfix)
 
-
-def load_tiff(tiff_location: Path):
-    with tiff.TiffFile(tiff_location) as tif:
+    with tiff.TiffFile(dir / filename) as tif:
         return tif.asarray()
-
-
-def load_hdf5(hdf5_location: Path, dataset_name: str):
-    with h5py.File(hdf5_location, "r") as h5f:
-        return h5f[dataset_name]
 
 
 ### Cell class and related functions
@@ -109,7 +95,7 @@ class Cell:
         # calculating cell length and width by using Feret Diamter. These values are in pixels
         length_tmp, width_tmp = feretdiameter(region)
         if length_tmp == None:
-            warning("feretdiameter() failed for " + self.id + " at t=" + str(t) + ".")
+            print("feretdiameter() failed for " + self.id + " at t=" + str(t) + ".")
         self.lengths = [length_tmp]
         self.widths = [width_tmp]
 
@@ -159,7 +145,7 @@ class Cell:
         # calculating cell length and width by using Feret Diamter
         length_tmp, width_tmp = feretdiameter(region)
         if length_tmp == None:
-            warning("feretdiameter() failed for " + self.id + " at t=" + str(t) + ".")
+            print("feretdiameter() failed for " + self.id + " at t=" + str(t) + ".")
         self.lengths.append(length_tmp)
         self.widths.append(width_tmp)
         self.volumes.append(
@@ -237,7 +223,7 @@ class Cell:
 
         except:
             self.elong_rate = np.float64("NaN")
-            warning("Elongation rate calculate failed for {}.".format(self.id))
+            print("Elongation rate calculate failed for {}.".format(self.id))
 
         # calculate the septum position as a number between 0 and 1
         # which indicates the size of daughter closer to the closed end

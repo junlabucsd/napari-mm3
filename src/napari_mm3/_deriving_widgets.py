@@ -9,7 +9,8 @@ from magicgui.widgets import (
     ComboBox,
 )
 from pathlib import Path
-from .utils import load_tiff, load_hdf5, gen_tiff_filename
+from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
+import h5py
 import pickle
 import yaml
 import json
@@ -26,6 +27,21 @@ def warning(*objs):
 def information(*objs):
     print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
 
+
+def load_tiff(tiff_location: Path):
+    with tiff.TiffFile(tiff_location) as tif:
+        return tif.asarray()
+
+
+def load_hdf5(hdf5_location: Path, dataset_name: str):
+    with h5py.File(hdf5_location, "r") as h5f:
+        return h5f[dataset_name]
+
+
+def gen_tiff_filename(prefix, fov_id: int, postfix: str, peak_id: int = None):
+    if peak_id:
+        return TIFF_FILE_FORMAT_PEAK % (prefix, fov_id, peak_id, postfix)
+    return TIFF_FILE_FORMAT_NO_PEAK % (prefix, fov_id, postfix)
 
 def load_stack_params(params, fov_id, peak_id, postfix="c1"):
     """
@@ -58,7 +74,7 @@ def load_stack_params(params, fov_id, peak_id, postfix="c1"):
     if "empty" in postfix:
         if params["output"] == "TIFF":
             img_name = gen_tiff_filename(
-                prefix=params["experiment_name"], fov=fov_id, postfix=postfix
+                prefix=params["experiment_name"], fov_id=fov_id, postfix=postfix
             )
             return load_tiff(params["empty_dir"] / img_name)
 
@@ -82,7 +98,7 @@ def load_stack_params(params, fov_id, peak_id, postfix="c1"):
             img_dir = params["seg_dir"]
 
         img_filename = gen_tiff_filename(
-            prefix=params["experiment_name"], fov=fov_id, peak=peak_id, postfix=postfix
+            prefix=params["experiment_name"], fov_id=fov_id, peak_id=peak_id, postfix=postfix
         )
         return load_tiff(img_dir / img_filename)
 

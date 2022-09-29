@@ -5,6 +5,7 @@ import six
 import tifffile as tiff
 import h5py
 import numpy as np
+import warnings
 
 from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, CheckBox
 from scipy import ndimage as ndi
@@ -19,7 +20,6 @@ from ._deriving_widgets import (
     FOVChooser,
     load_specs,
     information,
-    warnings,
     load_stack_params,
 )
 
