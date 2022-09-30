@@ -1179,7 +1179,7 @@ def compile(params):
             # go through list and find first place where timepoint is equivalent to t_start
             for n, ifile in enumerate(found_files):
                 string = re.compile(
-                    "t{:0=3}xy|t{:0=4}xy".format(t_start, t_start)
+                    "t{:0=3}xy|t{:0=4}xy".format(t_start, t_start),re.IGNORECASE
                 )  # account for 3 and 4 digit
                 # if re.search == True then a match was found
                 if re.search(string, ifile):
@@ -1193,7 +1193,7 @@ def compile(params):
             # go through list and find first place where timepoint is equivalent to t_end
             for n, ifile in enumerate(found_files):
                 string = re.compile(
-                    "t%03dxy|t%04dxy" % (t_end, t_end)
+                    "t%03dxy|t%04dxy" % (t_end, t_end),re.IGNORECASE
                 )  # account for 3 and 4 digit
                 if re.search(string, ifile):
                     found_files = found_files[:n]
