@@ -137,7 +137,7 @@ def get_tif_params(params, image_filename, find_channels=True):
         }  # dictionary of channel locations
 
     except:
-        warning("Failed get_params for " + image_filename.split("/")[-1])
+        warning("Failed get_params for " + image_filename.name)
         information(sys.exc_info()[0])
         information(sys.exc_info()[1])
         information(traceback.print_tb(sys.exc_info()[2]))
@@ -463,7 +463,7 @@ def hdf5_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_
 
         # analyzed_imgs dictionary will be found in main scope.
         image_params = analyzed_imgs[image_name]
-        information("Loading %s." % image_params["filepath"].split("/")[-1])
+        information("Loading %s." % image_params["filepath"].name)
 
         # add information to metadata arrays
         image_filenames.append(image_name)
@@ -604,7 +604,7 @@ def tiff_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_
         # analyzed_imgs dictionary will be found in main scope. [0] is the key, [1] is jd
         image_params = analyzed_imgs[image[0]]
 
-        information("Loading %s." % image_params["filepath"].split("/")[-1])
+        information("Loading %s." % image_params["filepath"].name)
 
         if n == 1:
             # declare identification variables for saving using first image
