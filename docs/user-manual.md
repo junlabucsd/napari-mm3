@@ -27,7 +27,7 @@ For additional information, you may wish to refer to the following documents:
 
 
 <a name="nd2ToTIFF"></a>
-### 0. Generating a TIFF stack 
+## 0. Generating a TIFF stack 
 
 **Input**
 * .nd2 file as produced by Nikon Elements
@@ -46,13 +46,13 @@ The working directory now contains:
 ├── TIFF
 ```
 
-## Notes on metadata
+### Notes on metadata
 
 mm3_nd2ToTIFF.py reads the metadata directly from the .nd2 and then writes it into the header of the TIFF file when saving. The format is a json representation of a Python dictionary, and is recognized later by Compile.  
 
 
  <a name="compile"></a>
-### 1. Locate channels, create channel stacks, and return metadata (Compile widget).
+## 1. Locate channels, create channel stacks, and return metadata (Compile widget).
 <img width="1187" alt="fov_inspect1" src="https://user-images.githubusercontent.com/40699438/177629474-5fd7ee80-682e-4aaa-bf6e-dd547e40c458.png">
 
 The Compile widget attempts to automatically identify and crop out individual growth channels. Images corresponding to a specific channel are then stacked in time, and these "channel stacks" are the basis of further analysis. If there are multiple colors, a channel stack is made for each color for each channel.
@@ -92,7 +92,7 @@ The working directory now contains:
 ```
 
 <a name="pickchannels"></a> 
-### 2. User guided selection of empty and full channels (PickChannels). 
+## 2. User guided selection of empty and full channels (PickChannels). 
 <img width="1177" alt="channel_picker" src="https://user-images.githubusercontent.com/40699438/177629496-73b6c4cf-7427-41e6-ac20-720b6fbf2ba1.png">
 
 The Compile widget identifies all growth channels, regardless of if they contain or do not contain cells. ChannelSorter first attempts to guess, and then presents the user with a GUI to decide which channels should be analyzed, which channels should be ignored, and which channels should be used as empty channels during subtraction. This information is contained within the specs.yaml file.
@@ -137,7 +137,7 @@ The working directory is now:
 * specs.pkl and .txt : Python dictionary which is the specifications of channels as full (1), empty (0), or ignore (-1). Same structure as channel_masks.
 
 <a name="subtract"></a> 
-### 3. Subtract phase contrast images (Subtract widget). 
+## 3. Subtract phase contrast images (Subtract widget). 
 <img width="1183" alt="subtract" src="https://user-images.githubusercontent.com/40699438/177629512-c5ba4abd-0e03-4540-a4bb-7414ad0560d0.png">
 
 Downstream analysis of phase contrast (brightfield) images requires background subtraction to remove artifacts of the PDMS device in the images. 
@@ -163,7 +163,7 @@ The working directory is now:
 ```
 
 <a name="segmentotsu"></a> 
-### 4. Segment images (SegmentOTSU or SegmentUnet). 
+## 4. Segment images (SegmentOTSU or SegmentUnet). 
 
 <img width="1486" alt="otsu" src="https://user-images.githubusercontent.com/40699438/177629756-2bf87d2e-6ec8-4580-8675-648d68b29cb5.png">
 <img width="1180" alt="unet" src="https://user-images.githubusercontent.com/40699438/177629546-81c2f826-73e8-41ef-adbd-7ceb191db461.png">
@@ -203,7 +203,7 @@ The working directory is now:
 
 
 <a name="track"></a> 
-### 5. Create cell lineages (Track widget). 
+## 5. Create cell lineages (Track widget). 
 
 <img width="1188" alt="lineage" src="https://user-images.githubusercontent.com/40699438/177629704-b866d74e-cd80-4171-a6cf-92a887617160.png">
 
