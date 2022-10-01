@@ -23,11 +23,11 @@ https://napari.org/plugins/stable/index.html
 
 ## Installation
 
-Load up a new environment. We run the following command, replacing `environment-name-here` with something of your choosing:
+Load up a new environment. We run the following command, replacing `environment-name-here` with a name of your choosing:
 
 `conda create -y -n environment-name-here python=3.9 napari tensorflow` 
 
-If you would like to have the latest version: 
+Now, to install our code: if you would like to have the latest version, do the following.
 
 1. You can clone the repository with `git clone git@github.com:junlabucsd/napari-mm3.git` (SSH) or `git clone https://github.com/junlabucsd/napari-mm3.git` (https)
 2. With your environment active, run `pip install -e .` from inside your cloned repo.
@@ -35,7 +35,8 @@ If you would like to have the latest version:
 If you would like to have a more stable verison, simply run `pip install napari-mm3`.
 
 NOTE:
-There are occasionally issues with PyQt5 -- you may need to resolve those yourself; those are an upstream bug that can be very sensitive to your choice of system.
+Not running the conda command and trying to install things in a different way may lead to difficult issues with PyQt5. 
+We recommend following the above commands to simplify the situation.
 
 ## Contributing
 
