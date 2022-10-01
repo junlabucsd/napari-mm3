@@ -1131,8 +1131,8 @@ def compile(params):
 
         ## if there is a second plane, stack and save them out
         if string_c2:
-            found_files_c1 = [f for f in found_files if re.search(string_c1, f)]
-            found_files_c2 = [f for f in found_files if re.search(string_c2, f)]
+            found_files_c1 = [str(f) for f in found_files if re.search(string_c1, f.name)]
+            found_files_c2 = [str(f) for f in found_files if re.search(string_c2, f.name)]
 
             for f1, f2 in zip(found_files_c1, found_files_c2):
                 information("Merging images " + str(f1) + " and " + str(f2))
@@ -1179,7 +1179,7 @@ def compile(params):
             # go through list and find first place where timepoint is equivalent to t_start
             for n, ifile in enumerate(found_files):
                 string = re.compile(
-                    "t{:0=3}xy|t{:0=4}xy".format(t_start, t_start)
+                    "t{:0=3}xy|t{:0=4}xy".format(t_start, t_start),re.IGNORECASE
                 )  # account for 3 and 4 digit
                 # if re.search == True then a match was found
                 if re.search(string, ifile):
@@ -1193,7 +1193,7 @@ def compile(params):
             # go through list and find first place where timepoint is equivalent to t_end
             for n, ifile in enumerate(found_files):
                 string = re.compile(
-                    "t%03dxy|t%04dxy" % (t_end, t_end)
+                    "t%03dxy|t%04dxy" % (t_end, t_end),re.IGNORECASE
                 )  # account for 3 and 4 digit
                 if re.search(string, ifile):
                     found_files = found_files[:n]
@@ -1414,8 +1414,10 @@ def compile(params):
 
 def load_fov(image_directory, fov_id):
     information("getting files")
-    found_files = image_directory.glob(f"*xy{fov_id:02d}.tif")
-    found_files = [filepath.name for filepath in found_files]  # remove pre-path
+    found_files = image_directory.glob("*.tif")
+    file_string = re.compile(f"xy{fov_id:02d}.*.tif",re.IGNORECASE)
+    found_files = [f.name for f in found_files if re.search(file_string,f.name)]
+    
     information("sorting files")
     found_files = sorted(found_files)  # should sort by timepoint
 

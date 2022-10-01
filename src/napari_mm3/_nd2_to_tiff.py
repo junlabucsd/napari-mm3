@@ -336,7 +336,7 @@ class Nd2ToTIFF(Container):
         image_name_list = [
             filename.name for filename in self.image_directory.glob("*xy*")
         ]
-        fov_regex = re.compile(r"xy\d*")
+        fov_regex = re.compile(r"xy\d*",re.IGNORECASE)
         fovs = list(
             sorted(
                 set(
