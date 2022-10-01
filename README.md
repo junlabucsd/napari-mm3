@@ -49,6 +49,7 @@ the coverage at least stays the same before you submit a pull request.
 
 Generally, each step of the pipeline has a single widget.
 This assumes you are using Otsu segmentation -- the procedure can be modified if you are using U-Net.
+
 0. [nd2ToTIFF](/docs/user-manual.md#nd2ToTIFF) -- Turn your microscopy data into TIFFs. 
 1. [Compile](/docs/user-manual.md#compile) -- Locate traps, separate them into their own TIFFs, and return metadata.
 2. [PickChannels](/docs/user-manual.md#pickchannels) -- User guided selection of empty and full traps.

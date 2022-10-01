@@ -46,6 +46,11 @@ The working directory now contains:
 ├── TIFF
 ```
 
+## Notes on metadata
+
+mm3_nd2ToTIFF.py reads the metadata directly from the .nd2 and then writes it into the header of the TIFF file when saving. The format is a json representation of a Python dictionary, and is recognized later by Compile.  
+
+
  <a name="compile"></a>
 ### 1. Locate channels, create channel stacks, and return metadata (Compile widget).
 <img width="1187" alt="fov_inspect1" src="https://user-images.githubusercontent.com/40699438/177629474-5fd7ee80-682e-4aaa-bf6e-dd547e40c458.png">
@@ -56,10 +61,20 @@ It is also at this time that metadata is drawn from the images and saved.
 
 **Parameters**
 
-* `TIFF_source` needs to be specified to indicate how the script should look for TIFF metadata. Choices are `elements` and `nd2ToTIFF`.
+* `TIFF_source` needs to be specified to indicate how the script should look for TIFF metadata. Choices are `elements`, `nd2ToTIFF`, and `other`. `elements` indicates that the TIFFs came from nikon elements. `nd2ToTIFF` indicates that TIFF files were exported by our [nd2ToTIFF](#0-generating-a-tiff-stack) script. Finally, `other` indicates that the subsequent scripts should simply read in information from TIFF names.
 * `channel_width`, `channel_separation`, and `channel_detection_snr`, which are used to help find the channels.
 * `channel_length_pad` and `channel_width_pad` will increase the size of your channel slices.
-* `t_end` : Will only analyze images up to this time point. Useful for debugging.
+* `phase_plane` is the postfix of the channel which contains the phase images
+* `start time`, `end time` : Will only analyze images up to this time point. Useful for debugging.
+
+**Outputs**
+
+* Stacked TIFFs through time for each channel (colors saved in separate stacks). These are saved to the `channels/` subfolder in the analysis directory.
+* Metadata for each TIFF in a Python dictionary. These are saved as `TIFF_metadata.pkl` and `.txt`. The pickle file is read by subsequent scripts, the text file is simply for the user (true of all metadata files).
+* Channel masks for each FOV. These are saved as `channel_masks.pkl` and `.txt`. A Python dictionary that records the location of the channels in each FOV. Is a nested dictionaries of FOVs and then channel peaks. The final values are 4 pixel coordinates, ((y1, y2), (x1, x2)).
+* Time table for all time points and FOVs. These are saved as `time_table.pkl` and `.txt`. A Python dictionary by FOV which maps the actual time (elapsed seconds since the start of the experiment) each nominal time point was taken.
+* crosscorrs.pkl and .txt : Python dictionary that contains image correlation value for channels over time. Used to guess if a channel is full or empty. Same structure as channel_masks.
+
 
 The working directory now contains:
 ```
@@ -76,24 +91,28 @@ The working directory now contains:
 │   └── channels
 ```
 
-## Notes on metadata
-
-mm3_nd2ToTIFF.py reads the metadata directly from the .nd2 and then writes it into the header of the TIFF file when saving. The format is a json representation of a Python dictionary, and is recognized later by Compile.  
-
-
 <a name="pickchannels"></a> 
 ### 2. User guided selection of empty and full channels (PickChannels). 
 <img width="1177" alt="channel_picker" src="https://user-images.githubusercontent.com/40699438/177629496-73b6c4cf-7427-41e6-ac20-720b6fbf2ba1.png">
 
 The Compile widget identifies all growth channels, regardless of if they contain or do not contain cells. ChannelSorter first attempts to guess, and then presents the user with a GUI to decide which channels should be analyzed, which channels should be ignored, and which channels should be used as empty channels during subtraction. This information is contained within the specs.yaml file.
 
-Clicking the "Load data" button displays the first FOV analyzed, along with the program's predicted channel classification. The user is asked to click on the channels to change their designation between analyze (green), empty (blue) and ignore (red).
+Clicking the "Load data" button displays the first FOV analyzed, along with the program's predicted channel classification.
 
-Click on the colored channels until they are as you wish. To navigate between fields of view click the "next FOV" or "prior FOV" buttons.  The widget will output the specs file with channels indicated as analyzed (green, 1), empty for subtraction (blue, 0), or ignore (red, -1).
+Click on the colored channels until they are as you wish. To navigate between fields of view click the "next FOV" or "prior FOV" buttons.  The widget will output the specs file with channels indicated as:
+
+| Color       | Description     | specs.yaml value |
+| ----------- | --------------- | ---------------- |
+| Green       | Contains Cells  | 1                |
+| Red         | Ignore          | 0                |
+| Blue        | Reference Empty | -1               |
+
+Make sure to have **one reference channel** per FOV, and **at least one cell-containing channel** per FOV.
+
+Click on a channel to change its classification.
 
 **Parameters**
 
-* `phase_plane` is the postfix of the channel which contains the phase images
 * `channel_picking_threshold` is a measure of correlation between a series of images, so a value of 1 would mean the same image over and over. Channels with values above this value (like empty channels) will be designated as empty before the user selection GUI.
 
 The working directory is now:
@@ -113,6 +132,9 @@ The working directory is now:
 │   ├── crosscorrs.txt
 │   ├── specs.yaml
 ```
+
+**Output**
+* specs.pkl and .txt : Python dictionary which is the specifications of channels as full (1), empty (0), or ignore (-1). Same structure as channel_masks.
 
 <a name="subtract"></a> 
 ### 3. Subtract phase contrast images (Subtract widget). 
