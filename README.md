@@ -23,30 +23,29 @@ https://napari.org/plugins/stable/index.html
 
 ## Installation
 
-Load up a new environment. You can do this via conda, pipenv, or some other environment manager.
-Ensure python and napari are installed in your system. 
+Load up a new environment. We run the following command, replacing `environment-name-here` with something of your choosing:
 
-To install the plugin, use:
+`conda create -y -n environment-name-here python=3.9 napari tensorflow` 
 
-``` pip install napari-mm3```
+If you would like to have the latest version: 
 
-There are two common issues here:
-* Missing PyQt5 -- resolve with `pip install PyQt5`.
-* Missing tensor flow -- resolve with, eg, `conda install tensorflow`
+1. You can clone the repository with `git clone git@github.com:junlabucsd/napari-mm3.git` (SSH) or `git clone https://github.com/junlabucsd/napari-mm3.git` (https)
+2. With your environment active, run `pip install -e .` from inside your cloned repo.
+
+If you would like to have a more stable verison, simply run `pip install napari-mm3`.
+
+NOTE:
+There are occasionally issues with PyQt5 -- you may need to resolve those yourself; those are an upstream bug that can be very sensitive to your choice of system.
 
 ## Contributing
 
 Contributions are very welcome. Tests can be run with [tox], please ensure
 the coverage at least stays the same before you submit a pull request.
-To get started, clone the repo, and use `pip install -e .` to make napari use the local version.
-
 
 ## Workflow
 
 
-### Workflow overview 
-
-*Detailed usage guide:* [User manual](/docs/user-manual.md)
+**Detailed usage guide:** [User manual](/docs/user-manual.md)
 
 Generally, each step of the pipeline has a single widget.
 This assumes you are using Otsu segmentation -- the procedure can be modified if you are using U-Net.
@@ -66,11 +65,11 @@ Additionally, we have a few widgets to assist in other tasks that may come up:
 
 For additional information, you may wish to refer to the following documents:
 
-[Input image guidelines](/docs/Input-images-guidelines.md)
+[Input image guidelines](/docs/input-images-guidelines.md)
 
-[File structure](/docs/Guide-to-folders-and-files.md)
+[File structure](/docs/file-structure.md)
 
-[Output file structure](/docs/Cell_data_description.md)
+[Output file structure](/docs/Cell-class-docs.md)
 
 ## License
 

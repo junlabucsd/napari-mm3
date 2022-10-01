@@ -1,3 +1,31 @@
+# User Manual
+
+### Overview
+Generally, each step of the pipeline has a single widget.
+This assumes you are using Otsu segmentation -- the procedure can be modified if you are using U-Net.
+0. [nd2ToTIFF](/docs/user-manual.md#nd2ToTIFF) -- Turn your microscopy data into TIFFs. 
+1. [Compile](/docs/user-manual.md#compile) -- Locate traps, separate them into their own TIFFs, and return metadata.
+2. [PickChannels](/docs/user-manual.md#pickchannels) -- User guided selection of empty and full traps.
+3. [Subtract](/docs/user-manual.md#subtract) -- Remove (via subtraction) empty traps from the background of traps that contain cells. 
+4. [SegmentOtsu](/docs/user-manual.md#segment) -- Use Otsu segmentation to segment cells.
+5. [Track](/docs/user-manual.md#track) -- Acquire individual cell properties and track lineages.
+
+Additionally, we have a few widgets to assist in other tasks that may come up:
+
+6. Annotate -- annotate images for ML (U-Net or similar) training purposes.
+7. SegmentUnet -- Run U-Net segmentation (you will need to supply your own model)
+8. Colors -- Calculate fluorescence information.
+9. Foci -- We use this to track `foci' (bright fluorescent spots) inside of cells.
+
+For additional information, you may wish to refer to the following documents:
+
+[Input image guidelines](/docs/input-images-guidelines.md)
+
+[File structure](/docs/file-structure.md)
+
+[Output file structure](/docs/Cell-class-docs.md)
+
+
 <a name="nd2ToTIFF"></a>
 ### 0. Generating a TIFF stack 
 
