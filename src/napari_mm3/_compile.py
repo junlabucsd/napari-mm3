@@ -379,7 +379,6 @@ def channel_xcorr(params, fov_id, peak_id):
         # use match_template to find all cross correlations for the
         # current image against the first image.
         xcorr_array.append(np.max(match_template(first_img, img)))
-    print(xcorr_array)
 
     return xcorr_array
 
@@ -1119,39 +1118,34 @@ def compile(params):
 
     ## need to stack phase and fl plane if not exported from .nd2
     if p["TIFF_source"] == "other":
-        information("Restacking TIFFs")
+        information("Checking if TIFFs need to be stacked")
         found_files = list(p["TIFF_dir"].glob("*.tif"))
-        # found_files = [filepath.split('/')[-1] for filepath in found_files] # remove pre-path
-        found_files = sorted(found_files)  # should sort by timepoint
+        found_files = sorted(found_files)  # sort by timepoint
 
         string_c1 = re.compile("c1", re.IGNORECASE)
         string_c2 = re.compile("c2", re.IGNORECASE)
 
-        ## should list number of planes in params file
-
         ## if there is a second plane, stack and save them out
         if string_c2:
-            found_files_c1 = [str(f) for f in found_files if re.search(string_c1, f.name)]
-            found_files_c2 = [str(f) for f in found_files if re.search(string_c2, f.name)]
+            information('Restacking TIFFs')
+            found_files_c1 = [f for f in found_files if re.search(string_c1, f.name)]
+            found_files_c2 = [f for f in found_files if re.search(string_c2, f.name)]
 
             for f1, f2 in zip(found_files_c1, found_files_c2):
                 information("Merging images " + str(f1) + " and " + str(f2))
-                # Last two axes are going to be your x and y
                 im1 = tiff.imread(f1)
                 im2 = tiff.imread(f2)
                 im_out = np.stack((im1, im2), axis=0)
-                name_out = f1.replace("C1", "")
+                name_out = str(f1).replace("C1","")
                 # 'minisblack' necessary to ensure that it interprets image as black/white.
                 tiff.imwrite(name_out, im_out, photometric="minisblack")
 
-                ## should make a new directory rather than just deleting the old images
-                old_tiff_path = os.path.join(
-                    params["experiment_directory"], "TIFF_unstacked"
-                )
-                if not os.path.exists(old_tiff_path):
-                    os.makedirs(old_tiff_path)
-                os.rename(f1, f1.replace(params["image_directory"], "TIFF_unstacked"))
-                os.rename(f2, f2.replace(params["image_directory"], "TIFF_unstacked"))
+                ## make a new directory rather than just deleting the old images
+                old_tiff_path = p["TIFF_dir"].parent / "TIFF_unstacked"
+                if not old_tiff_path.exists:
+                    old_tiff_path.mkdir()
+                f1.replace(str(f1).replace(str(p["TIFF_dir"]), "TIFF_unstacked"))
+                f2.replace(str(f2).replace(str(p["TIFF_dir"]), "TIFF_unstacked"))
         else:
             pass
 
