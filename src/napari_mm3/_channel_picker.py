@@ -3,6 +3,7 @@ import napari
 import numpy as np
 import yaml
 import tifffile as tiff
+import re
 
 from ._deriving_widgets import (
     MM3Container,
@@ -76,8 +77,9 @@ def save_specs(analysis_folder, specs):
 
 def load_fov(image_directory, fov_id):
     information("getting files")
-    found_files = image_directory.glob(f"*xy{fov_id:02d}.tif")
-    found_files = [filepath.name for filepath in found_files]  # remove pre-path
+    found_files = image_directory.glob("*.tif")
+    file_string = re.compile(f"xy{fov_id:02d}.*.tif",re.IGNORECASE)
+    found_files = [f.name for f in found_files if re.search(file_string,f.name)] #remove pre-path
     information("sorting files")
     found_files = sorted(found_files)  # should sort by timepoint
 
