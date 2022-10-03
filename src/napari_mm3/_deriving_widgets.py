@@ -235,9 +235,10 @@ class MM3Container(Container):
     Finally, it will also automatically write any 'runs' to history.json, and give you the ability to restore the most recent run's settings.
     """
 
-    def __init__(self, napari_viewer: Viewer):
+    def __init__(self, napari_viewer: Viewer, validate_folders: bool = True):
         super().__init__()
         self.viewer = napari_viewer
+        self.validate_folders = validate_folders
 
         self.analysis_folder_widget = FileEdit(
             mode="d",
@@ -303,6 +304,8 @@ class MM3Container(Container):
         pass
 
     def _load_from_data_conditional(self):
+        if self.validate_folders and not self._validate_folders():
+            return
         if self.found_planes and self.found_fovs and self.found_times:
             self.create_widgets()
             self.append(self.run_widget)
@@ -356,6 +359,9 @@ class MM3Container(Container):
             self.found_planes = True
         except:
             self.found_planes = False
+
+    def _validate_folders(self):
+        return self.TIFF_folder.exists() and self.analysis_folder.exists()
 
     def _get_most_recent_run(self):
         """

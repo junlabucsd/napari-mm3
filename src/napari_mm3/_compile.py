@@ -1431,6 +1431,9 @@ def load_fov(image_directory, fov_id):
 
 
 class Compile(MM3Container):
+    def __init__(self, napari_viewer: Viewer):
+        super().__init__(napari_viewer=napari_viewer, validate_folders=False)
+        
     def create_widgets(self):
         """Override method. Serves as the widget constructor. See MM3Container for more details."""
         self.viewer.text_overlay.visible = False

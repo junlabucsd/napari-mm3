@@ -71,13 +71,9 @@ def load_specs(analysis_directory):
 
 
 def save_specs(analysis_folder, specs):
-    try:
-        with (analysis_folder / "specs.yaml").open("w") as specs_file:
-            yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
-        information("Saved channel classifications to specs file")
-    except:
-        Warning('Failed to save specs file')
-
+    with (analysis_folder / "specs.yaml").open("w") as specs_file:
+        yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
+    information("Saved channel classifications to specs file")
 
 def load_fov(image_directory, fov_id):
     information("getting files")
@@ -123,7 +119,7 @@ def display_image_stack(viewer: napari.Viewer, image_fov_stack):
 
 
 def threshold_fov(fov, threshold, specs, crosscorrs, channel_masks=None):
-    if crosscorrs and channel_masks:
+    if crosscorrs:
         # update dictionary on initial guess from cross correlations
         peaks = crosscorrs[fov]
         specs[fov] = {}
@@ -134,13 +130,10 @@ def threshold_fov(fov, threshold, specs, crosscorrs, channel_masks=None):
                 specs[fov][peak_id] = 1
     else:
         # We don't have crosscorrelations for this FOV -- default to ignoring peaks
-        if channel_masks:
-            specs[fov] = {}
-            channel_masks = channel_masks
-            for peaks in channel_masks[fov]:
-                specs[fov] = {peak_id: -1 for peak_id in peaks.keys()}
-        else:
-            pass
+        specs[fov] = {}
+        channel_masks = channel_masks
+        for peaks in channel_masks[fov]:
+            specs[fov] = {peak_id: -1 for peak_id in peaks.keys()}
 
     return specs
 
