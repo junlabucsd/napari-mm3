@@ -446,7 +446,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
             # get images from one timepoint at a time and send to alignment and averaging
             imgs = [stack[t] for stack in empty_stacks]
             avg_empty = average_empties(
-                params, empty_dir, imgs, align=align
+                params, imgs, align=align
             )  # function is in mm3
             avg_empty_stack.append(avg_empty)
 
