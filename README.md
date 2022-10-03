@@ -43,10 +43,7 @@ We recommend following the above commands to simplify the situation.
 Contributions are very welcome. Tests can be run with [tox], please ensure
 the coverage at least stays the same before you submit a pull request.
 
-## Workflow
-
-### Overview
-Generally, the workflow can be split into a few parts:
+## Usage guide
 
 0. **Preprocessing**
 
@@ -58,17 +55,17 @@ Generally, the workflow can be split into a few parts:
 
     **With Otsu:**
 
-    1a. [PickChannels](/docs/pickchannels-widget.md) -- User guided selection of empty and full traps.
+        1a. [PickChannels](/docs/pickchannels-widget.md) -- User guided selection of empty and full traps.
 
-    1b. [Subtract](/docs/subtract-widget.md) -- Remove (via subtraction) empty traps from the background of traps that contain cells; run this on the phase contrast channel.
+        1b. [Subtract](/docs/subtract-widget.md) -- Remove (via subtraction) empty traps from the background of traps that contain cells; run this on the phase contrast channel.
 
-    1c. [SegmentOtsu](/docs/segmentotsu-widget.md) -- Use Otsu segmentation to segment cells.
+        1c. [SegmentOtsu](/docs/segmentotsu-widget.md) -- Use Otsu segmentation to segment cells.
 
     **With UNet:**
 
-    1a. Annotate -- annotate images for ML (U-Net or similar) training purposes; you can generate a model via TODO.
+        1a. Annotate -- annotate images for ML (U-Net or similar) training purposes; you can generate a model via TODO.
 
-    1b. [SegmentUnet](/docs/segmentunet-widget.md) -- Run U-Net segmentation (you will need to supply your own model)
+        1b. [SegmentUnet](/docs/segmentunet-widget.md) -- Run U-Net segmentation (you will need to supply your own model)
 
 2. **Tracking**
 
