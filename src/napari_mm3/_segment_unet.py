@@ -297,20 +297,6 @@ def segmentUNet(params):
                     compression=("zlib", 4),
                 )
 
-                out_counter = 0
-                while out_counter < 10:
-                    napari.current_viewer().add_image(
-                        segmented_imgs,
-                        name="Segmented"
-                        + "_xy1_p"
-                        + str(peak_id)
-                        + "_"
-                        + str(params["seg_img"])
-                        + ".tif",
-                        visible=True,
-                    )
-                    out_counter += 1
-
             if params["output"] == "HDF5":
                 h5f = h5py.File(params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+")
                 # put segmented channel in correct group
