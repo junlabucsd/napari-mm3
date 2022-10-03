@@ -1,4 +1,3 @@
-from napari import Viewer
 from datetime import datetime
 from magicgui.widgets import (
     Container,
@@ -235,7 +234,7 @@ class MM3Container(Container):
     Finally, it will also automatically write any 'runs' to history.json, and give you the ability to restore the most recent run's settings.
     """
 
-    def __init__(self, napari_viewer: Viewer, validate_folders: bool = True):
+    def __init__(self, napari_viewer, validate_folders: bool = True):
         super().__init__()
         self.viewer = napari_viewer
         self.validate_folders = validate_folders
