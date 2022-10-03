@@ -19,8 +19,8 @@ The following is a list of the attributes of a Cell.
 * `Cell.labels` : The segmented region labels over time.
 * `Cell.bboxes` : The bounding boxes of each region in the segmented channel image over time.
 * `Cell.areas` : The areas of the segmented regions over time in pixels^2.
-* `Cell.x_positions` : The x positions in pixels of the centroid of the regions over time.
-* `Cell.y_positions` : The y positions in pixels of the centroid of the regions over time.
+* `Cell.orientations`: The angle between the cell's major axis and the positive x axis (within [pi/2, -pi/2]) over time.
+* `Cell.centroids`: The y and x positions (in that order) in pixels of the centroid of the cell over time.
 * `Cell.lengths` : The long axis length in pixels of the regions over time.
 * `Cell.widths` : The long axis width in pixels of the regions over time.
 * `Cell.times_w_div` : Same as Cell.times but includes the division time.
@@ -30,7 +30,6 @@ The following is a list of the attributes of a Cell.
 * `Cell.delta` : Cell.sd - Cell.sb. Simply for convenience.
 * `Cell.tau` : Nominal generation time of the cell.
 * `Cell.elong_rate` : Elongation rate of the cell using a linear fit of the log lengths.
-* `Cell.sum_cov` : Sum of the covarience matrix for the fit.
 * `Cell.septum_position` : The birth length of the first daughter (closer to closed end) divided by the division length. 
 
 #### Fluorescence attributes:

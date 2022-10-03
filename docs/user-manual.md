@@ -8,15 +8,15 @@ This assumes you are using Otsu segmentation -- the procedure can be modified if
 1. [Compile](/docs/user-manual.md#compile) -- Locate traps, separate them into their own TIFFs, and return metadata.
 2. [PickChannels](/docs/user-manual.md#pickchannels) -- User guided selection of empty and full traps.
 3. [Subtract](/docs/user-manual.md#subtract) -- Remove (via subtraction) empty traps from the background of traps that contain cells. 
-4. [SegmentOtsu](/docs/user-manual.md#segment) -- Use Otsu segmentation to segment cells.
+4. [SegmentOtsu](/docs/user-manual.md#segmentotsu) -- Use Otsu segmentation to segment cells.
 5. [Track](/docs/user-manual.md#track) -- Acquire individual cell properties and track lineages.
 
 Additionally, we have a few widgets to assist in other tasks that may come up:
 
-6. Annotate -- annotate images for ML (U-Net or similar) training purposes.
-7. SegmentUnet -- Run U-Net segmentation (you will need to supply your own model)
-8. Colors -- Calculate fluorescence information.
-9. Foci -- We use this to track `foci' (bright fluorescent spots) inside of cells.
+6. [Annotate](/docs/user-manual.md#annotate)-- annotate images for ML (U-Net or similar) training purposes.
+7. [SegmentUnet](/docs/user-manual.md#segmentunet) -- Run U-Net segmentation (you will need to supply your own model)
+8. [Colors](/docs/user-manual.md#colors) -- Calculate fluorescence information.
+9. [Foci](/docs/user-manual.md#foci) -- We use this to track `foci' (bright fluorescent spots) inside of cells.
 
 For additional information, you may wish to refer to the following documents:
 
@@ -179,22 +179,21 @@ The working directory is now:
 If for a specific FOV there are multiple empty channels designated, then those channels are averaged together by timepoint to create an averaged empty channel. If only one channel is designated in the specs file as empty, then it will simply be copied over. If no channels are designated as empty, than this FOV is skipped, and the user is required to copy one of the empty channels from `empties/` subfolder and rename with the absent FOV ID.
 
 <a name="segmentotsu"></a> 
-## 4. Segment images (SegmentOTSU or SegmentUnet). 
+## 4. Segment images. 
 
 <img width="1486" alt="otsu" src="https://user-images.githubusercontent.com/40699438/177629756-2bf87d2e-6ec8-4580-8675-648d68b29cb5.png">
 <img width="1180" alt="unet" src="https://user-images.githubusercontent.com/40699438/177629546-81c2f826-73e8-41ef-adbd-7ceb191db461.png">
-mm3 can use either deep learning or a traditional machine vision approach (Otsu thresholding, morphological operations and watershedding) to locate cells from the subtracted images.
+mm3 can use either deep learning or a traditional machine vision approach (Otsu thresholding, morphological operations and watershedding) to locate cells from the subtracted images. For info on the deep learning-based segmentation widget, see [SegmentUnet](/docs/user-manual.md#segmentunet).
+
+The following four parameters are important for finding markers in order to do watershedding/diffusion for segmentation. They should be changed depending on cell size and magnification/imaging conditions.
 
 **OTSU parameters**
 
 * `first_opening_size` : Size in pixels of first morphological opening during segmentation.
 * `distance_threshold` : Distance in pixels which thresholds distance transform of binary cell image.
 * `second_opening_size` : Size in pixels of second morphological opening.
-
-**U-net parameters**
-
-* `threshold` : threshold value (between 0 and 1) for cell classification
 * `min_object_size` : Objects smaller than this area in pixels will be removed before labeling.
+
 
 The working directory is now:
 ```
@@ -278,3 +277,46 @@ When cells are made during lineage creation, the information is stored per cell 
 
 For more information on the Cell object description in [Cell-class-docs.md](/docs/Cell-class-docs.md)
 
+<a name="annotate"></a> 
+## 6. Curate training data for U-net segmentation. 
+
+<a name="segmentunet"></a> 
+## 7. Run U-net segmentation
+
+Segment cells using a U-net model.
+
+**Parameters**
+
+* `threshold` : threshold value (between 0 and 1) for cell classification
+* `min_object_size` : Objects smaller than this area in pixels will be removed before labeling.
+
+
+<a name="colors"></a> 
+## 8. Fluorescence analysis.
+
+The cell data output by the tracking widget contains information about all cells in the experiment, including which images and locations in the images they came from. We can use this to go back to additional image planes (colors) for secondary analysis. This widget computes integrated fluorescence signal per cell and similar attributes for a given input plane. See [Cell-class-docs.md] for more information.
+
+**Input**
+*  .pkl file of cell objects from Track widget.
+
+**Output**
+*.pkl file with a dictionary of cell objects, with integrated fluorescence intensity and fluorescence per pixel and per cell volume stored as attributes of the corresponding cell objects.
+
+<a name="foci"></a> 
+## 9. Foci picking.
+
+Finds foci using a Laplacian convolution. See https://scikit-image.org/docs/stable/auto_examples/features_detection/plot_blob.html for details.
+Foci are linked to the cell objects in which they appear.
+
+**Input**
+*  .pkl file of cell objects from Track widget.
+
+**Output**
+*.pkl file with a dictionary of cell objects, with x, y and time positions of foci detections stored as attributes of the corresponding cell objects.
+
+**Parameters**
+
+* `LoG_min_sig` : Minimum sigma of laplacian to convolve in pixels. Scales with minimum foci width to detect as 2*sqrt(2)*minsig
+* `LoG_max_sig`: Maximum sigma of laplacian to convolve in pixels. Scales with maximum foci width to detect as 2*sqrt(2)*maxsig
+* `LoG_threshold` : Absolute threshold laplacian must reach to record potential foci. Keep low to detect dimmer spots.
+* `LoG_peak_ratio` : Focus peaks must be this many times greater than median cell intensity. Think signal to noise ratio
