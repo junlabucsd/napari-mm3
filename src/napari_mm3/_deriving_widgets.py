@@ -147,7 +147,7 @@ def get_valid_planes(TIFF_folder):
 def get_valid_fovs(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
     filenames = [f.name for f in found_files]
-    get_fov_regex = re.compile("xy(\d+)",re.IGNORECASE)
+    get_fov_regex = re.compile(r"xy(\d+)",re.IGNORECASE)
     fov_strings = set(get_fov_regex.findall(filename)[0] for filename in filenames)
     fovs = map(int, sorted(fov_strings))
     return list(fovs)
@@ -156,7 +156,7 @@ def get_valid_fovs(TIFF_folder):
 def get_valid_times(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
     filenames = [f.name for f in found_files]
-    get_time_regex = re.compile("t(\d+)",re.IGNORECASE)
+    get_time_regex = re.compile(r"t(\d+)",re.IGNORECASE)
     time_strings = set(get_time_regex.findall(filename)[0] for filename in filenames)
     times = list(map(int, sorted(time_strings)))
     return (min(times), max(times))
