@@ -1131,6 +1131,9 @@ def compile(params):
             found_files_c1 = [f for f in found_files if re.search(string_c1, f.name)]
             found_files_c2 = [f for f in found_files if re.search(string_c2, f.name)]
 
+            found_files_c1 = sorted(found_files_c1)
+            found_files_c2 = sorted(found_files_c2)
+
             for f1, f2 in zip(found_files_c1, found_files_c2):
                 information("Merging images " + str(f1) + " and " + str(f2))
                 im1 = tiff.imread(f1)
@@ -1142,8 +1145,9 @@ def compile(params):
 
                 ## make a new directory rather than just deleting the old images
                 old_tiff_path = p["TIFF_dir"].parent / "TIFF_unstacked"
-                if not old_tiff_path.exists:
+                if not old_tiff_path.exists():
                     old_tiff_path.mkdir()
+                    information('Creating directory for original TIFFs')
                 f1.replace(str(f1).replace(str(p["TIFF_dir"]), "TIFF_unstacked"))
                 f2.replace(str(f2).replace(str(p["TIFF_dir"]), "TIFF_unstacked"))
         else:
@@ -1433,7 +1437,7 @@ def load_fov(image_directory, fov_id):
 class Compile(MM3Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer=napari_viewer, validate_folders=False)
-        
+
     def create_widgets(self):
         """Override method. Serves as the widget constructor. See MM3Container for more details."""
         self.viewer.text_overlay.visible = False
