@@ -138,7 +138,7 @@ class Annotate(MM3Container):
         # Load all masks from given fov/peak. Add them to viewer.
         mask_filenames = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*_seg.tif"
         filenames = list(training_dir.glob(mask_filenames))
-        get_numbers = re.compile("t(\d+)_seg.tif")
+        get_numbers = re.compile("t(\d+)_seg.tif",re.IGNORECASE)
         timestamps = [
             int(get_numbers.findall(filename.name)[0]) for filename in filenames
         ]
