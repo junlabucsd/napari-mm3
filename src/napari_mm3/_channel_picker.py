@@ -5,6 +5,7 @@ import yaml
 import tifffile as tiff
 import re
 
+from napari import Viewer
 from ._deriving_widgets import (
     MM3Container,
     FOVChooserSingle,
@@ -111,7 +112,7 @@ def load_crosscorrs(analysis_directory, fov_id=None):
     return average_crosscorrs
 
 
-def display_image_stack(viewer: napari.Viewer, image_fov_stack):
+def display_image_stack(viewer: Viewer, image_fov_stack):
     images = viewer.add_image(np.array(image_fov_stack))
     viewer.dims.current_step = (0, 0)
     images.reset_contrast_limits()

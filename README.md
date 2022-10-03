@@ -43,35 +43,57 @@ We recommend following the above commands to simplify the situation.
 Contributions are very welcome. Tests can be run with [tox], please ensure
 the coverage at least stays the same before you submit a pull request.
 
-## Workflow
+## Usage guide
+
+0. **Preprocessing**
+
+    0a. [nd2ToTIFF](/docs/nd2totiff-widget.md) -- Turn your nd2 microscopy data into TIFFs. If your data is not in the nd2 format, follow the [input image guidelines](/docs/input-images-guidelines.md). Make sure to set `image source' in Compile to `Other'.
+
+    0b. [Compile](/docs/compile-widget.md) -- Locate traps, separate their timelapses into their own TIFFs, and return metadata.
+
+1. **Segmentation**
+
+    **With Otsu:**
+
+        1a. [PickChannels](/docs/pickchannels-widget.md) -- User guided selection of empty and full traps.
+
+        1b. [Subtract](/docs/subtract-widget.md) -- Remove (via subtraction) empty traps from the background of traps that contain cells; run this on the phase contrast channel.
+
+        1c. [SegmentOtsu](/docs/segmentotsu-widget.md) -- Use Otsu segmentation to segment cells.
+
+    **With UNet:**
+
+        1a. Annotate -- annotate images for ML (U-Net or similar) training purposes; you can generate a model via TODO.
+
+        1b. [SegmentUnet](/docs/segmentunet-widget.md) -- Run U-Net segmentation (you will need to supply your own model)
+
+2. **Tracking**
+
+    2a. [Track](/docs/track-widget.md) -- Acquire individual cell properties and track lineages.
+
+3. **Fluorescence data analysis**
+
+    3a. [PickChannels](/docs/pickchannels-widget.md) -- If you've already done this (e.g. for otsu segmentation), no need to do it again. User guided selection of empty and full traps. 
+
+    3b. [Subtract](/docs/subtract-widget.md) -- Remove (via subtraction) empty traps from the background of traps that contain cells. This time, run this on your fluorescence channels.
+
+    3c. [Colors](/docs/colors-widget.md) -- Calculate fluorescence information.
+
+4. (Uncommon) **Foci tracking**
+
+    4a. Foci -- We use this to track `foci' (bright fluorescent spots) inside of cells.
 
 
-**Detailed usage guide:** [User manual](/docs/user-manual.md)
-
-Generally, each step of the pipeline has a single widget.
-This assumes you are using Otsu segmentation -- the procedure can be modified if you are using U-Net.
-
-0. [nd2ToTIFF](/docs/user-manual.md#nd2ToTIFF) -- Turn your microscopy data into TIFFs. 
-1. [Compile](/docs/user-manual.md#compile) -- Locate traps, separate them into their own TIFFs, and return metadata.
-2. [PickChannels](/docs/user-manual.md#pickchannels) -- User guided selection of empty and full traps.
-3. [Subtract](/docs/user-manual.md#subtract) -- Remove (via subtraction) empty traps from the background of traps that contain cells. 
-4. [SegmentOtsu](/docs/user-manual.md#segment) -- Use Otsu segmentation to segment cells.
-5. [Track](/docs/user-manual.md#track) -- Acquire individual cell properties and track lineages.
-
-Additionally, we have a few widgets to assist in other tasks that may come up:
-
-6. Annotate -- annotate images for ML (U-Net or similar) training purposes.
-7. SegmentUnet -- Run U-Net segmentation (you will need to supply your own model)
-8. Colors -- Calculate fluorescence information.
-9. Foci -- We use this to track `foci' (bright fluorescent spots) inside of cells.
-
-For additional information, you may wish to refer to the following documents:
+### Outputs, inputs, and file structure
+Finally, to better understand the data formats, you may wish to refer to the following documents:
 
 [Input image guidelines](/docs/input-images-guidelines.md)
 
 [File structure](/docs/file-structure.md)
 
 [Output file structure](/docs/Cell-class-docs.md)
+
+**Detailed usage guide:** [User manual](/docs/user-manual.md)
 
 ## License
 
