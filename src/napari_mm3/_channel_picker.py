@@ -71,8 +71,12 @@ def load_specs(analysis_directory):
 
 
 def save_specs(analysis_folder, specs):
-    with (analysis_folder / "specs.yaml").open("w") as specs_file:
-        yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
+    try:
+        with (analysis_folder / "specs.yaml").open("w") as specs_file:
+            yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
+        information("Saved channel classifications to specs file")
+    except:
+        Warning('Failed to save specs file')
 
 
 def load_fov(image_directory, fov_id):
@@ -119,7 +123,7 @@ def display_image_stack(viewer: napari.Viewer, image_fov_stack):
 
 
 def threshold_fov(fov, threshold, specs, crosscorrs, channel_masks=None):
-    if crosscorrs:
+    if crosscorrs and channel_masks:
         # update dictionary on initial guess from cross correlations
         peaks = crosscorrs[fov]
         specs[fov] = {}
@@ -130,10 +134,13 @@ def threshold_fov(fov, threshold, specs, crosscorrs, channel_masks=None):
                 specs[fov][peak_id] = 1
     else:
         # We don't have crosscorrelations for this FOV -- default to ignoring peaks
-        specs[fov] = {}
-        channel_masks = channel_masks
-        for peaks in channel_masks[fov]:
-            specs[fov] = {peak_id: -1 for peak_id in peaks.keys()}
+        if channel_masks:
+            specs[fov] = {}
+            channel_masks = channel_masks
+            for peaks in channel_masks[fov]:
+                specs[fov] = {peak_id: -1 for peak_id in peaks.keys()}
+        else:
+            pass
 
     return specs
 
@@ -222,7 +229,10 @@ class ChannelPicker(MM3Container):
         self.append(self.threshold_widget)
 
         self.threshold = self.threshold_widget.value
-        self.update_fov()
+        try:
+            self.update_fov()
+        except:
+            Warning('Failed to load FOV')
 
     def update_fov(self):
         self.cur_fov = self.fov_picker_widget.value
@@ -289,7 +299,6 @@ class ChannelPicker(MM3Container):
             shape_i
         ]
         save_specs(self.analysis_folder, self.specs)
-        information("Saved channel classifications to specs file")
 
     def update_threshold(self, shapes_layer):
         self.threshold = self.threshold_widget.value
