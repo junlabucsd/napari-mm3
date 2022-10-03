@@ -300,7 +300,7 @@ The cell data output by the tracking widget contains information about all cells
 *  .pkl file of cell objects from Track widget.
 
 **Output**
-*.pkl file with a dictionary of cell objects, with integrated fluorescence intensity and fluorescence per pixel and per cell volume stored as attributes of the corresponding cell objects.
+*  .pkl file with a dictionary of cell objects, with integrated fluorescence intensity and fluorescence per pixel and per cell volume stored as attributes of the corresponding cell objects.
 
 <a name="foci"></a> 
 ## 9. Foci picking.
@@ -312,7 +312,7 @@ Foci are linked to the cell objects in which they appear.
 *  .pkl file of cell objects from Track widget.
 
 **Output**
-*.pkl file with a dictionary of cell objects, with x, y and time positions of foci detections stored as attributes of the corresponding cell objects.
+*  .pkl file with a dictionary of cell objects, with x, y and time positions of foci detections stored as attributes of the corresponding cell objects.
 
 **Parameters**
 
