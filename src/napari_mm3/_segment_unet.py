@@ -155,6 +155,8 @@ def normalize_to_one(img_stack):
     return img_stack
 
 
+## post-processing of u-net output
+# binarize, remove small objects, clear border, and label
 def binarize_and_label(predictions, cellClassThreshold, min_object_size):
 
     predictions[predictions >= cellClassThreshold] = 1
@@ -207,13 +209,23 @@ def pad_back(predictions, unet_shape, pad_dict):
         0,
     ]
 
-    # pad back incase the image had been trimmed
+    # pad back in case the image had been trimmed
     predictions = np.pad(
         predictions,
         ((0, 0), (0, pad_dict["bottom_trim"]), (0, pad_dict["right_trim"])),
         mode="constant",
     )
     return predictions
+
+
+@magicgui(auto_call=True, threshold={"widget_type": "FloatSlider", "max": 1})
+def DebugUnet(image_input: ImageData, threshold=0.6) -> LabelsData:
+    image_out = np.copy(image_input)
+    image_out[image_out >= threshold] = 1
+    image_out[image_out < threshold] = 0
+    image_out = image_out.astype(bool)
+
+    return image_out
 
 
 def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
@@ -266,20 +278,10 @@ def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
 
 
 def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params):
-    @magicgui(auto_call=True, threshold={"widget_type": "FloatSlider", "max": 1})
-    def DebugUnet(image_input: ImageData, threshold=0.6) -> LabelsData:
-        image_out = np.copy(image_input)
-        image_out[image_out >= threshold] = 1
-        image_out[image_out < threshold] = 0
-        image_out = image_out.astype(bool)
-
-        return image_out
 
     # parameters
     batch_size = params["segment"]["batch_size"]
     cellClassThreshold = params["segment"]["cell_class_threshold"]
-    if cellClassThreshold == "None":  # yaml imports None as a string
-        cellClassThreshold = False
     min_object_size = params["segment"]["min_object_size"]
 
     # arguments to predict
@@ -287,7 +289,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
         use_multiprocessing=True, workers=params["num_analyzers"], verbose=1
     )
 
-    # linearized versino for debugging
+    # linearized version for debugging
     # predict_args = dict(use_multiprocessing=False,
     #                     verbose=1)
 
@@ -308,9 +310,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
 
         # predict cell locations. This has multiprocessing built in but I need to mess with the parameters to see how to best utilize it. ***
         predictions = model.predict_generator(image_generator, **predict_args)
-
         predictions = pad_back(predictions, unet_shape, pad_dict)
-
         img_stack_out = pad_back(img_stack, unet_shape, pad_dict)
 
         if params["segment"]["save_predictions"]:
@@ -340,6 +340,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
         # both binary and grayscale should be 8bit. This may be ensured above and is unneccesary
         segmented_imgs = segmented_imgs.astype("uint8")
 
+        # save the segmented images
         save_out(params, segmented_imgs, fov_id, peak_id)
 
 
