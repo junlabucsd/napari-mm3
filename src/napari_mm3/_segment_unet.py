@@ -311,7 +311,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
 
         predictions = pad_back(predictions, unet_shape, pad_dict)
 
-        img_stack = pad_back(img_stack, unet_shape, pad_dict)
+        img_stack_out = pad_back(img_stack, unet_shape, pad_dict)
 
         if params["segment"]["save_predictions"]:
             save_predictions(predictions, params, fov_id, peak_id)
@@ -321,7 +321,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
             viewer.layers.clear()
             viewer.add_image(predictions, name="Predictions")
             viewer.window.add_dock_widget(DebugUnet)
-            viewer.add_image(img_stack)
+            viewer.add_image(img_stack_out)
             viewer.layers.move(2, 1)
             return
 
