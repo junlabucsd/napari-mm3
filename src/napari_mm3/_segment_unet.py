@@ -217,7 +217,6 @@ def pad_back(predictions, unet_shape, pad_dict):
     )
     return predictions
 
-
 @magicgui(auto_call=True, threshold={"widget_type": "FloatSlider", "max": 1})
 def DebugUnet(image_input: ImageData, threshold=0.6) -> LabelsData:
     image_out = np.copy(image_input)
@@ -226,8 +225,7 @@ def DebugUnet(image_input: ImageData, threshold=0.6) -> LabelsData:
     image_out = image_out.astype(bool)
 
     return image_out
-
-
+    
 def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
     """
     Segments the channels from one fov using the U-net CNN model.
@@ -322,7 +320,10 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
             viewer.add_image(predictions, name="Predictions")
             viewer.window.add_dock_widget(DebugUnet)
             viewer.add_image(img_stack_out)
-            viewer.layers.move(2, 1)
+            try:
+                viewer.layers.move(2, 1)
+            except:
+                pass
             return
 
         # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
