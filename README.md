@@ -81,7 +81,7 @@ ___With UNet:___
 
 ### e. (Uncommon) Foci tracking
 
-* Foci -- We use this to track `foci' (bright fluorescent spots) inside of cells.
+* [Foci](/docs/foci-widget.md) -- We use this to track `foci' (bright fluorescent spots) inside of cells.
 
 
 ### f. Outputs, inputs, and file structure
