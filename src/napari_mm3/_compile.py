@@ -1118,7 +1118,7 @@ def compile(params):
 
     ## need to stack phase and fl plane if not exported from .nd2
     if p["TIFF_source"] == "other":
-        information("Checking if TIFFs need to be stacked")
+        information("Checking if phase & fluorescence planes are separated")
         found_files = list(p["TIFF_dir"].glob("*.tif"))
         found_files = sorted(found_files)  # sort by timepoint
 
