@@ -47,51 +47,51 @@ the coverage at least stays the same before you submit a pull request.
 
 ### a. Preprocessing
 
-* [nd2ToTIFF](/docs/nd2totiff-widget.md) -- Turn your nd2 microscopy data into TIFFs. If your data is not in the nd2 format, follow the [input image guidelines](/docs/input-images-guidelines.md). Make sure to set 'image source' in Compile to 'Other'.
+* [nd2ToTIFF](https://github.com/junlabucsd/napari-mm3/blob/main/docs/nd2totiff-widget.md) -- Turn your nd2 microscopy data into TIFFs. If your data is not in the nd2 format, follow the [input image guidelines](/docs/input-images-guidelines.md). Make sure to set 'image source' in Compile to 'Other'.
 
-* [Compile](/docs/compile-widget.md) -- Locate traps, separate their timelapses into their own TIFFs, and return metadata.
+* [Compile](https://github.com/junlabucsd/napari-mm3/blob/main/docs/compile-widget.md) -- Locate traps, separate their timelapses into their own TIFFs, and return metadata.
 
 ### b. Segmentation
 
 ___With Otsu:___
 
-* [PickChannels](/docs/pickchannels-widget.md) -- User guided selection of empty and full traps.
+* [PickChannels](https://github.com/junlabucsd/napari-mm3/blob/main/docs/pickchannels-widget.md) -- User guided selection of empty and full traps.
 
-* [Subtract](/docs/subtract-widget.md) -- Remove (via subtraction) empty traps from the background of traps that contain cells; run this on the phase contrast channel.
+* [Subtract](https://github.com/junlabucsd/napari-mm3/blob/main/docs/subtract-widget.md) -- Remove (via subtraction) empty traps from the background of traps that contain cells; run this on the phase contrast channel.
 
-* [SegmentOtsu](/docs/segmentotsu-widget.md) -- Use Otsu segmentation to segment cells.
+* [SegmentOtsu](https://github.com/junlabucsd/napari-mm3/blob/main/docs/segmentotsu-widget.md) -- Use Otsu segmentation to segment cells.
 
 ___With UNet:___
 
 * Annotate -- annotate images for ML (U-Net or similar) training purposes; you can generate a model via TODO.
 
-* [SegmentUnet](/docs/segmentunet-widget.md) -- Run U-Net segmentation (you will need to supply your own model)
+* [SegmentUnet](https://github.com/junlabucsd/napari-mm3/blob/main/docs/segmentunet-widget.md) -- Run U-Net segmentation (you will need to supply your own model)
 
 ### c. Tracking
 
-* [Track](/docs/track-widget.md) -- Acquire individual cell properties and track lineages.
+* [Track](https://github.com/junlabucsd/napari-mm3/blob/main/docs/track-widget.md) -- Acquire individual cell properties and track lineages.
 
 ### d. Fluorescence data analysis
 
-* [PickChannels](/docs/pickchannels-widget.md) -- If you've already done this (e.g. for otsu segmentation), no need to do it again. User guided selection of empty and full traps. 
+* [PickChannels](https://github.com/junlabucsd/napari-mm3/blob/main/docs/pickchannels-widget.md) -- If you've already done this (e.g. for otsu segmentation), no need to do it again. User guided selection of empty and full traps. 
 
-* [Subtract](/docs/subtract-widget.md) -- Remove (via subtraction) empty traps from the background of traps that contain cells. This time, run this on your fluorescence channels.
+* [Subtract](https://github.com/junlabucsd/napari-mm3/blob/main/docs/subtract-widget.md) -- Remove (via subtraction) empty traps from the background of traps that contain cells. This time, run this on your fluorescence channels.
 
-* [Colors](/docs/colors-widget.md) -- Calculate fluorescence information.
+* [Colors](https://github.com/junlabucsd/napari-mm3/blob/main/docs/colors-widget.md) -- Calculate fluorescence information.
 
 ### e. (Uncommon) Foci tracking
 
-* [Foci](/docs/foci-widget.md) -- We use this to track `foci' (bright fluorescent spots) inside of cells.
+* [Foci](https://github.com/junlabucsd/napari-mm3/blob/main/docs/foci-widget.md) -- We use this to track `foci' (bright fluorescent spots) inside of cells.
 
 
 ### f. Outputs, inputs, and file structure
 Finally, to better understand the data formats, you may wish to refer to the following documents:
 
-* [Input image guidelines](/docs/input-images-guidelines.md)
+* [Input image guidelines](https://github.com/junlabucsd/napari-mm3/blob/main/docs/input-images-guidelines.md)
 
-* [File structure](/docs/file-structure.md)
+* [File structure](https://github.com/junlabucsd/napari-mm3/blob/main/docs/file-structure.md)
 
-* [Output file structure](/docs/Cell-class-docs.md)
+* [Output file structure](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Cell-class-docs.md)
 
 ## License
 
