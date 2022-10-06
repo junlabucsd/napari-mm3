@@ -216,15 +216,6 @@ def pad_back(predictions, unet_shape, pad_dict):
         mode="constant",
     )
     return predictions
-
-@magicgui(auto_call=True, threshold={"widget_type": "FloatSlider", "max": 1})
-def DebugUnet(image_input: ImageData, threshold=0.6) -> LabelsData:
-    image_out = np.copy(image_input)
-    image_out[image_out >= threshold] = 1
-    image_out[image_out < threshold] = 0
-    image_out = image_out.astype(bool)
-
-    return image_out
     
 def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
     """
@@ -277,6 +268,14 @@ def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
 
 def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params):
 
+    @magicgui(auto_call=True, threshold={"widget_type": "FloatSlider", "max": 1})
+    def DebugUnet(image_input: ImageData, threshold=0.6) -> LabelsData:
+        image_out = np.copy(image_input)
+        image_out[image_out >= threshold] = 1
+        image_out[image_out < threshold] = 0
+        image_out = image_out.astype(bool)
+
+        return image_out
     # parameters
     batch_size = params["segment"]["batch_size"]
     cellClassThreshold = params["segment"]["cell_class_threshold"]
