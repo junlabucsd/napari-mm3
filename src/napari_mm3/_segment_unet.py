@@ -323,7 +323,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
                 viewer.layers.move(2, 1)
             except:
                 pass
-            return
+            break
 
         # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
         if cellClassThreshold:
@@ -393,6 +393,8 @@ def segmentUNet(params):
 
     for fov_id in fov_id_list:
         segment_fov_unet(fov_id, specs, seg_model, params, color=p["phase_plane"])
+        if params["interactive"]:
+            break
 
     del seg_model
     information("Finished segmentation.")
