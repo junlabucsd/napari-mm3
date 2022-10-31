@@ -23,11 +23,14 @@ https://napari.org/plugins/stable/index.html
 
 ## Installation
 
-Load up a new environment. We run the following command, replacing `environment-name-here` with a name of your choosing:
+Load up a new environment. Install napari and tensorflow:
 
-`conda create -y -n environment-name-here python=3.9 napari tensorflow` 
+```
+conda install -c conda-forge napari
+conda install -c conda-forge tensorflow
+``` 
 
-Now, to install our code: if you would like to have the latest version, do the following.
+Now, to install our code. if you would like to have the latest version, do the following:
 
 1. You can clone the repository with `git clone git@github.com:junlabucsd/napari-mm3.git` (SSH) or `git clone https://github.com/junlabucsd/napari-mm3.git` (https)
 2. With your environment active, run `pip install -e .` from inside your cloned repo.
