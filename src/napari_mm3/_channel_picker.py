@@ -10,6 +10,7 @@ from ._deriving_widgets import (
     MM3Container,
     FOVChooserSingle,
     InteractiveSpinBox,
+    PlanePicker,
     information,
     warning,
 )
@@ -76,11 +77,14 @@ def save_specs(analysis_folder, specs):
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
     information("Saved channel classifications to specs file")
 
+
 def load_fov(image_directory, fov_id):
     information("getting files")
     found_files = image_directory.glob("*.tif")
-    file_string = re.compile(f"xy{fov_id:02d}.*.tif",re.IGNORECASE)
-    found_files = [f.name for f in found_files if re.search(file_string,f.name)] #remove pre-path
+    file_string = re.compile(f"xy{fov_id:02d}.*.tif", re.IGNORECASE)
+    found_files = [
+        f.name for f in found_files if re.search(file_string, f.name)
+    ]  # remove pre-path
     information("sorting files")
     found_files = sorted(found_files)  # should sort by timepoint
 
@@ -112,9 +116,9 @@ def load_crosscorrs(analysis_directory, fov_id=None):
     return average_crosscorrs
 
 
-def display_image_stack(viewer: Viewer, image_fov_stack):
+def display_image_stack(viewer: Viewer, image_fov_stack, plane):
     images = viewer.add_image(np.array(image_fov_stack))
-    viewer.dims.current_step = (0, 0)
+    viewer.dims.current_step = (0, plane, 0, 0)
     images.reset_contrast_limits()
     images.gamma = 0.5
 
@@ -223,10 +227,19 @@ class ChannelPicker(MM3Container):
         self.append(self.threshold_widget)
 
         self.threshold = self.threshold_widget.value
+        self.plane_widget = PlanePicker(
+            self.valid_planes,
+            label="Default plane",
+            tooltip="Imaging plane to display by default",
+        )
+        self.plane_widget.changed.connect(self.set_plane)
+        self.append(self.plane_widget)
+        self.set_plane()
+
         try:
             self.update_fov()
         except:
-            Warning('Failed to load FOV')
+            Warning("Failed to load FOV")
 
     def update_fov(self):
         self.cur_fov = self.fov_picker_widget.value
@@ -240,7 +253,8 @@ class ChannelPicker(MM3Container):
         self.crosscorrs = load_crosscorrs(self.analysis_folder, self.cur_fov)
 
         self.viewer.layers.clear()
-        display_image_stack(self.viewer, image_fov_stack)
+
+        display_image_stack(self.viewer, image_fov_stack, self.default_plane)
 
         # Set up selection box dimensions
         height = image_fov_stack.shape[2]
@@ -310,3 +324,12 @@ class ChannelPicker(MM3Container):
             self.crosscorrs,
         )
         shapes_layer.mouse_drag_callbacks.append(self.update_classification)
+
+    def set_plane(self):
+        self.default_plane = int(self.plane_widget.value[-1]) - 1
+        self.viewer.dims.current_step = (0, self.default_plane, 0, 0)
+        try:
+            self.viewer.layers[0].reset_contrast_limits()
+            self.viewer.layers[0].gamma = 0.5
+        except IndexError:
+            pass
