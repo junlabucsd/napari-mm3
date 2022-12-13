@@ -1,4 +1,5 @@
 import multiprocessing
+from multiprocessing import Pool
 import napari
 import matplotlib.pyplot as plt
 import yaml
@@ -888,7 +889,7 @@ class Track(MM3Container):
             label="um per pixel",
             min=0.0,
             max=2.0,
-            step=0.01,
+            step=0.001,
             value=0.11,
             tooltip="Micrometers per pixel",
         )
@@ -925,7 +926,7 @@ class Track(MM3Container):
         )
         self.max_growth_length_widget = FloatSpinBox(
             label="max growth length (ratio)",
-            value=1.5,
+            value=1.3,
             min=0,
             max=20,
             tooltip="Maximum increase in length allowed when linked new region to "
@@ -933,7 +934,7 @@ class Track(MM3Container):
         )
         self.min_growth_length_widget = FloatSpinBox(
             label="min growth length (ratio)",
-            value=0.7,
+            value=0.8,
             min=0,
             max=20,
             tooltip="Minimum change in length allowed when linked new region to "
@@ -941,7 +942,7 @@ class Track(MM3Container):
         )
         self.max_growth_area_widget = FloatSpinBox(
             label="max growth area (ratio)",
-            value=1.5,
+            value=1.3,
             min=0,
             max=20,
             tooltip="Maximum change in area allowed when linked new region to "
@@ -949,7 +950,7 @@ class Track(MM3Container):
         )
         self.min_growth_area_widget = FloatSpinBox(
             label="min growth area (ratio)",
-            value=0.7,
+            value=0.8,
             min=0,
             max=20,
             tooltip="Minimum change in area allowed when linked new region to existing potential cell. Unit is ratio.",
@@ -960,7 +961,7 @@ class Track(MM3Container):
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.pxl2um_widget.changed.connect(self.set_pxl2um)
-        self.phase_plane_widget.changed.connect(self.set_pxl2um)
+        self.phase_plane_widget.changed.connect(self.set_phase_plane)
         self.lost_cell_time_widget.changed.connect(self.set_lost_cell_time)
         self.new_cell_y_cutoff_widget.changed.connect(self.set_new_cell_y_cutoff)
         self.new_cell_region_cutoff_widget.changed.connect(
