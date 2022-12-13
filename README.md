@@ -23,23 +23,23 @@ https://napari.org/plugins/stable/index.html
 
 ## Installation
 
-Load up a new environment. Install napari and tensorflow:
+We describe installation with conda. Run the following command:
 
 ```
-conda install -c conda-forge napari
-conda install -c conda-forge tensorflow
+conda create -n napari-mm3 -c conda-forge conda-build tensorflow napari
 ``` 
+Now, you need to install our code (please let us know if this causes problems -- it has been a pain point in the past). To do so, clone the repository. Then, run the following commands from within your conda environment:
+```
+cd napari-mm3
+pip install -e .
+```
+This supplies you with the latest, most recent version of our code.
 
-Now, to install our code. if you would like to have the latest version, do the following:
+If you would like to have a more stable verison, simply run `pip install napari-mm3`. In general, we recommend going off of the github version.
 
-1. You can clone the repository with `git clone git@github.com:junlabucsd/napari-mm3.git` (SSH) or `git clone https://github.com/junlabucsd/napari-mm3.git` (https)
-2. With your environment active, run `pip install -e .` from inside your cloned repo.
-
-If you would like to have a more stable verison, simply run `pip install napari-mm3`.
-
-NOTE:
-Not running the conda command and trying to install things in a different way may lead to difficult issues with PyQt5. 
-We recommend following the above commands to simplify the situation.
+NOTES:
+Not running the conda command above and trying to install things in a different way may lead to difficult issues with PyQt5. We recommend following the above commands to simplify the situation.
+Using `pip -e .` instead of `conda develop .` is a deliberate choice, the former did not seem to register the plugin with napari.
 
 ## Contributing
 
