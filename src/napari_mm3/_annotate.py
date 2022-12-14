@@ -5,8 +5,7 @@ import tifffile as tiff
 import yaml
 import re
 
-from ._deriving_widgets import MM3Container, FOVChooserSingle
-
+from ._deriving_widgets import MM3Container, FOVChooserSingle, PlanePicker
 
 def load_specs(analysis_folder):
     with (analysis_folder / "specs.yaml").open(mode="r") as specs_file:
@@ -49,6 +48,8 @@ class Annotate(MM3Container):
         self.load_recent_widget.hide()
         self.run_widget.hide()
 
+        self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
+
         self.fov_widget = FOVChooserSingle(self.valid_fovs)
         self.next_peak_widget = PushButton(
             label="next peak",
@@ -65,17 +66,23 @@ class Annotate(MM3Container):
         self.fov = self.fov_widget.value
         self.peak_cntr = PeakCounter(load_specs(self.analysis_folder), self.fov)
 
+        self.plane_picker_widget.changed.connect(self.set_phase_plane)
         self.fov_widget.connect(self.change_fov)
         self.next_peak_widget.clicked.connect(self.next_peak)
         self.prior_peak_widget.clicked.connect(self.prior_peak)
         self.save_out_widget.changed.connect(self.save_out)
 
+        self.append(self.plane_picker_widget)
         self.append(self.fov_widget)
         self.append(self.next_peak_widget)
         self.append(self.prior_peak_widget)
         self.append(self.save_out_widget)
-
+        
+        self.set_phase_plane()
         self.load_data()
+
+    def set_phase_plane(self):
+        self.phase_plane = self.plane_picker_widget.value
 
     def next_peak(self):
         # Save current peak, update new one, display current peak.
@@ -99,11 +106,17 @@ class Annotate(MM3Container):
         self.load_data()
 
     def save_out(self):
+        #save mask and raw image
+        self.save_out_mask()
+        self.save_out_image()
+
+    def save_out_mask(self):
+        # Save segmentation mask
         fov = self.fov
         peak = self.peak_cntr.peak
-        training_dir: Path = self.analysis_folder / "training_dir"
+        training_dir: Path = self.analysis_folder / "training" / "masks"
         if not training_dir.exists():
-            training_dir.mkdir()
+            training_dir.mkdir(parents=True)
 
         labels = self.viewer.layers[1].data.astype(np.uint8)
         cur_label = labels[self.viewer.dims.current_step[0], :, :]
@@ -115,6 +128,22 @@ class Annotate(MM3Container):
         tiff.imsave(fileout_name, cur_label)
         print("Training data saved")
 
+    def save_out_image(self):
+        # Save raw image in parallel with mask
+        fov = self.fov
+        peak = self.peak_cntr.peak
+        training_dir: Path = self.analysis_folder/ "training" / "images"
+        if not training_dir.exists():
+            training_dir.mkdir(parents=True)
+
+        img = self.viewer.layers[0].data
+        
+        fileout_name = (
+            training_dir
+            / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t{self.viewer.dims.current_step[0]:04d}.tif"
+        )
+        tiff.imsave(fileout_name, img)
+
     def load_data(self):
         fov = self.fov
         peak = self.peak_cntr.peak
@@ -122,7 +151,7 @@ class Annotate(MM3Container):
         img_filename = (
             self.analysis_folder
             / "channels"
-            / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_c1.tif"
+            / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_{self.phase_plane}.tif"
         )
 
         with tiff.TiffFile(img_filename) as tif:
@@ -131,9 +160,9 @@ class Annotate(MM3Container):
         self.viewer.layers.clear()
         self.viewer.add_image(img_stack)
 
-        training_dir = self.analysis_folder / "training_dir"
+        training_dir = self.analysis_folder / "training" / "masks"
         if not training_dir.exists():
-            training_dir.mkdir()
+            training_dir.mkdir(parents=True)
 
         # Load all masks from given fov/peak. Add them to viewer.
         mask_filenames = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*_seg.tif"
