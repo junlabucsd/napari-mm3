@@ -1,4 +1,5 @@
 import multiprocessing
+from multiprocessing import Pool
 import napari
 import os
 import six
@@ -13,7 +14,6 @@ from skimage import segmentation, morphology
 from skimage.filters import threshold_otsu
 from napari.utils import progress
 
-
 from ._deriving_widgets import (
     MM3Container,
     PlanePicker,
@@ -21,6 +21,7 @@ from ._deriving_widgets import (
     load_specs,
     information,
     load_stack_params,
+    warning
 )
 
 # Do segmentation for an channel time stack
@@ -310,7 +311,10 @@ class SegmentOtsu(MM3Container):
         self.set_min_object_size()
 
         self.redraw_image = True
-        self.render_preview()
+        try:
+            self.render_preview()
+        except FileNotFoundError:
+            warning(f"Failed to render preview from plane {self.phase_plane}")
 
     def set_params(self):
         self.params = dict()
