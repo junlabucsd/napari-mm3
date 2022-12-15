@@ -1,4 +1,4 @@
-from magicgui.widgets import PushButton, ComboBox
+from magicgui.widgets import PushButton, ComboBox, FileEdit
 from pathlib import Path
 import numpy as np
 import tifffile as tiff
@@ -49,6 +49,11 @@ class Annotate(MM3Container):
         self.run_widget.hide()
 
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
+        self.image_source_widget = FileEdit(label="Image source",
+            mode="d",
+            value=Path(self.analysis_folder/'channels')
+        )
+            
         self.mask_source_widget = ComboBox(label="Mask source", choices=["None","Otsu", "unet"]
         )
 
@@ -73,6 +78,7 @@ class Annotate(MM3Container):
         self.next_peak_widget.clicked.connect(self.next_peak)
         self.prior_peak_widget.clicked.connect(self.prior_peak)
         self.save_out_widget.changed.connect(self.save_out)
+        self.image_source_widget.changed.connect(self.set_image_source)
         self.mask_source_widget.changed.connect(self.set_mask_source)
 
         self.append(self.plane_picker_widget)
@@ -80,8 +86,10 @@ class Annotate(MM3Container):
         self.append(self.next_peak_widget)
         self.append(self.prior_peak_widget)
         self.append(self.save_out_widget)
+        self.append(self.image_source_widget)
         self.append(self.mask_source_widget)
 
+        self.image_src = self.image_source_widget.value
         self.mask_src = self.mask_source_widget.value
         self.phase_plane = self.plane_picker_widget.value
 
@@ -110,6 +118,10 @@ class Annotate(MM3Container):
         self.fov = self.fov_widget.value
         self.peak_cntr.set_fov(self.fov)
 
+        self.load_data()
+
+    def set_image_source(self):
+        self.image_src = self.image_source_widget.value
         self.load_data()
 
     def set_mask_source(self):
@@ -149,20 +161,20 @@ class Annotate(MM3Container):
             training_dir.mkdir(parents=True)
 
         img = self.viewer.layers[0].data
+        cur_img = img[self.viewer.dims.current_step[0],:,:]
         
         fileout_name = (
             training_dir
             / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t{self.viewer.dims.current_step[0]:04d}.tif"
         )
-        tiff.imsave(fileout_name, img)
+        tiff.imsave(fileout_name, cur_img)
 
     def load_data(self):
         fov = self.fov
         peak = self.peak_cntr.peak
 
         img_filename = (
-            self.analysis_folder
-            / "channels"
+            self.image_src
             / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_{self.phase_plane}.tif"
         )
 
@@ -177,7 +189,7 @@ class Annotate(MM3Container):
             training_dir.mkdir(parents=True)
 
         # Load all masks from given fov/peak. Add them to viewer.
-        mask_filenames = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*_seg.tif"
+        mask_filenames = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*.tif"
         filenames = list(training_dir.glob(mask_filenames))
 
         if not filenames and self.mask_src != "None":
@@ -198,7 +210,7 @@ class Annotate(MM3Container):
                         mask_stack[timestamp, :, :] = tif.asarray()
                 self.viewer.add_labels(mask_stack, name="Labels")
         else:
-            get_numbers = re.compile(r"t(\d+)_seg.tif",re.IGNORECASE)
+            get_numbers = re.compile(r"t(\d+).tif",re.IGNORECASE)
             timestamps = [
                 int(get_numbers.findall(filename.name)[0]) for filename in filenames
             ]
