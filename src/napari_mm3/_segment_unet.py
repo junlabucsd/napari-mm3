@@ -51,6 +51,7 @@ def dice_loss(y_true, y_pred):
 def bce_dice_loss(y_true, y_pred):
     loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
 
+
 def pixelwise_weighted_binary_crossentropy_seg(
     y_true: tf.Tensor, y_pred: tf.Tensor
 ) -> tf.Tensor:
@@ -102,7 +103,7 @@ def pixelwise_weighted_binary_crossentropy_seg(
     loss = K.mean(math_ops.multiply(weight, entropy), axis=-1)
 
     loss = tf.scalar_mul(
-        10 ** 6, tf.scalar_mul(1 / tf.math.sqrt(tf.math.reduce_sum(weight)), loss)
+        10**6, tf.scalar_mul(1 / tf.math.sqrt(tf.math.reduce_sum(weight)), loss)
     )
 
     return loss
@@ -135,6 +136,7 @@ def unstack_acc(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         pass
 
     return keras.metrics.binary_accuracy(seg, y_pred)
+
 
 def get_pad_distances(unet_shape, img_height, img_width):
     """Finds padding and trimming sizes to make the input image the same as the size expected by the U-net model.
@@ -304,7 +306,8 @@ def pad_back(predictions, unet_shape, pad_dict):
         mode="constant",
     )
     return predictions
-    
+
+
 def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
     """
     Segments the channels from one fov using the U-net CNN model.
@@ -355,7 +358,6 @@ def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
 
 
 def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params):
-
     @magicgui(auto_call=True, threshold={"widget_type": "FloatSlider", "max": 1})
     def DebugUnet(image_input: ImageData, threshold=0.6) -> LabelsData:
         image_out = np.copy(image_input)
@@ -364,6 +366,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
         image_out = image_out.astype(bool)
 
         return image_out
+
     # parameters
     batch_size = params["segment"]["batch_size"]
     cellClassThreshold = params["segment"]["cell_class_threshold"]
@@ -525,7 +528,9 @@ class SegmentUnet(MM3Container):
         self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
         self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
         self.interactive_widget = CheckBox(label="interactive", value=False)
-        self.model_source_widget = ComboBox(label='Model source', choices = ['Delta','MM3'])
+        self.model_source_widget = ComboBox(
+            label="Model source", choices=["Delta", "MM3"]
+        )
 
         self.append(self.fov_widget)
         self.append(self.plane_widget)
@@ -585,9 +590,9 @@ class SegmentUnet(MM3Container):
         self.model_source = self.model_source_widget.value
 
         if self.model_source == "Delta":
-            custom_objects={
-            "unstack_acc":unstack_acc,
-            "pixelwise_weighted_binary_crossentropy_seg":pixelwise_weighted_binary_crossentropy_seg,
+            custom_objects = {
+                "unstack_acc": unstack_acc,
+                "pixelwise_weighted_binary_crossentropy_seg": pixelwise_weighted_binary_crossentropy_seg,
             }
         elif self.model_source == "MM3":
             custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}

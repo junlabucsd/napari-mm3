@@ -7,6 +7,7 @@ import re
 
 from ._deriving_widgets import MM3Container, FOVChooserSingle, PlanePicker, warning
 
+
 def load_specs(analysis_folder):
     with (analysis_folder / "specs.yaml").open(mode="r") as specs_file:
         return yaml.safe_load(specs_file)
@@ -49,12 +50,14 @@ class Annotate(MM3Container):
         self.run_widget.hide()
 
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
-        self.image_source_widget = FileEdit(label="Image source",
+        self.image_source_widget = FileEdit(
+            label="Image source",
             mode="d",
-            value=Path(self.analysis_folder/'channels')
+            value=Path(self.analysis_folder / "channels"),
         )
-            
-        self.mask_source_widget = ComboBox(label="Mask source", choices=["None","Otsu", "unet"]
+
+        self.mask_source_widget = ComboBox(
+            label="Mask source", choices=["None", "Otsu", "unet"]
         )
 
         self.fov_widget = FOVChooserSingle(self.valid_fovs)
@@ -129,7 +132,7 @@ class Annotate(MM3Container):
         self.load_data()
 
     def save_out(self):
-        #save mask and raw image
+        # save mask and raw image
         self.save_out_mask()
         self.save_out_image()
 
@@ -143,7 +146,7 @@ class Annotate(MM3Container):
 
         labels = self.viewer.layers[1].data.astype(np.uint8)
         cur_label = labels[self.viewer.dims.current_step[0], :, :]
-        cur_label = np.array(cur_label>0,dtype=np.uint8)
+        cur_label = np.array(cur_label > 0, dtype=np.uint8)
 
         fileout_name = (
             training_dir
@@ -156,13 +159,13 @@ class Annotate(MM3Container):
         # Save raw image in parallel with mask
         fov = self.fov
         peak = self.peak_cntr.peak
-        training_dir: Path = self.analysis_folder/ "training" / "images"
+        training_dir: Path = self.analysis_folder / "training" / "images"
         if not training_dir.exists():
             training_dir.mkdir(parents=True)
 
         img = self.viewer.layers[0].data
-        cur_img = img[self.viewer.dims.current_step[0],:,:]
-        
+        cur_img = img[self.viewer.dims.current_step[0], :, :]
+
         fileout_name = (
             training_dir
             / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t{self.viewer.dims.current_step[0]:04d}.tif"
@@ -203,14 +206,14 @@ class Annotate(MM3Container):
                     mask_stack = tif.asarray()
                 self.viewer.add_labels(mask_stack, name="Labels")
             except:
-                warning('Could not load segmentation masks')
+                warning("Could not load segmentation masks")
                 mask_stack = np.zeros(np.shape(img_stack), dtype=int)
                 for timestamp, filename in zip(timestamps, filenames):
                     with tiff.TiffFile(filename) as tif:
                         mask_stack[timestamp, :, :] = tif.asarray()
                 self.viewer.add_labels(mask_stack, name="Labels")
         else:
-            get_numbers = re.compile(r"t(\d+).tif",re.IGNORECASE)
+            get_numbers = re.compile(r"t(\d+).tif", re.IGNORECASE)
             timestamps = [
                 int(get_numbers.findall(filename.name)[0]) for filename in filenames
             ]
@@ -219,4 +222,3 @@ class Annotate(MM3Container):
                 with tiff.TiffFile(filename) as tif:
                     mask_stack[timestamp, :, :] = tif.asarray()
             self.viewer.add_labels(mask_stack, name="Labels")
-        
