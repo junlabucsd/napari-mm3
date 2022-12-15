@@ -233,7 +233,6 @@ def subtract_fov_stack(
         return False
 
     # load images for the peak and get phase images'
-    out_counter = 0
     for peak_id in ana_peak_ids:
         information("Subtracting peak %d." % peak_id)
 
@@ -277,7 +276,6 @@ def subtract_fov_stack(
                 sub_dir / sub_filename, subtracted_stack, compression=("zlib", 4)
             )  # save it
 
-            # if fov_id < 3:
             if preview:
                 napari.current_viewer().add_image(
                     subtracted_stack,
