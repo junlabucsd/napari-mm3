@@ -1,11 +1,11 @@
-from magicgui.widgets import PushButton
+from magicgui.widgets import PushButton, ComboBox
 from pathlib import Path
 import numpy as np
 import tifffile as tiff
 import yaml
 import re
 
-from ._deriving_widgets import MM3Container, FOVChooserSingle, PlanePicker
+from ._deriving_widgets import MM3Container, FOVChooserSingle, PlanePicker, warning
 
 def load_specs(analysis_folder):
     with (analysis_folder / "specs.yaml").open(mode="r") as specs_file:
@@ -49,6 +49,8 @@ class Annotate(MM3Container):
         self.run_widget.hide()
 
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
+        self.mask_source_widget = ComboBox(label="Mask source", choices=["None","Otsu", "unet"]
+        )
 
         self.fov_widget = FOVChooserSingle(self.valid_fovs)
         self.next_peak_widget = PushButton(
@@ -71,18 +73,23 @@ class Annotate(MM3Container):
         self.next_peak_widget.clicked.connect(self.next_peak)
         self.prior_peak_widget.clicked.connect(self.prior_peak)
         self.save_out_widget.changed.connect(self.save_out)
+        self.mask_source_widget.changed.connect(self.set_mask_source)
 
         self.append(self.plane_picker_widget)
         self.append(self.fov_widget)
         self.append(self.next_peak_widget)
         self.append(self.prior_peak_widget)
         self.append(self.save_out_widget)
-        
-        self.set_phase_plane()
+        self.append(self.mask_source_widget)
+
+        self.mask_src = self.mask_source_widget.value
+        self.phase_plane = self.plane_picker_widget.value
+
         self.load_data()
 
     def set_phase_plane(self):
         self.phase_plane = self.plane_picker_widget.value
+        self.load_data()
 
     def next_peak(self):
         # Save current peak, update new one, display current peak.
@@ -105,6 +112,10 @@ class Annotate(MM3Container):
 
         self.load_data()
 
+    def set_mask_source(self):
+        self.mask_src = self.mask_source_widget.value
+        self.load_data()
+
     def save_out(self):
         #save mask and raw image
         self.save_out_mask()
@@ -120,10 +131,11 @@ class Annotate(MM3Container):
 
         labels = self.viewer.layers[1].data.astype(np.uint8)
         cur_label = labels[self.viewer.dims.current_step[0], :, :]
+        cur_label = np.array(cur_label>0,dtype=np.uint8)
 
         fileout_name = (
             training_dir
-            / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t{self.viewer.dims.current_step[0]:04d}_seg.tif"
+            / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t{self.viewer.dims.current_step[0]:04d}.tif"
         )
         tiff.imsave(fileout_name, cur_label)
         print("Training data saved")
@@ -167,12 +179,32 @@ class Annotate(MM3Container):
         # Load all masks from given fov/peak. Add them to viewer.
         mask_filenames = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*_seg.tif"
         filenames = list(training_dir.glob(mask_filenames))
-        get_numbers = re.compile(r"t(\d+)_seg.tif",re.IGNORECASE)
-        timestamps = [
-            int(get_numbers.findall(filename.name)[0]) for filename in filenames
-        ]
-        mask_stack = np.zeros(np.shape(img_stack), dtype=int)
-        for timestamp, filename in zip(timestamps, filenames):
-            with tiff.TiffFile(filename) as tif:
-                mask_stack[timestamp, :, :] = tif.asarray()
-        self.viewer.add_labels(mask_stack, name="Labels")
+
+        if not filenames and self.mask_src != "None":
+            img_filename = (
+                self.analysis_folder
+                / "segmented"
+                / f"{self.experiment_name}_xy{self.fov:03d}_p{self.peak_cntr.peak:04d}_seg_{self.mask_src}.tif"
+            )
+            try:
+                with tiff.TiffFile(img_filename) as tif:
+                    mask_stack = tif.asarray()
+                self.viewer.add_labels(mask_stack, name="Labels")
+            except:
+                warning('Could not load segmentation masks')
+                mask_stack = np.zeros(np.shape(img_stack), dtype=int)
+                for timestamp, filename in zip(timestamps, filenames):
+                    with tiff.TiffFile(filename) as tif:
+                        mask_stack[timestamp, :, :] = tif.asarray()
+                self.viewer.add_labels(mask_stack, name="Labels")
+        else:
+            get_numbers = re.compile(r"t(\d+)_seg.tif",re.IGNORECASE)
+            timestamps = [
+                int(get_numbers.findall(filename.name)[0]) for filename in filenames
+            ]
+            mask_stack = np.zeros(np.shape(img_stack), dtype=int)
+            for timestamp, filename in zip(timestamps, filenames):
+                with tiff.TiffFile(filename) as tif:
+                    mask_stack[timestamp, :, :] = tif.asarray()
+            self.viewer.add_labels(mask_stack, name="Labels")
+        
