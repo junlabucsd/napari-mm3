@@ -1,13 +1,17 @@
 from __future__ import print_function, division
 import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras import models, losses
+from tensorflow import keras
+from keras.preprocessing.image import ImageDataGenerator
+from keras import models, losses
+from tensorflow.python.ops import array_ops, math_ops
+from keras import backend as K
+
 import h5py
 import multiprocessing
 import numpy as np
 import napari
 from magicgui import magicgui
-from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox
+from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox, ComboBox
 from napari.types import ImageData, LabelsData
 import os
 
@@ -47,6 +51,90 @@ def dice_loss(y_true, y_pred):
 def bce_dice_loss(y_true, y_pred):
     loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
 
+def pixelwise_weighted_binary_crossentropy_seg(
+    y_true: tf.Tensor, y_pred: tf.Tensor
+) -> tf.Tensor:
+    """
+    Pixel-wise weighted binary cross-entropy loss.
+    The code is adapted from the Keras TF backend.
+    (see their github)
+
+    Parameters
+    ----------
+    y_true : Tensor
+        Stack of groundtruth segmentation masks + weight maps.
+    y_pred : Tensor
+        Predicted segmentation masks.
+
+    Returns
+    -------
+    Tensor
+        Pixel-wise weight binary cross-entropy between inputs.
+
+    """
+    try:
+        # The weights are passed as part of the y_true tensor:
+        [seg, weight] = tf.unstack(y_true, 2, axis=-1)
+
+        seg = tf.expand_dims(seg, -1)
+        weight = tf.expand_dims(weight, -1)
+    except:
+        pass
+
+    # Make background weights be equal to the model's prediction
+    bool_bkgd = weight == 0 / 255
+    weight = tf.where(bool_bkgd, y_pred, weight)
+
+    epsilon = tf.convert_to_tensor(K.epsilon(), y_pred.dtype.base_dtype)
+    y_pred = tf.clip_by_value(y_pred, epsilon, 1.0 - epsilon)
+    y_pred = tf.math.log(y_pred / (1 - y_pred))
+
+    zeros = array_ops.zeros_like(y_pred, dtype=y_pred.dtype)
+    cond = y_pred >= zeros
+    relu_logits = math_ops.select(cond, y_pred, zeros)
+    neg_abs_logits = math_ops.select(cond, -y_pred, y_pred)
+    entropy = math_ops.add(
+        relu_logits - y_pred * seg,
+        math_ops.log1p(math_ops.exp(neg_abs_logits)),
+        name=None,
+    )
+
+    loss = K.mean(math_ops.multiply(weight, entropy), axis=-1)
+
+    loss = tf.scalar_mul(
+        10 ** 6, tf.scalar_mul(1 / tf.math.sqrt(tf.math.reduce_sum(weight)), loss)
+    )
+
+    return loss
+
+
+def unstack_acc(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """
+    Unstacks the mask from the weights in the output tensor for
+    segmentation and computes binary accuracy
+
+    Parameters
+    ----------
+    y_true : Tensor
+        Stack of groundtruth segmentation masks + weight maps.
+    y_pred : Tensor
+        Predicted segmentation masks.
+
+    Returns
+    -------
+    Tensor
+        Binary prediction accuracy.
+
+    """
+    try:
+        [seg, weight] = tf.unstack(y_true, 2, axis=-1)
+
+        seg = tf.expand_dims(seg, -1)
+        weight = tf.expand_dims(weight, -1)
+    except:
+        pass
+
+    return keras.metrics.binary_accuracy(seg, y_pred)
 
 def get_pad_distances(unet_shape, img_height, img_width):
     """Finds padding and trimming sizes to make the input image the same as the size expected by the U-net model.
@@ -344,7 +432,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
         save_out(params, segmented_imgs, fov_id, peak_id)
 
 
-def segmentUNet(params):
+def segmentUNet(params, custom_objects):
 
     information("Loading experiment parameters.")
     p = params
@@ -387,7 +475,7 @@ def segmentUNet(params):
     # *** Need parameter for weights
     seg_model = models.load_model(
         model_file_path,
-        custom_objects={"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss},
+        custom_objects=custom_objects,
     )
     information("Model loaded.")
 
@@ -403,6 +491,8 @@ def segmentUNet(params):
 class SegmentUnet(MM3Container):
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
+        self.viewer.text_overlay.visible = False
+
         self.fov_widget = FOVChooser(self.valid_fovs)
         self.plane_widget = PlanePicker(
             self.valid_planes,
@@ -435,6 +525,7 @@ class SegmentUnet(MM3Container):
         self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
         self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
         self.interactive_widget = CheckBox(label="interactive", value=False)
+        self.model_source_widget = ComboBox(label='Model source', choices = ['Delta','MM3'])
 
         self.append(self.fov_widget)
         self.append(self.plane_widget)
@@ -446,8 +537,11 @@ class SegmentUnet(MM3Container):
         self.append(self.height_widget)
         self.append(self.width_widget)
         self.append(self.interactive_widget)
+        self.append(self.model_source_widget)
 
         self.fov_widget.connect_callback(self.set_fovs)
+
+        self.set_fovs(self.valid_fovs)
 
     def run(self):
         """Overriding method. Perform mother machine analysis."""
@@ -488,7 +582,17 @@ class SegmentUnet(MM3Container):
         params["track_dir"] = params["ana_dir"] / "tracking"
         params["foci_track_dir"] = params["ana_dir"] / "tracking_foci"
 
-        segmentUNet(params)
+        self.model_source = self.model_source_widget.value
+
+        if self.model_source == "Delta":
+            custom_objects={
+            "unstack_acc":unstack_acc,
+            "pixelwise_weighted_binary_crossentropy_seg":pixelwise_weighted_binary_crossentropy_seg,
+            }
+        elif self.model_source == "MM3":
+            custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
+
+        segmentUNet(params, custom_objects)
 
     def set_fovs(self, fovs):
         self.fovs = fovs
