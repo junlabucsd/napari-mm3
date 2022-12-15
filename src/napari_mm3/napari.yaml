@@ -23,6 +23,9 @@ contributions:
   - id: napari-mm3.Annotate
     title: Annotate training data
     python_name: napari_mm3._annotate:Annotate
+  - id: napari-mm3.TrainUnet
+    title: Train U-net model
+    python_name: napari_mm3._train_unet:TrainUnet
   - id: napari-mm3.ChannelPicker
     title: Sort channels
     python_name: napari_mm3._channel_picker:ChannelPicker
@@ -59,6 +62,9 @@ contributions:
     autogenerate: False
   - command: napari-mm3.Annotate
     display_name: Annotate
+    autogenerate: False
+  - command: napari-mm3.TrainUnet
+    display_name: TrainUnet
     autogenerate: False
   - command: napari-mm3.Colors
     display_name: Colors
