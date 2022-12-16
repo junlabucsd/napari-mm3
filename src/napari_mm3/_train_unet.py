@@ -68,7 +68,7 @@ import numpy.typing as npt
 import random
 import copy
 
-from ._deriving_widgets import MM3Container
+from ._deriving_widgets import MM3Container, warning
 
 # Portions of this script are adapted from https://gitlab.com/dunloplab/delta under the MIT license:
 #
@@ -477,6 +477,7 @@ def readreshape(
     # For the mother machine, all images are resized in 256x32
     if not crop:
         img = trans.resize(i, target_size, anti_aliasing=True, order=order)
+
     else:
         fill_shape = [
             target_size[j] if i.shape[j] < target_size[j] else i.shape[j]
@@ -646,12 +647,16 @@ def predictGenerator_seg(
         target_size: Tuple[int, int],
     ) -> Iterator[np.ndarray]:
         for index, fname in enumerate(files_list):
-            img = readreshape(
-                os.path.join(files_path, fname),
-                target_size=target_size,
-                order=1,
-                crop=crop,
-            )
+            try:
+                img = readreshape(
+                    os.path.join(files_path, fname),
+                    target_size=target_size,
+                    order=1,
+                    crop=crop,
+                )
+            except ValueError:
+                warning('Could not resize image')
+                continue
             # Tensorflow needs one extra single dimension (so that it is a 4D tensor)
             img = np.reshape(img, (1,) + img.shape)
 
@@ -719,7 +724,7 @@ def trainGenerator_seg(
         str(img_path / "*.tif")
     )
 
-    # If preloading, load the images and compute weight maps:
+    #load the images and compute weight maps:
     if preload:
         for filename in image_name_arr:
             preload_img.append(
@@ -1258,7 +1263,7 @@ class TrainUnet(MM3Container):
             mode="r",
             label="model file",
             tooltip="Location to save model to.",
-            value=Path("./models/test.hdf5"),
+            value=Path(self.analysis_folder / "models/test.hdf5"),
         )
         self.batch_size_widget = SpinBox(
             label="batch size",
@@ -1341,10 +1346,9 @@ class TrainUnet(MM3Container):
 
     def run(self):
         """Overriding method. Perform mother machine analysis."""
-        ## pass path to training data
-
-        ## add computation of the custom weights using seg_weights_2d
-
+        if self.model_source == Path('.'):
+            self.model_source = None
+       
         save_weights(self.mask_dir, self.weights_dir)
 
         train_model(
@@ -1373,7 +1377,7 @@ class TrainUnet(MM3Container):
         )
 
         predict_gen, predict_gen_v = itertools.tee(
-            predictGenerator_seg(str(self.test_dir))
+            predictGenerator_seg(str(self.test_dir),crop=False)
         )
 
         predictions = model.predict(predict_gen)
@@ -1390,20 +1394,43 @@ class TrainUnet(MM3Container):
         preload_img = []
         preload_weight = []
 
-        crop_windows = None
-
         # Get training image files list:
         image_name_arr = glob.glob(str(img_path / "*.png")) + glob.glob(
             str(img_path / "*.tif")
         )
 
-        save_weights(self.mask_dir, self.weights_dir)
+        # load pre-computed weights if they exist
+        try:
+            for filename in image_name_arr:
+                preload_weight.append(
+                readreshape(
+                    os.path.join(self.weights_dir, os.path.basename(filename)),
+                    target_size=self.target_size,
+                    order=0,
+                    rangescale=False,
+                    crop=False,
+                ),
+                )
+        # if not, compute new weights
+        except ValueError:
+            preload_weight = []
+            save_weights(self.mask_dir, self.weights_dir)
+            for filename in image_name_arr:
+                preload_weight.append(
+                readreshape(
+                    os.path.join(self.weights_dir, os.path.basename(filename)),
+                    target_size=self.target_size,
+                    order=0,
+                    rangescale=False,
+                    crop=False,
+                ),
+                )
 
-        # If preloading, load the images and compute weight maps:
+        #load the images and weight maps:
         for filename in image_name_arr:
             preload_img.append(
                 readreshape(
-                    filename, target_size=self.target_size, order=1, crop=crop_windows
+                    filename, target_size=self.target_size, order=1, crop=False
                 )
             )
             preload_mask.append(
@@ -1413,17 +1440,8 @@ class TrainUnet(MM3Container):
                     binarize=True,
                     order=0,
                     rangescale=False,
-                    crop=crop_windows,
+                    crop=False,
                 )
-            )
-            preload_weight.append(
-                readreshape(
-                    os.path.join(self.weights_dir, os.path.basename(filename)),
-                    target_size=self.target_size,
-                    order=0,
-                    rangescale=False,
-                    crop=crop_windows,
-                ),
             )
         self.viewer.add_image(np.stack(preload_img))
         self.viewer.add_labels(np.stack(preload_mask))
