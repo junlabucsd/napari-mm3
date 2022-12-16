@@ -4,6 +4,7 @@ import numpy as np
 import tifffile as tiff
 import yaml
 import re
+import napari
 
 from ._deriving_widgets import MM3Container, FOVChooserSingle, PlanePicker, warning
 
@@ -85,17 +86,16 @@ class Annotate(MM3Container):
         self.mask_source_widget.changed.connect(self.set_mask_source)
 
         self.append(self.plane_picker_widget)
+        self.append(self.image_source_widget)
+        self.append(self.mask_source_widget)
         self.append(self.fov_widget)
         self.append(self.next_peak_widget)
         self.append(self.prior_peak_widget)
         self.append(self.save_out_widget)
-        self.append(self.image_source_widget)
-        self.append(self.mask_source_widget)
 
         self.image_src = self.image_source_widget.value
         self.mask_src = self.mask_source_widget.value
         self.phase_plane = self.plane_picker_widget.value
-
         self.load_data()
 
     def set_phase_plane(self):
@@ -104,19 +104,19 @@ class Annotate(MM3Container):
 
     def next_peak(self):
         # Save current peak, update new one, display current peak.
-        self.save_out()
+        # self.save_out()
         self.peak_cntr.increment()
         self.load_data()
 
     def prior_peak(self):
         # Save current peak, update new one, display current peak.
-        self.save_out()
+        # self.save_out()
         self.peak_cntr.decrement()
         self.load_data()
 
     def change_fov(self):
         # Save the previous FOV. Update the current fov, reset the peak. Display the new FOV.
-        self.save_out()
+        # self.save_out()
 
         self.fov = self.fov_widget.value
         self.peak_cntr.set_fov(self.fov)
