@@ -15,7 +15,7 @@ from dask import delayed
 from pathlib import Path
 from skimage import io
 from napari.utils import progress
-from magicgui.widgets import Container, FileEdit, CheckBox, PushButton
+from magicgui.widgets import Container, FileEdit, CheckBox, PushButton, FloatSpinBox
 from ._deriving_widgets import FOVChooser, TimeRangeSelector, information
 
 
@@ -282,6 +282,9 @@ class Nd2ToTIFF(Container):
         )
         self.FOVs_range_widget = FOVChooser(self.valid_fovs)
         self.time_range_widget = TimeRangeSelector(self.valid_times)
+        self.upper_crop_widget = FloatSpinBox(label='Crop y max',value=0.9, min=0.5, max = 1, step=.01)
+        self.lower_crop_widget = FloatSpinBox(label='Crop y min',value = 0.1, min=0, max = 0.5, step=.01)
+
         self.display_after_export_widget = CheckBox(label="display after export")
         self.reset_numbering_widget = CheckBox(
             label="reset numbering",
@@ -295,12 +298,16 @@ class Nd2ToTIFF(Container):
         self.image_directory_widget.changed.connect(self.set_image_directory)
         self.FOVs_range_widget.connect_callback(self.set_fovs)
         self.time_range_widget.changed.connect(self.set_time_range)
+        self.upper_crop_widget.changed.connect(self.set_upper_crop)
+        self.lower_crop_widget.changed.connect(self.set_lower_crop)
         self.run_widget.clicked.connect(self.run)
 
         self.append(self.experiment_directory_widget)
         self.append(self.image_directory_widget)
         self.append(self.FOVs_range_widget)
         self.append(self.time_range_widget)
+        self.append(self.upper_crop_widget)
+        self.append(self.lower_crop_widget)
         self.append(self.display_after_export_widget)
         self.append(self.reset_numbering_widget)
         self.append(self.run_widget)
@@ -309,6 +316,8 @@ class Nd2ToTIFF(Container):
         self.set_fovs(list(range(self.valid_fovs[0], self.valid_fovs[1] + 1)))
         self.set_time_range()
         self.set_image_directory()
+        self.set_upper_crop()
+        self.set_lower_crop()
 
         napari.current_viewer().window._status_bar._toggle_activity_dock(True)
 
@@ -319,7 +328,7 @@ class Nd2ToTIFF(Container):
             tif_compress=5,  # TODO: assign from UI
             image_start=self.time_range[0],
             image_end=self.time_range[1] + 1,
-            vertical_crop=None,  # TODO: assign from UI
+            vertical_crop=[self.lower_crop, self.upper_crop],
             fov_list=self.fovs,
             tworow_crop=None,
             reset_numbering=self.reset_numbering_widget.value,
@@ -403,3 +412,9 @@ class Nd2ToTIFF(Container):
             self.time_range_widget.value.start,
             self.time_range_widget.value.stop,
         )
+
+    def set_upper_crop(self):
+        self.upper_crop = self.upper_crop_widget.value
+
+    def set_lower_crop(self):
+        self.lower_crop = self.lower_crop_widget.value
