@@ -6,7 +6,7 @@ import yaml
 import re
 import napari
 
-from ._deriving_widgets import MM3Container, FOVChooserSingle, PlanePicker, warning
+from ._deriving_widgets import MM3Container, FOVChooserSingle, PlanePicker, warning, load_tiff
 
 
 def load_specs(analysis_folder):
@@ -50,12 +50,14 @@ class Annotate(MM3Container):
         self.load_recent_widget.hide()
         self.run_widget.hide()
 
+        self.data_source_widget = ComboBox(label='Data source',choices = ["Stack", "Manual annotation"])
+
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
-        self.image_source_widget = FileEdit(
-            label="Image source",
-            mode="d",
-            value=Path(self.analysis_folder / "channels"),
-        )
+        # self.image_source_widget = FileEdit(
+        #     label="Image source",
+        #     mode="d",
+        #     value=Path(self.analysis_folder / "channels"),
+        # )
 
         self.mask_source_widget = ComboBox(
             label="Mask source", choices=["None", "Otsu", "unet"]
@@ -77,26 +79,33 @@ class Annotate(MM3Container):
         self.fov = self.fov_widget.value
         self.peak_cntr = PeakCounter(load_specs(self.analysis_folder), self.fov)
 
+
+        self.data_source_widget.changed.connect(self.set_data_source)
         self.plane_picker_widget.changed.connect(self.set_phase_plane)
         self.fov_widget.connect(self.change_fov)
         self.next_peak_widget.clicked.connect(self.next_peak)
         self.prior_peak_widget.clicked.connect(self.prior_peak)
         self.save_out_widget.changed.connect(self.save_out)
-        self.image_source_widget.changed.connect(self.set_image_source)
+        # self.image_source_widget.changed.connect(self.set_image_source)
         self.mask_source_widget.changed.connect(self.set_mask_source)
 
+        self.append(self.data_source_widget)
         self.append(self.plane_picker_widget)
-        self.append(self.image_source_widget)
+        # self.append(self.image_source_widget)
         self.append(self.mask_source_widget)
         self.append(self.fov_widget)
         self.append(self.next_peak_widget)
         self.append(self.prior_peak_widget)
         self.append(self.save_out_widget)
 
-        self.image_src = self.image_source_widget.value
+        # self.image_src = self.image_source_widget.value
         self.mask_src = self.mask_source_widget.value
         self.phase_plane = self.plane_picker_widget.value
+        self.set_data_source()
         self.load_data()
+
+    def set_data_source(self):
+        self.data_source = self.data_source_widget.value
 
     def set_phase_plane(self):
         self.phase_plane = self.plane_picker_widget.value
@@ -123,9 +132,9 @@ class Annotate(MM3Container):
 
         self.load_data()
 
-    def set_image_source(self):
-        self.image_src = self.image_source_widget.value
-        self.load_data()
+    # def set_image_source(self):
+    #     self.image_src = self.image_source_widget.value
+    #     self.load_data()
 
     def set_mask_source(self):
         self.mask_src = self.mask_source_widget.value
@@ -173,29 +182,66 @@ class Annotate(MM3Container):
         tiff.imsave(fileout_name, cur_img)
 
     def load_data(self):
+        self.viewer.layers.clear()
+
+        if self.data_source == "Stack":
+            self.load_from_stack()
+        else:
+            self.load_from_existing()
+
+    def load_from_existing(self):
+        # Load training data and masks from manually annotated (single page) tiffs
         fov = self.fov
         peak = self.peak_cntr.peak
 
+        img_dir = self.analysis_folder / "training" / "images"
+        # img_files = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*.tif"
+        img_files = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*.tif"
+
+        img_files = sorted(list(img_dir.glob(img_files)))
+
+        mask_dir = self.analysis_folder / "training" / "masks"
+
+        if not mask_dir.exists():
+            mask_dir.mkdir(parents=True)
+
+        # Load all masks from given fov/peak. Add them to viewer.
+        mask_files = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*.tif"
+        # mask_files = f"{self.experiment_name}_*.tif"
+        mask_files = sorted(list(mask_dir.glob(mask_files)))
+
+        img_stack = np.stack([load_tiff(f) for f in img_files])
+        mask_stack = np.stack([load_tiff(m) for m in mask_files])
+
+        self.viewer.add_image(img_stack)
+        self.viewer.add_labels(mask_stack)
+
+    def load_from_stack(self):
+        # Load training data and masks from tiff stacks output by Compile & Segment widgets
+        fov = self.fov
+        peak = self.peak_cntr.peak
+
+        img_dir = self.analysis_folder / "channels"
+
         img_filename = (
-            self.image_src
+            img_dir
             / f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_{self.phase_plane}.tif"
         )
 
         with tiff.TiffFile(img_filename) as tif:
             img_stack = tif.asarray()
 
-        self.viewer.layers.clear()
         self.viewer.add_image(img_stack)
 
-        training_dir = self.analysis_folder / "training" / "masks"
-        if not training_dir.exists():
-            training_dir.mkdir(parents=True)
+        mask_dir = self.analysis_folder / "training" / "masks"
+        if not mask_dir.exists():
+            mask_dir.mkdir(parents=True)
 
         # Load all masks from given fov/peak. Add them to viewer.
         mask_filenames = f"{self.experiment_name}_xy{fov:03d}_p{peak:04d}_t*.tif"
-        filenames = list(training_dir.glob(mask_filenames))
+        filenames = list(mask_dir.glob(mask_filenames))
 
-        if not filenames and self.mask_src != "None":
+        if self.mask_src != "None":
             img_filename = (
                 self.analysis_folder
                 / "segmented"
@@ -207,18 +253,19 @@ class Annotate(MM3Container):
                 self.viewer.add_labels(mask_stack, name="Labels")
             except:
                 warning("Could not load segmentation masks")
-                mask_stack = np.zeros(np.shape(img_stack), dtype=int)
-                for timestamp, filename in zip(timestamps, filenames):
-                    with tiff.TiffFile(filename) as tif:
-                        mask_stack[timestamp, :, :] = tif.asarray()
+                mask_stack = self.make_masks(filenames, img_stack)
                 self.viewer.add_labels(mask_stack, name="Labels")
         else:
-            get_numbers = re.compile(r"t(\d+).tif", re.IGNORECASE)
-            timestamps = [
-                int(get_numbers.findall(filename.name)[0]) for filename in filenames
-            ]
-            mask_stack = np.zeros(np.shape(img_stack), dtype=int)
-            for timestamp, filename in zip(timestamps, filenames):
-                with tiff.TiffFile(filename) as tif:
-                    mask_stack[timestamp, :, :] = tif.asarray()
+            mask_stack = self.make_masks(filenames, img_stack)
             self.viewer.add_labels(mask_stack, name="Labels")
+
+    def make_masks(self,filenames,img_stack):
+        get_numbers = re.compile(r"t(\d+).tif", re.IGNORECASE)
+        timestamps = [
+            int(get_numbers.findall(filename.name)[0]) for filename in filenames
+        ]
+        mask_stack = np.zeros(np.shape(img_stack), dtype=int)
+        for timestamp, filename in zip(timestamps, filenames):
+            with tiff.TiffFile(filename) as tif:
+                mask_stack[timestamp, :, :] = tif.asarray()
+        return mask_stack
