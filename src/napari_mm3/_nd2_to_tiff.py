@@ -4,7 +4,7 @@ import napari
 import copy
 import dask.array as da
 import json
-import pims_nd2
+import nd2reader
 import tifffile as tiff
 import re
 import io
@@ -42,15 +42,15 @@ def get_nd2_fovs(exp_dir):
     nd2files = list(exp_dir.glob("*.nd2"))
 
     for nd2_file in nd2files:
-        with pims_nd2.ND2_Reader(nd2_file) as nd2f:
-            return (1, nd2f.sizes["m"])
+        with nd2reader.reader.ND2Reader(str(nd2_file)) as nd2f:
+            return (1, nd2f.sizes["v"])
 
 
 def get_nd2_times(exp_dir):
     nd2files = list(exp_dir.glob("*.nd2"))
 
     for nd2_file in nd2files:
-        with pims_nd2.ND2_Reader(nd2_file) as nd2f:
+        with nd2reader.reader.ND2Reader(str(nd2_file)) as nd2f:
             return (1, nd2f.sizes["t"])
 
 
@@ -96,15 +96,16 @@ def nd2ToTIFF(
         information("Extracting {file_prefix} ...")
 
         # load the nd2. the nd2f file object has lots of information thanks to pims
-        with pims_nd2.ND2_Reader(nd2_file) as nd2f:
+        with nd2reader.reader.ND2Reader(str(nd2_file)) as nd2f:
+            print(nd2f.metadata.keys())
             try:
-                starttime = nd2f.metadata["time_start_jdn"]  # starttime is jd
+                starttime = nd2f.metadata["date"]  # starttime is jd
                 information("Starttime got from nd2 metadata.")
             except ValueError:
                 # problem with the date
                 jdn = julian_day_number()
                 nd2f._lim_metadata_desc.dTimeStart = jdn
-                starttime = nd2f.metadata["time_start_jdn"]  # starttime is jd
+                starttime = nd2f.metadata["date"]  # starttime is jd
                 information("Starttime found from lim.")
 
             # get the color names out. Kinda roundabout way.
@@ -136,7 +137,7 @@ def nd2ToTIFF(
                 # set counter for FOV output name
                 # fov = fov_naming_start
                 out_fov_number = 0
-                for fov_id in range(0, nd2f.sizes["m"]):  # for every FOV
+                for fov_id in range(0, nd2f.sizes["v"]):  # for every FOV
                     # fov_id is the fov index according to elements, fov is the output fov ID
                     fov = fov_id + 1
 
@@ -151,7 +152,7 @@ def nd2ToTIFF(
                         out_fov_number = fov
 
                     # set the FOV we are working on in the nd2 file object
-                    nd2f.default_coords["m"] = fov_id
+                    nd2f.default_coords["v"] = fov_id
 
                     # get time picture was taken
                     seconds = copy.deepcopy(nd2f[t_id].metadata["t_ms"]) / 1000.0
