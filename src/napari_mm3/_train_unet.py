@@ -8,28 +8,29 @@ import itertools
 
 # image modules
 # import png # can pip this package to save pngs at any bitsize
-from scipy import ndimage as ndi  # use for binary_fill_holes
+from scipy import ndimage as ndi # use for binary_fill_holes
 from scipy import interpolate
 import skimage.transform as trans
-from skimage import morphology as morph  # use for remove small objects
+from skimage import morphology as morph # use for remove small objects
 from skimage.filters import gaussian
 from skimage import io
 import tifffile as tiff
 from pprint import pprint
 import elasticdeform
+import matplotlib.pyplot as plt
 
 import multiprocessing
 
 import napari
 from napari import Viewer
 from magicgui import magicgui
-from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox
+from magicgui.widgets import FileEdit, SpinBox, ComboBox
 
 # learning modules
 import tensorflow as tf
 from tensorflow import keras
 from keras import backend as K
-from keras import models
+from keras import models, losses
 from tensorflow.python.ops import array_ops, math_ops
 from keras.models import Model
 from keras.layers import (
@@ -43,32 +44,14 @@ from keras.layers import (
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 
-from magicgui.widgets import (
-    Container,
-    FileEdit,
-    CheckBox,
-    PushButton,
-    SpinBox,
-    FloatSlider,
-)
+from magicgui.widgets import Container, FileEdit, CheckBox, PushButton, SpinBox, FloatSlider
 
-from typing import (
-    cast,
-    Tuple,
-    List,
-    Dict,
-    Union,
-    Callable,
-    Iterator,
-    Generator,
-    Any,
-    Optional,
-)
+from typing import cast, Tuple, List, Dict, Union, Callable, Iterator, Generator, Any, Optional
 import numpy.typing as npt
 import random
 import copy
 
-from ._deriving_widgets import MM3Container, warning
+from ._deriving_widgets import MM3Container
 
 # Portions of this script are adapted from https://gitlab.com/dunloplab/delta under the MIT license:
 #
@@ -97,7 +80,6 @@ from ._deriving_widgets import MM3Container, warning
 # ----------------------------------------------------------------------------------------------------
 
 Image = npt.NDArray[np.float32]
-
 
 def data_augmentation(
     images_input: List[npt.NDArray[Any]],
@@ -217,7 +199,7 @@ def data_augmentation(
             for index, item in enumerate(output):
                 # Not super elegant, but tells me if binary or grayscale image
                 if orderlist[index] > 0:
-                    item = gaussian(item, sigma, truncate=1 / 5)  # blur image
+                    item = gaussian(item, sigma, truncate = 1/5) # blur image
                     # item = cv2.GaussianBlur(item, (5, 5), sigma)  # blur image
                     output[index] = item
 
@@ -329,7 +311,9 @@ def zoomshift(
     return I
 
 
-def shift(image: Image, vector: Tuple[float, float], order: int = 0) -> Image:
+def shift(
+    image: Image, vector: Tuple[float, float], order: int = 0
+) -> Image:
     """
     Image shifting function
 
@@ -424,7 +408,6 @@ def illumination_voodoo(image: Image, num_control_points: int = 5) -> Image:
 
     return newimage
 
-
 def readreshape(
     filename: str,
     target_size: Tuple[int, int] = (256, 32),
@@ -477,7 +460,6 @@ def readreshape(
     # For the mother machine, all images are resized in 256x32
     if not crop:
         img = trans.resize(i, target_size, anti_aliasing=True, order=order)
-
     else:
         fill_shape = [
             target_size[j] if i.shape[j] < target_size[j] else i.shape[j]
@@ -494,7 +476,6 @@ def readreshape(
     if np.max(img) == 255:
         img = img / 255
     return img
-
 
 def binarizerange(array: Image) -> Image:
     """
@@ -515,7 +496,6 @@ def binarizerange(array: Image) -> Image:
 
     threshold = (np.amin(array) + np.amax(array)) / 2
     return np.array(array > threshold, dtype=array.dtype)
-
 
 def seg_weights_2D(
     mask: npt.NDArray[np.uint8], classweights: Tuple[int, int] = (1, 1)
@@ -549,14 +529,14 @@ def seg_weights_2D(
 
     # Extract all pixels that include the cells and its border
     # border = cv2.morphEx(mask, cv2.MORPH_CLOSE, kernel(20))
-    border = morph.binary_closing(mask, footprint=morph.disk(20))
+    border = morph.binary_closing(mask,footprint=morph.disk(20))
 
     # Set all pixels that include the cells to zero to leave behind the border only
     border[mask > 0] = 0
 
     # Erode the segmentation to avoid putting high emphasiss on edges of cells
     # mask_erode = cv2.erode(mask, kernel(2))
-    mask_erode = morph.binary_erosion(mask, footprint=morph.disk(2))
+    mask_erode = morph.binary_erosion(mask,footprint=morph.disk(2))
 
     # Get the skeleton of the segmentation and border
     mask_skel = morph.skeletonize(mask_erode > 0)
@@ -587,24 +567,22 @@ def seg_weights_2D(
 
     return weightmap
 
-
 def save_weights(mask_source_path, weights_path):
 
-    mask_files = glob.glob(os.path.join(mask_source_path, "*.tif"))
-    mask_names = [name.split("/")[-1] for name in mask_files]
+    mask_files = glob.glob(os.path.join(mask_source_path, '*.tif'))
+    mask_names = [name.split('/')[-1] for name in mask_files]
 
     if not weights_path.exists():
         weights_path.mkdir()
 
-    for (mask_file, mask_name) in zip(mask_files, mask_names):
-
+    for (mask_file, mask_name) in zip(mask_files,mask_names):
+        
         with tiff.TiffFile(mask_file) as tif:
             mask = tif.asarray()
-
+        
         weightmap = seg_weights_2D(mask)
-
+        
         tiff.imwrite(weights_path / mask_name, weightmap)
-
 
 def predictGenerator_seg(
     files_path: str,
@@ -647,16 +625,12 @@ def predictGenerator_seg(
         target_size: Tuple[int, int],
     ) -> Iterator[np.ndarray]:
         for index, fname in enumerate(files_list):
-            try:
-                img = readreshape(
-                    os.path.join(files_path, fname),
-                    target_size=target_size,
-                    order=1,
-                    crop=crop,
-                )
-            except ValueError:
-                warning('Could not resize image')
-                continue
+            img = readreshape(
+                os.path.join(files_path, fname),
+                target_size=target_size,
+                order=1,
+                crop=crop,
+            )
             # Tensorflow needs one extra single dimension (so that it is a 4D tensor)
             img = np.reshape(img, (1,) + img.shape)
 
@@ -664,7 +638,6 @@ def predictGenerator_seg(
 
     mygen = generator(files_path, files_list, target_size)
     return mygen
-
 
 def trainGenerator_seg(
     batch_size: int,
@@ -721,10 +694,9 @@ def trainGenerator_seg(
 
     # Get training image files list:
     image_name_arr = glob.glob(str(img_path / "*.png")) + glob.glob(
-        str(img_path / "*.tif")
-    )
-
-    #load the images and compute weight maps:
+        str(img_path/ "*.tif"))
+    
+    # If preloading, load the images and compute weight maps:
     if preload:
         for filename in image_name_arr:
             preload_img.append(
@@ -826,7 +798,6 @@ def trainGenerator_seg(
 
         yield (image_arr, mask_wei_arr)
 
-
 def expanding_block(
     input_layer: tf.Tensor,
     skip_layer: tf.Tensor,
@@ -882,7 +853,6 @@ def expanding_block(
         drop = Dropout(dropout, name=name + "_Dropout")(conv3)
         return drop
 
-
 def contracting_block(
     input_layer: tf.Tensor,
     filters: int,
@@ -931,8 +901,7 @@ def contracting_block(
     else:
         drop = Dropout(dropout, name=name + "_Dropout")(conv2)
         return drop
-
-
+        
 # Generic unet declaration:
 def unet(
     input_size: Tuple[int, int, int] = (256, 32, 1),
@@ -1032,6 +1001,7 @@ def unet_seg(
     pretrained_weights: str = None,
     input_size: Tuple[int, int, int] = (256, 32, 1),
     levels: int = 5,
+    version: str = 'mm3'
 ) -> Model:
     """
     Cell segmentation U-Net definition function.
@@ -1063,17 +1033,23 @@ def unet_seg(
         levels=levels,
     )
 
+    if version == 'mm3':
+        loss = bce_dice_loss
+        metrics = [dice_loss]
+    elif version == 'Delta':
+        loss = pixelwise_weighted_binary_crossentropy_seg
+        metrics = [unstack_acc]
+
     model.compile(
         optimizer=Adam(learning_rate=1e-4),
-        loss=pixelwise_weighted_binary_crossentropy_seg,
-        metrics=[unstack_acc],
+        loss=loss,
+        metrics=metrics,
     )
 
     if pretrained_weights:
         model.load_weights(pretrained_weights)
 
     return model
-
 
 def pixelwise_weighted_binary_crossentropy_seg(
     y_true: tf.Tensor, y_pred: tf.Tensor
@@ -1126,7 +1102,7 @@ def pixelwise_weighted_binary_crossentropy_seg(
     loss = K.mean(math_ops.multiply(weight, entropy), axis=-1)
 
     loss = tf.scalar_mul(
-        10**6, tf.scalar_mul(1 / tf.math.sqrt(tf.math.reduce_sum(weight)), loss)
+        10 ** 6, tf.scalar_mul(1 / tf.math.sqrt(tf.math.reduce_sum(weight)), loss)
     )
 
     return loss
@@ -1160,57 +1136,63 @@ def unstack_acc(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
 
     return keras.metrics.binary_accuracy(seg, y_pred)
 
+def dice_coeff(y_true, y_pred):
+    smooth = 0.01 # originally 1. Make sure this is float. 
+    score_factor = 2. # originally 2. Same, keep as float. 
+    # Flatten
+    y_true_f = tf.reshape(y_true, [-1]) # flattens tensor
+    y_pred_f = tf.reshape(y_pred, [-1])
+    intersection = tf.reduce_sum(y_true_f * y_pred_f) # sums the resulting product
+    score = (score_factor * intersection + smooth) / (tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth)
+    return score
 
-def train_model(
-    image_dir,
-    mask_dir,
-    test_dir,
-    target_size_seg,
-    savefile,
-    model_source,
-    batch_size=4,
-    epochs=600,
-    steps_per_epoch=300,
-    patience=50,
-):
+def dice_loss(y_true, y_pred):
+    loss = 1 - dice_coeff(y_true, y_pred)
+    return loss
+
+def bce_dice_loss(y_true, y_pred):
+    loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
+    return loss
+
+def train_model(image_dir, mask_dir, test_dir, target_size_seg, savefile, model_source, version, batch_size=4, epochs = 600, steps_per_epoch= 300, patience=50):
     # Adapted from DeLTA
     # https://gitlab.com/dunloplab/delta
 
-    # Data generator parameters:
+    #Data generator parameters:
     data_gen_args = dict(
-        rotation=2,
-        rotations_90d=True,
-        zoom=0.15,
+        rotation = 2,
+        rotations_90d = True,
+        zoom=.15,
         horizontal_flip=True,
         vertical_flip=True,
         histogram_voodoo=True,
         illumination_voodoo=True,
-        gaussian_noise=0.03,
-        gaussian_blur=1,
-    )
+        gaussian_noise = 0.03,
+        gaussian_blur = 1
+        )
 
     # Generator init:
     myGene = trainGenerator_seg(
         batch_size,
         image_dir,
         mask_dir,
-        image_dir.parent / "weights",
-        augment_params=data_gen_args,
-        target_size=target_size_seg,
-        crop_windows=False,
-    )
+        image_dir.parent / 'weights',
+        augment_params = data_gen_args,
+        target_size = target_size_seg,
+        crop_windows = False
+        )
 
     # Define model:
-    model = unet_seg(pretrained_weights=model_source, input_size=target_size_seg + (1,))
+    model = unet_seg(pretrained_weights = model_source, input_size = target_size_seg+(1,),version=version)
     model.summary()
 
     # Callbacks:
     model_checkpoint = ModelCheckpoint(
-        savefile, monitor="loss", verbose=2, save_best_only=True
-    )
+        savefile, monitor='loss', verbose=2, save_best_only=True
+        )
     early_stopping = EarlyStopping(
-        monitor="loss", mode="min", verbose=2, patience=patience
-    )
+        monitor='loss', mode='min', verbose=2, patience=patience
+        )
 
     # Train:
     history = model.fit(
@@ -1218,52 +1200,104 @@ def train_model(
         steps_per_epoch=steps_per_epoch,
         epochs=epochs,
         callbacks=[model_checkpoint, early_stopping],
-    )
+        validation_split = 0.2
+        )
 
+    plot_training(history, version)
+    
     predict_gen = predictGenerator_seg(str(test_dir))
-
+    
     predictions = model.predict(predict_gen)
 
     napari.current_viewer().add_image(predictions)
 
+def plot_training(history, version):
+    print(history.history.keys())
+    if version == 'mm3':
+        dice = history.history['dice_loss']
+        val_dice = history.history['val_dice_loss']
 
+        loss = history.history['loss']
+        val_loss = history.history['val_loss']
+
+    elif version == 'Delta':
+        dice = history.history['dice_loss']
+        val_dice = history.history['val_dice_loss']
+
+        loss = history.history['loss']
+        val_loss = history.history['val_loss']
+
+    # epochs_range = range(epochs)
+    epochs_range = history.epoch
+
+    fig=plt.figure(figsize=(8, 4))
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs_range, dice, label='Training Dice Loss')
+    plt.plot(epochs_range, val_dice, label='Validation Dice Loss')
+    plt.legend(loc='upper right')
+    plt.title('Training and Validation Dice Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.xlim(0, None)
+    #plt.ylim(0,1)
+
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs_range, loss, label='Training Loss')
+    plt.plot(epochs_range, val_loss, label='Validation Loss')
+    plt.legend(loc='upper right')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.xlim(0, None)
+    fig.savefig('training_progress.png',dpi=300)  
+    
 class TrainUnet(MM3Container):
+
     def __init__(self, napari_viewer: Viewer):
         super().__init__(napari_viewer=napari_viewer, validate_folders=False)
 
     def create_widgets(self):
-
+        
         self.image_widget = FileEdit(
-            mode="d",
-            label="image directory",
-            value=Path(self.analysis_folder / "training/images/"),
+            mode = 'd',
+            label='image directory',
+            value=Path(self.analysis_folder / 'training/images/')
         )
 
         self.mask_widget = FileEdit(
-            mode="d",
-            label="mask directory",
-            value=Path(self.analysis_folder / "training/masks/"),
+            mode = 'd',
+            label = 'mask directory',
+            value=Path(self.analysis_folder / 'training/masks/')
         )
 
         self.weights_widget = FileEdit(
-            mode="d",
-            label="weights directory",
-            value=Path(self.analysis_folder / "training/weights"),
+            mode = 'd',
+            label= 'weights directory',
+            value = Path(self.analysis_folder / 'training/weights')
         )
 
         self.test_widget = FileEdit(
-            mode="d",
-            label="test data directory",
-            value=Path(self.analysis_folder / "training/test/"),
+            mode = 'd',
+            label='test data directory',
+            value = Path(self.analysis_folder / 'training/test/')
         )
 
-        self.model_source_widget = FileEdit(mode="r", label="source model", value=None)
+        self.model_source_widget = FileEdit(
+            mode="r",
+            label="source model",
+            value=None
+        )
 
         self.model_file_widget = FileEdit(
             mode="r",
             label="model file",
             tooltip="Location to save model to.",
-            value=Path(self.analysis_folder / "models/test.hdf5"),
+            value=Path('./models/test.hdf5')
+        )
+
+        self.version_widget = ComboBox(
+            label="Model architecture",
+            choices=["Delta", "MM3"]
         )
         self.batch_size_widget = SpinBox(
             label="batch size",
@@ -1273,40 +1307,36 @@ class TrainUnet(MM3Container):
             max=9999,
         )
 
-        self.epochs_widget = SpinBox(
-            label="epochs",
-            tooltip="Number of epochs to train for",
+        self.epochs_widget = SpinBox(label='epochs',tooltip='Number of epochs to train for',
             value=200,
             min=1,
-            max=9999,
-        )
+            max=9999)
 
-        self.steps_per_epoch_widget = SpinBox(
-            label="steps per epoch",
-            tooltip="Number of steps per epoch",
+        self.steps_per_epoch_widget = SpinBox(label='steps per epoch',tooltip='Number of steps per epoch',
             value=300,
             min=1,
-            max=9999,
-        )
+            max=9999)
 
-        self.patience_widget = SpinBox(
-            label="patience", tooltip="Patience", value=50, min=1, max=9999
-        )
+        self.patience_widget = SpinBox(label='patience',tooltip = 'Patience',
+            value = 50,
+            min=1,
+            max = 9999)
 
         self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
         self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
 
         self.run_widget = PushButton(text="Train model")
 
-        self.predict_widget = PushButton(text="Check predictions")
-        self.preview_widget = PushButton(text="Preview training data")
-
+        self.predict_widget = PushButton(text='Check predictions')
+        self.preview_widget = PushButton(text='Preview training data')
+        
         self.append(self.image_widget)
         self.append(self.mask_widget)
         self.append(self.test_widget)
         self.append(self.weights_widget)
         self.append(self.model_file_widget)
         self.append(self.model_source_widget)
+        self.append(self.version_widget)
         self.append(self.batch_size_widget)
         self.append(self.epochs_widget)
         self.append(self.steps_per_epoch_widget)
@@ -1320,7 +1350,7 @@ class TrainUnet(MM3Container):
         self.image_dir = self.image_widget.value
         self.mask_dir = self.mask_widget.value
         self.test_dir = self.test_widget.value
-        self.target_size = (self.height_widget.value, self.width_widget.value)
+        self.target_size = (self.height_widget.value,self.width_widget.value)
         self.model_path_out = self.model_file_widget.value
         self.weights_dir = self.weights_widget.value
         self.epochs = self.epochs_widget.value
@@ -1328,6 +1358,7 @@ class TrainUnet(MM3Container):
         self.patience = self.patience_widget.value
         self.batch_size = self.batch_size_widget.value
         self.model_source = self.model_source_widget.value
+        self.version = self.version_widget.value
 
         self.run_widget.clicked.connect(self.run)
         self.predict_widget.clicked.connect(self.predict)
@@ -1343,26 +1374,18 @@ class TrainUnet(MM3Container):
         self.height_widget.changed.connect(self.set_target_size)
         self.width_widget.changed.connect(self.set_target_size)
         self.model_source_widget.changed.connect(self.set_model_source)
+        self.version_widget.changed.connect(self.set_version)
 
     def run(self):
         """Overriding method. Perform mother machine analysis."""
-        if self.model_source == Path('.'):
-            self.model_source = None
-       
+        ## pass path to training data
+
+        ## add computation of the custom weights using seg_weights_2d
+
         save_weights(self.mask_dir, self.weights_dir)
 
-        train_model(
-            self.image_dir,
-            self.mask_dir,
-            self.test_dir,
-            self.target_size,
-            self.model_path_out,
-            self.model_source,
-            batch_size=self.batch_size,
-            epochs=self.epochs,
-            steps_per_epoch=self.steps_per_epoch,
-            patience=self.patience,
-        )
+        train_model(self.image_dir, self.mask_dir, self.test_dir, self.target_size, self.model_path_out, self.model_source, self.version, batch_size = self.batch_size, epochs = self.epochs,
+            steps_per_epoch = self.steps_per_epoch, patience = self.patience)
 
     def predict(self):
 
@@ -1371,66 +1394,43 @@ class TrainUnet(MM3Container):
         model = models.load_model(
             self.model_path_out,
             custom_objects={
-                "unstack_acc": unstack_acc,
-                "pixelwise_weighted_binary_crossentropy_seg": pixelwise_weighted_binary_crossentropy_seg,
-            },
-        )
+                "unstack_acc":unstack_acc,
+                "pixelwise_weighted_binary_crossentropy_seg":pixelwise_weighted_binary_crossentropy_seg,
+            })
 
-        predict_gen, predict_gen_v = itertools.tee(
-            predictGenerator_seg(str(self.test_dir),crop=False)
-        )
+        predict_gen, predict_gen_v = itertools.tee(predictGenerator_seg(str(self.test_dir)))
 
         predictions = model.predict(predict_gen)
 
         self.viewer.add_image(np.squeeze(np.array(list(predict_gen_v))))
-        self.viewer.add_image(np.squeeze(predictions), opacity=0.2, colormap="yellow")
+        self.viewer.add_image(np.squeeze(predictions),opacity=0.2, colormap='yellow')
 
     def render_preview(self):
         self.viewer.layers.clear()
-
+        
         img_path = self.image_widget.value
 
         preload_mask = []
         preload_img = []
         preload_weight = []
 
+        crop_windows = None
+
         # Get training image files list:
         image_name_arr = glob.glob(str(img_path / "*.png")) + glob.glob(
-            str(img_path / "*.tif")
-        )
+            str(img_path/ "*.tif"))
 
-        # load pre-computed weights if they exist
-        try:
-            for filename in image_name_arr:
-                preload_weight.append(
-                readreshape(
-                    os.path.join(self.weights_dir, os.path.basename(filename)),
-                    target_size=self.target_size,
-                    order=0,
-                    rangescale=False,
-                    crop=False,
-                ),
-                )
-        # if not, compute new weights
-        except ValueError:
-            preload_weight = []
-            save_weights(self.mask_dir, self.weights_dir)
-            for filename in image_name_arr:
-                preload_weight.append(
-                readreshape(
-                    os.path.join(self.weights_dir, os.path.basename(filename)),
-                    target_size=self.target_size,
-                    order=0,
-                    rangescale=False,
-                    crop=False,
-                ),
-                )
+        print(image_name_arr)
+        for i,name in enumerate(image_name_arr):
+            print(str(i)+' '+name)
 
-        #load the images and weight maps:
+        save_weights(self.mask_dir, self.weights_dir)
+
+        # If preloading, load the images and compute weight maps:
         for filename in image_name_arr:
             preload_img.append(
                 readreshape(
-                    filename, target_size=self.target_size, order=1, crop=False
+                    filename, target_size=self.target_size, order=1, crop=crop_windows
                 )
             )
             preload_mask.append(
@@ -1440,12 +1440,21 @@ class TrainUnet(MM3Container):
                     binarize=True,
                     order=0,
                     rangescale=False,
-                    crop=False,
+                    crop=crop_windows,
                 )
+            )
+            preload_weight.append(
+                readreshape(
+                    os.path.join(self.weights_dir, os.path.basename(filename)),
+                    target_size=self.target_size,
+                    order=0,
+                    rangescale=False,
+                    crop=crop_windows,
+                ),
             )
         self.viewer.add_image(np.stack(preload_img))
         self.viewer.add_labels(np.stack(preload_mask))
-        self.viewer.add_image(np.stack(preload_weight), name="Weights")
+        self.viewer.add_image(np.stack(preload_weight),name='Weights')
         return
 
     def set_model_source(self):
@@ -1477,3 +1486,6 @@ class TrainUnet(MM3Container):
 
     def set_target_size(self):
         self.target_size = (self.height_widget.value, self.width_widget.value)
+
+    def set_version(self):
+        self.version = self.version_widget.value
