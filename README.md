@@ -68,7 +68,9 @@ ___With Otsu:___
 
 ___With UNet:___
 
-* Annotate -- annotate images for ML (U-Net or similar) training purposes; you can generate a model via TODO.
+* [Annotate] -- annotate images for ML (U-Net or similar) training purposes.
+
+* [Train U-Net] -- Train a model for cell segmentation.
 
 * [SegmentUnet](https://github.com/junlabucsd/napari-mm3/blob/main/docs/segmentunet-widget.md) -- Run U-Net segmentation (you will need to supply your own model)
 
@@ -84,7 +86,7 @@ ___With UNet:___
 
 * [Colors](https://github.com/junlabucsd/napari-mm3/blob/main/docs/colors-widget.md) -- Calculate fluorescence information.
 
-### e. (Uncommon) Foci tracking
+### e. Focus tracking
 
 * [Foci](https://github.com/junlabucsd/napari-mm3/blob/main/docs/foci-widget.md) -- We use this to track `foci' (bright fluorescent spots) inside of cells.
 
