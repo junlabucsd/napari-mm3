@@ -52,9 +52,7 @@ def bce_dice_loss(y_true, y_pred):
     loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
 
 
-def pixelwise_weighted_binary_crossentropy_seg(
-    y_true: tf.Tensor, y_pred: tf.Tensor
-) -> tf.Tensor:
+def pixelwise_weighted_bce(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     """
     Pixel-wise weighted binary cross-entropy loss.
     The code is adapted from the Keras TF backend.
@@ -254,6 +252,7 @@ def binarize_and_label(predictions, cellClassThreshold, min_object_size):
     predictions = predictions.astype("uint8")
 
     segmented_imgs = np.zeros(predictions.shape, dtype="uint8")
+
     # process and label each frame of the channel
     for frame in range(segmented_imgs.shape[0]):
         # get rid of small holes
@@ -267,10 +266,15 @@ def binarize_and_label(predictions, cellClassThreshold, min_object_size):
         )
         # remove labels which touch the boarder
         predictions[frame, :, :] = segmentation.clear_border(predictions[frame, :, :])
+
+        # # this will separate cells linked by a few pixels only
+        # predictions[frame, :, :] = morphology.binary_opening(predictions[frame, :, :],footprint=morphology.disk(1))
+
         # relabel now
         segmented_imgs[frame, :, :] = morphology.label(
             predictions[frame, :, :], connectivity=1
         )
+
     return segmented_imgs
 
 
@@ -529,7 +533,7 @@ class SegmentUnet(MM3Container):
         self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
         self.interactive_widget = CheckBox(label="interactive", value=False)
         self.model_source_widget = ComboBox(
-            label="Model source", choices=["Delta", "MM3"]
+            label="Model source", choices=["DeLTA", "MM3"]
         )
 
         self.append(self.fov_widget)
@@ -589,11 +593,12 @@ class SegmentUnet(MM3Container):
 
         self.model_source = self.model_source_widget.value
 
-        if self.model_source == "Delta":
+        if self.model_source == "DeLTA":
             custom_objects = {
-                "unstack_acc": unstack_acc,
-                "pixelwise_weighted_binary_crossentropy_seg": pixelwise_weighted_binary_crossentropy_seg,
+                "binary_acc": unstack_acc,
+                "pixelwise_weighted_bce": pixelwise_weighted_bce,
             }
+
         elif self.model_source == "MM3":
             custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
 
