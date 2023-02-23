@@ -6,7 +6,13 @@ import yaml
 import re
 import napari
 
-from ._deriving_widgets import MM3Container, FOVChooserSingle, PlanePicker, warning, load_tiff
+from ._deriving_widgets import (
+    MM3Container,
+    FOVChooserSingle,
+    PlanePicker,
+    warning,
+    load_tiff,
+)
 
 
 def load_specs(analysis_folder):
@@ -50,14 +56,11 @@ class Annotate(MM3Container):
         self.load_recent_widget.hide()
         self.run_widget.hide()
 
-        self.data_source_widget = ComboBox(label='Data source',choices = ["Stack", "Manual annotation"])
+        self.data_source_widget = ComboBox(
+            label="Data source", choices=["Stack", "Manual annotation"]
+        )
 
         self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
-        # self.image_source_widget = FileEdit(
-        #     label="Image source",
-        #     mode="d",
-        #     value=Path(self.analysis_folder / "channels"),
-        # )
 
         self.mask_source_widget = ComboBox(
             label="Mask source", choices=["None", "Otsu", "unet"]
@@ -79,26 +82,22 @@ class Annotate(MM3Container):
         self.fov = self.fov_widget.value
         self.peak_cntr = PeakCounter(load_specs(self.analysis_folder), self.fov)
 
-
         self.data_source_widget.changed.connect(self.set_data_source)
         self.plane_picker_widget.changed.connect(self.set_phase_plane)
         self.fov_widget.connect(self.change_fov)
         self.next_peak_widget.clicked.connect(self.next_peak)
         self.prior_peak_widget.clicked.connect(self.prior_peak)
         self.save_out_widget.changed.connect(self.save_out)
-        # self.image_source_widget.changed.connect(self.set_image_source)
         self.mask_source_widget.changed.connect(self.set_mask_source)
 
         self.append(self.data_source_widget)
         self.append(self.plane_picker_widget)
-        # self.append(self.image_source_widget)
         self.append(self.mask_source_widget)
         self.append(self.fov_widget)
         self.append(self.next_peak_widget)
         self.append(self.prior_peak_widget)
         self.append(self.save_out_widget)
 
-        # self.image_src = self.image_source_widget.value
         self.mask_src = self.mask_source_widget.value
         self.phase_plane = self.plane_picker_widget.value
         self.set_data_source()
@@ -259,7 +258,7 @@ class Annotate(MM3Container):
             mask_stack = self.make_masks(filenames, img_stack)
             self.viewer.add_labels(mask_stack, name="Labels")
 
-    def make_masks(self,filenames,img_stack):
+    def make_masks(self, filenames, img_stack):
         get_numbers = re.compile(r"t(\d+).tif", re.IGNORECASE)
         timestamps = [
             int(get_numbers.findall(filename.name)[0]) for filename in filenames
