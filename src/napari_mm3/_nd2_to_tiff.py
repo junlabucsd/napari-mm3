@@ -18,26 +18,6 @@ from napari.utils import progress
 from magicgui.widgets import Container, FileEdit, CheckBox, PushButton, FloatSpinBox
 from ._deriving_widgets import FOVChooser, TimeRangeSelector, information
 
-
-def julian_day_number():
-    """
-    Need this to solve a bug in pims_nd2.nd2reader.ND2_Reader instance initialization.
-    The bug is in /usr/local/lib/python2.7/site-packages/pims_nd2/ND2SDK.py in function `jdn_to_datetime_local`, when the year number in the metadata (self._lim_metadata_desc) is not in the correct range. This causes a problem when calling self.metadata.
-    https://en.wikipedia.org/wiki/Julian_day
-    """
-    dt = datetime.datetime.now()
-    tt = dt.timetuple()
-    jdn = (
-        (1461.0 * (tt.tm_year + 4800.0 + (tt.tm_mon - 14.0) / 12)) / 4.0
-        + (367.0 * (tt.tm_mon - 2.0 - 12.0 * ((tt.tm_mon - 14.0) / 12))) / 12.0
-        - (3.0 * ((tt.tm_year + 4900.0 + (tt.tm_mon - 14.0) / 12.0) / 100.0)) / 4.0
-        + tt.tm_mday
-        - 32075
-    )
-
-    return jdn
-
-
 def get_nd2_fovs(exp_dir):
     nd2files = list(exp_dir.glob("*.nd2"))
 
@@ -97,16 +77,8 @@ def nd2ToTIFF(
 
         # load the nd2. the nd2f file object has lots of information thanks to pims
         with nd2reader.reader.ND2Reader(str(nd2_file)) as nd2f:
-            print(nd2f.metadata.keys())
-            try:
-                starttime = nd2f.metadata["date"]  # starttime is jd
-                information("Starttime got from nd2 metadata.")
-            except ValueError:
-                # problem with the date
-                jdn = julian_day_number()
-                nd2f._lim_metadata_desc.dTimeStart = jdn
-                starttime = nd2f.metadata["date"]  # starttime is jd
-                information("Starttime found from lim.")
+            starttime = nd2f.metadata["date"]  # starttime is jd
+            information("Starttime got from nd2 metadata.")
 
             # get the color names out. Kinda roundabout way.
             planes = [
@@ -115,7 +87,10 @@ def nd2ToTIFF(
                 if md[0:6] == "plane_" and not md == "plane_count"
             ]
 
-            # this insures all colors will be saved when saving tiff
+            # planes = [c for c in nd2f.metadata['channels']]
+            planes = list(nd2f.metadata['channels'])
+
+            # this ensures all colors will be saved when saving tiff
             if len(planes) > 1:
                 nd2f.bundle_axes = ["c", "y", "x"]
 
@@ -130,17 +105,17 @@ def nd2ToTIFF(
                 image_end = min(len(nd2f), image_end)
             extraction_range = range(image_start, image_end + 1)
 
-            # loop through time points
+            nd2f.iter_axes = 'v'
+
             for t in progress(extraction_range):
                 # timepoint output name (1 indexed rather than 0 indexed)
                 t_id = t - 1
                 # set counter for FOV output name
-                # fov = fov_naming_start
                 out_fov_number = 0
-                for fov_id in range(0, nd2f.sizes["v"]):  # for every FOV
+                for fov_id, image_data in enumerate(nd2f):
                     # fov_id is the fov index according to elements, fov is the output fov ID
                     fov = fov_id + 1
-
+                    
                     # skip FOVs as specified above
                     if len(fov_list) > 0 and not (fov in fov_list):
                         continue
@@ -151,33 +126,20 @@ def nd2ToTIFF(
                     else:
                         out_fov_number = fov
 
-                    # set the FOV we are working on in the nd2 file object
-                    nd2f.default_coords["v"] = fov_id
-
-                    # get time picture was taken
-                    seconds = copy.deepcopy(nd2f[t_id].metadata["t_ms"]) / 1000.0
+                    seconds = copy.deepcopy(image_data.metadata['events'][t_id]["time"]) / 1000.0
                     minutes = seconds / 60.0
                     hours = minutes / 60.0
                     days = hours / 24.0
-                    acq_time = starttime + days
-
-                    # get physical location FOV on stage
-                    x_um = nd2f[t_id].metadata["x_um"]
-                    y_um = nd2f[t_id].metadata["y_um"]
+                    acq_time = starttime.timestamp() + days
 
                     # make dictionary which will be the metdata for this TIFF
                     metadata_t = {
                         "fov": fov,
                         "t": t,
                         "jd": acq_time,
-                        "x": x_um,
-                        "y": y_um,
                         "planes": planes,
                     }
                     metadata_json = json.dumps(metadata_t)
-
-                    # get the pixel information
-                    image_data = nd2f[t_id]
 
                     # crop tiff if specified. Lots of flags for if there are double rows or  multiple colors
                     if vertical_crop or tworow_crop:
@@ -257,9 +219,6 @@ def nd2ToTIFF(
                             compress=tif_compress,
                             photometric="minisblack",
                         )
-
-                    # increase FOV counter
-                    fov += 1
 
 
 class Nd2ToTIFF(Container):
