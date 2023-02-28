@@ -609,7 +609,7 @@ def plot_lineage_images(
             # make a new version of the segmented image where the
             # regions are relabeled by their y centroid position.
             # scale it so it falls within 100.
-            seg_relabeled = image_data_seg[i].copy().astype(np.float)
+            seg_relabeled = image_data_seg[i].copy().astype(float)
             for region in regions_by_time[i]:
                 rescaled_color_index = (
                     region.centroid[0] / image_data_seg.shape[1] * vmax

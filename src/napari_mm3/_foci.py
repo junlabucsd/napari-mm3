@@ -268,7 +268,7 @@ def foci_lap(img, img_foci, cell, t, params, preview=False):
     peak_med_ratio = params["foci_log_peak_med_ratio"]
 
     # calculate median cell intensity. Used to filter foci
-    img_foci_masked = np.copy(img_foci).astype(np.float)
+    img_foci_masked = np.copy(img_foci).astype(float)
     # correction for difference between segmentation image mask and fluorescence channel by padding on the rightmost column(s)
     if np.shape(img) != np.shape(img_foci_masked):
         delta_col = np.shape(img)[1] - np.shape(img_foci_masked)[1]
