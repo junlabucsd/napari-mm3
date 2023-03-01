@@ -310,7 +310,6 @@ class SegmentOtsu(MM3Container):
         self.set_second_opening_size()
         self.set_min_object_size()
 
-        self.redraw_image = True
         try:
             self.render_preview()
         except FileNotFoundError:
@@ -388,14 +387,10 @@ class SegmentOtsu(MM3Container):
         segmented_imgs = np.stack(segmented_imgs, axis=0)
         segmented_imgs = segmented_imgs.astype("uint8")
 
-        if self.redraw_image:
-            images = self.viewer.add_image(sub_stack)
-            images.gamma = 1
-            labels = self.viewer.add_labels(segmented_imgs, name="Labels")
-            labels.opacity = 0.5
-            self.no_redraw = False
-
-        self.viewer.layers[1].data = segmented_imgs
+        images = self.viewer.add_image(sub_stack)
+        images.gamma = 1
+        labels = self.viewer.add_labels(segmented_imgs, name="Labels")
+        labels.opacity = 0.5
 
     def run(self):
         self.set_params()
