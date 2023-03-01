@@ -11,7 +11,7 @@ import multiprocessing
 import numpy as np
 import napari
 from magicgui import magicgui
-from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox, ComboBox
+from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox, ComboBox, PushButton
 from napari.types import ImageData, LabelsData
 import os
 
@@ -28,6 +28,7 @@ from ._deriving_widgets import (
     load_specs,
     information,
     load_stack_params,
+    warning
 )
 
 # loss functions for model
@@ -107,7 +108,7 @@ def pixelwise_weighted_bce(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     return loss
 
 
-def unstack_acc(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+def binary_acc(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     """
     Unstacks the mask from the weights in the output tensor for
     segmentation and computes binary accuracy
@@ -209,37 +210,12 @@ def save_out(params, segmented_imgs, fov_id, peak_id):
 
     return
 
-
-def save_predictions(predictions, params, fov_id, peak_id):
-    pred_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-        fov_id,
-        peak_id,
-        params["pred_img"],
-    )
-    if not os.path.isdir(params["pred_dir"]):
-        os.makedirs(params["pred_dir"])
-    int_preds = (predictions * 255).astype("uint8")
-    tiff.imwrite(
-        params["pred_dir"] / pred_filename,
-        int_preds,
-        compression=("zlib", 4),
-    )
-
-
 def normalize_to_one(img_stack):
-    med_stack = np.zeros(img_stack.shape)
-    selem = morphology.disk(1)
+    # # robust normalization of peak's image stack to 1
 
-    for frame_idx in range(img_stack.shape[0]):
-        tmpImg = img_stack[frame_idx, ...]
-        med_stack[frame_idx, ...] = median(tmpImg, selem)
+    # permute to take advantage of numpy slicing
+    img_stack = np.transpose((np.transpose(img_stack)-np.min(img_stack,axis=(1,2)))/np.ptp(img_stack,axis=(1,2)))
 
-    # robust normalization of peak's image stack to 1
-    # max_val = np.max(med_stack)
-    img_avg = np.mean(img_stack, axis=(1, 2))
-    img_std = np.std(img_stack, axis=(1, 2))
-    # permute axes to make use of numpy slicing then permute back
-    img_stack = np.transpose((np.transpose(img_stack) - img_avg) / img_std)
     return img_stack
 
 
@@ -266,9 +242,6 @@ def binarize_and_label(predictions, cellClassThreshold, min_object_size):
         )
         # remove labels which touch the boarder
         predictions[frame, :, :] = segmentation.clear_border(predictions[frame, :, :])
-
-        # # this will separate cells linked by a few pixels only
-        # predictions[frame, :, :] = morphology.binary_opening(predictions[frame, :, :],footprint=morphology.disk(1))
 
         # relabel now
         segmented_imgs[frame, :, :] = morphology.label(
@@ -360,22 +333,34 @@ def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
 
     return
 
-
 def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params):
-    @magicgui(auto_call=True, threshold={"widget_type": "FloatSlider", "max": 1})
-    def DebugUnet(image_input: ImageData, threshold=0.6) -> LabelsData:
-        image_out = np.copy(image_input)
-        image_out[image_out >= threshold] = 1
-        image_out[image_out < threshold] = 0
-        image_out = image_out.astype(bool)
-
-        return image_out
-
-    # parameters
-    batch_size = params["segment"]["batch_size"]
+    #params
     cellClassThreshold = params["segment"]["cell_class_threshold"]
     min_object_size = params["segment"]["min_object_size"]
 
+    for peak_id in ana_peak_ids:
+        information("Segmenting peak {}.".format(peak_id))
+        img_stack = load_stack_params(
+            params, fov_id, peak_id, postfix=params["phase_plane"]
+        )
+
+        # do the segmentation
+        predictions = segment_peak_unet(img_stack, unet_shape, pad_dict, model, params)
+
+        # binarized and label
+        segmented_imgs = binarize_and_label(
+            predictions,
+            cellClassThreshold=cellClassThreshold,
+            min_object_size=min_object_size,
+        )
+
+        #should be 8bit
+        segmented_imgs = segmented_imgs.astype("uint8")
+
+        # save the segmented images
+        save_out(params, segmented_imgs, fov_id, peak_id)
+
+def segment_peak_unet(img_stack, unet_shape, pad_dict, model, params):
     # arguments to predict
     predict_args = dict(
         use_multiprocessing=True, workers=params["num_analyzers"], verbose=1
@@ -385,58 +370,24 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
     # predict_args = dict(use_multiprocessing=False,
     #                     verbose=1)
 
-    for peak_id in ana_peak_ids:
-        information("Segmenting peak {}.".format(peak_id))
-        img_stack = load_stack_params(
-            params, fov_id, peak_id, postfix=params["phase_plane"]
-        )
-        if params["segment"]["normalize_to_one"]:
-            img_stack = normalize_to_one(img_stack)
-        img_stack = trim_and_pad(img_stack, unet_shape, pad_dict)
-        img_stack = np.expand_dims(img_stack, -1)  # TF expects images to be 4D
-        # set up image generator
-        image_datagen = ImageDataGenerator()
-        image_generator = image_datagen.flow(
-            x=img_stack, batch_size=batch_size, shuffle=False
-        )  # keep same order
+    batch_size = params["segment"]["batch_size"]
 
-        # predict cell locations. This has multiprocessing built in but I need to mess with the parameters to see how to best utilize it. ***
-        predictions = model.predict_generator(image_generator, **predict_args)
-        predictions = pad_back(predictions, unet_shape, pad_dict)
-        img_stack_out = pad_back(img_stack, unet_shape, pad_dict)
+    if params["segment"]["normalize_to_one"]:
+        img_stack = normalize_to_one(img_stack)
 
-        if params["segment"]["save_predictions"]:
-            save_predictions(predictions, params, fov_id, peak_id)
+    img_stack = trim_and_pad(img_stack, unet_shape, pad_dict)
+    img_stack = np.expand_dims(img_stack, -1)  # TF expects images to be 4D
+    # set up image generator
+    image_datagen = ImageDataGenerator()
+    image_generator = image_datagen.flow(
+        x=img_stack, batch_size=batch_size, shuffle=False
+    )  # keep same order
 
-        if params["interactive"]:
-            viewer = napari.current_viewer()
-            viewer.layers.clear()
-            viewer.add_image(predictions, name="Predictions")
-            viewer.window.add_dock_widget(DebugUnet)
-            viewer.add_image(img_stack_out)
-            try:
-                viewer.layers.move(2, 1)
-            except:
-                pass
-            break
+    # predict cell locations. This has multiprocessing built in but I need to mess with the parameters to see how to best utilize it. ***
+    predictions = model.predict_generator(image_generator, **predict_args)
+    predictions = pad_back(predictions, unet_shape, pad_dict)
 
-        # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
-        if cellClassThreshold:
-            segmented_imgs = binarize_and_label(
-                predictions,
-                cellClassThreshold=cellClassThreshold,
-                min_object_size=min_object_size,
-            )
-
-        else:  # in this case you just want to scale the 0 to 1 float image to 0 to 255
-            information("Converting predictions to grayscale.")
-            segmented_imgs = np.around(predictions * 100)
-
-        # both binary and grayscale should be 8bit. This may be ensured above and is unneccesary
-        segmented_imgs = segmented_imgs.astype("uint8")
-
-        # save the segmented images
-        save_out(params, segmented_imgs, fov_id, peak_id)
+    return predictions
 
 
 def segmentUNet(params, custom_objects):
@@ -448,7 +399,7 @@ def segmentUNet(params, custom_objects):
 
     information("Using {} threads for multiprocessing.".format(p["num_analyzers"]))
 
-    # create segmenteation and cell data folder if they don't exist
+    # create segmentation and cell data folder if they don't exist
     if not os.path.exists(p["seg_dir"]):
         os.makedirs(p["seg_dir"])
     if not os.path.exists(p["cell_dir"]):
@@ -488,8 +439,6 @@ def segmentUNet(params, custom_objects):
 
     for fov_id in fov_id_list:
         segment_fov_unet(fov_id, specs, seg_model, params, color=p["phase_plane"])
-        if params["interactive"]:
-            break
 
     del seg_model
     information("Finished segmentation.")
@@ -531,10 +480,10 @@ class SegmentUnet(MM3Container):
         self.normalize_widget = CheckBox(label="normalize to one", value=True)
         self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
         self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
-        self.interactive_widget = CheckBox(label="interactive", value=False)
         self.model_source_widget = ComboBox(
-            label="Model source", choices=["DeLTA", "MM3"]
+            label="Model source", choices=["MM3", "DeLTA"]
         )
+        self.preview_widget = PushButton(label="generate preview", value=False)
 
         self.append(self.fov_widget)
         self.append(self.plane_widget)
@@ -545,64 +494,123 @@ class SegmentUnet(MM3Container):
         self.append(self.normalize_widget)
         self.append(self.height_widget)
         self.append(self.width_widget)
-        self.append(self.interactive_widget)
         self.append(self.model_source_widget)
+        self.append(self.preview_widget)
 
         self.fov_widget.connect_callback(self.set_fovs)
+        self.preview_widget.clicked.connect(self.render_preview)
 
         self.set_fovs(self.valid_fovs)
 
-    def run(self):
-        """Overriding method. Perform mother machine analysis."""
-        params = dict()
-        params["experiment_name"] = self.experiment_name
-        params["image_directory"] = self.TIFF_folder
-        params["FOV"] = self.fovs
-        params["output"] = "TIFF"
-        params["interactive"] = self.interactive_widget.value
-        params["phase_plane"] = self.plane_widget.value
-        params["subtract"] = dict()
-        params["segment"] = dict()
-        params["segment"]["model_file"] = self.model_file_widget.value
-        params["segment"]["trained_model_image_height"] = self.height_widget.value
-        params["segment"]["trained_model_image_width"] = self.width_widget.value
-        params["segment"]["batch_size"] = self.batch_size_widget.value
-        params["segment"][
-            "cell_class_threshold"
-        ] = self.cell_class_threshold_widget.value
-        params["segment"]["save_predictions"] = False
-        params["segment"]["min_object_size"] = self.min_object_size_widget.value
-        params["segment"]["normalize_to_one"] = self.normalize_widget.value
-        params["num_analyzers"] = multiprocessing.cpu_count()
+    def set_params(self):
+        self.params = dict()
+        self.params["experiment_name"] = self.experiment_name
+        self.params["image_directory"] = self.TIFF_folder
+        self.params["FOV"] = self.fovs
+        self.params["output"] = "TIFF"
+        self.params["phase_plane"] = self.plane_widget.value
+        self.params["subtract"] = dict()
+        self.params["segment"] = dict()
+        self.params["segment"]["model_file"] = self.model_file_widget.value
+        self.params["segment"]["trained_model_image_height"] = self.height_widget.value
+        self.params["segment"]["trained_model_image_width"] = self.width_widget.value
+        self.params["segment"]["batch_size"] = self.batch_size_widget.value
+        self.params["segment"][
+                "cell_class_threshold"
+            ] = self.cell_class_threshold_widget.value
+        self.params["segment"]["min_object_size"] = self.min_object_size_widget.value
+        self.params["segment"]["normalize_to_one"] = self.normalize_widget.value
+        self.params["num_analyzers"] = multiprocessing.cpu_count()
 
         # useful folder shorthands for opening files
-        params["TIFF_dir"] = self.TIFF_folder
-        params["ana_dir"] = self.analysis_folder
+        self.params["TIFF_dir"] = self.TIFF_folder
+        self.params["ana_dir"] = self.analysis_folder
 
-        params["hdf5_dir"] = params["ana_dir"] / "hdf5"
-        params["chnl_dir"] = params["ana_dir"] / "channels"
-        params["empty_dir"] = params["ana_dir"] / "empties"
-        params["sub_dir"] = params["ana_dir"] / "subtracted"
-        params["seg_dir"] = params["ana_dir"] / "segmented"
-        params["pred_dir"] = params["ana_dir"] / "predictions"
-        params["foci_seg_dir"] = params["ana_dir"] / "segmented_foci"
-        params["foci_pred_dir"] = params["ana_dir"] / "predictions_foci"
-        params["cell_dir"] = params["ana_dir"] / "cell_data"
-        params["track_dir"] = params["ana_dir"] / "tracking"
-        params["foci_track_dir"] = params["ana_dir"] / "tracking_foci"
+        self.params["hdf5_dir"] = self.params["ana_dir"] / "hdf5"
+        self.params["chnl_dir"] = self.params["ana_dir"] / "channels"
+        self.params["empty_dir"] = self.params["ana_dir"] / "empties"
+        self.params["sub_dir"] = self.params["ana_dir"] / "subtracted"
+        self.params["seg_dir"] = self.params["ana_dir"] / "segmented"
+        self.params["pred_dir"] = self.params["ana_dir"] / "predictions"
+        self.params["cell_dir"] = self.params["ana_dir"] / "cell_data"
+        self.params["track_dir"] = self.params["ana_dir"] / "tracking"
 
+
+    def run(self):
+        """Overriding method. Perform mother machine analysis."""
+        self.set_params()
         self.model_source = self.model_source_widget.value
 
         if self.model_source == "DeLTA":
             custom_objects = {
-                "binary_acc": unstack_acc,
+                "binary_acc": binary_acc,
                 "pixelwise_weighted_bce": pixelwise_weighted_bce,
             }
 
         elif self.model_source == "MM3":
             custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
 
-        segmentUNet(params, custom_objects)
+        segmentUNet(self.params, custom_objects)
 
     def set_fovs(self, fovs):
         self.fovs = fovs
+
+    def render_preview(self):
+        self.viewer.layers.clear()
+        self.set_params()
+
+        self.model_source = self.model_source_widget.value
+
+        if self.model_source == "DeLTA":
+            custom_objects = {
+                "binary_acc": binary_acc,
+                "pixelwise_weighted_bce": pixelwise_weighted_bce,
+            }
+
+        elif self.model_source == "MM3":
+            custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
+
+        # TODO: Add ability to change these to other FOVs
+        valid_fov = self.valid_fovs[0]
+        specs = load_specs(self.params["ana_dir"])
+        # Find first cell-containing peak
+        valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
+        ## pull out first fov & peak id with cells
+        # load segmentation parameters
+        unet_shape = (
+            self.params["segment"]["trained_model_image_height"],
+            self.params["segment"]["trained_model_image_width"],
+        )
+
+        img_stack = load_stack_params(self.params, valid_fov, valid_peak, postfix=self.params['phase_plane'])
+        img_height = img_stack.shape[1]
+        img_width = img_stack.shape[2]
+
+        pad_dict = get_pad_distances(unet_shape, img_height, img_width)
+
+        model_file_path = self.params["segment"]["model_file"]
+
+        # *** Need parameter for weights
+        seg_model = models.load_model(
+            model_file_path,
+            custom_objects=custom_objects,
+        )
+
+        predictions = segment_peak_unet(img_stack, unet_shape, pad_dict, seg_model, self.params)
+
+        del seg_model
+
+        min_object_size = self.params["segment"]["min_object_size"]
+        cellClassThreshold = self.params["segment"]["cell_class_threshold"]
+
+        #binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
+        segmented_imgs = binarize_and_label(
+            predictions,
+            cellClassThreshold,
+            min_object_size,
+        )
+        # segmented_imgs = predictions.astype("uint8")
+        images = self.viewer.add_image(img_stack)
+        images.gamma = 1
+        labels = self.viewer.add_labels(segmented_imgs, name="Labels")
+        labels.opacity = 0.5
