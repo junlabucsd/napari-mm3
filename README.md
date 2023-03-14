@@ -52,7 +52,7 @@ the coverage at least stays the same before you submit a pull request.
 
 ### a. Preprocessing
 
-* [nd2ToTIFF](https://github.com/junlabucsd/napari-mm3/blob/main/docs/nd2totiff-widget.md) -- Turn your nd2 microscopy data into TIFFs. If your data is not in the nd2 format, follow the [input image guidelines](/docs/input-images-guidelines.md). Make sure to set 'image source' in Compile to 'Other'.
+* [nd2ToTIFF](https://github.com/junlabucsd/napari-mm3/blob/main/docs/nd2totiff-widget.md) -- Turn your nd2 microscopy data into TIFFs. If your data is not in the nd2 format, follow the [input image guidelines](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Input-images-guidelines.md). Make sure to set 'image source' in Compile to 'Other'.
 
 * [Compile](https://github.com/junlabucsd/napari-mm3/blob/main/docs/compile-widget.md) -- Locate traps, separate their timelapses into their own TIFFs, and return metadata.
 
