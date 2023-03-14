@@ -94,7 +94,7 @@ ___With UNet:___
 ### f. Outputs, inputs, and file structure
 Finally, to better understand the data formats, you may wish to refer to the following documents:
 
-* [Input image guidelines](https://github.com/junlabucsd/napari-mm3/blob/main/docs/input-images-guidelines.md)
+* [Input image guidelines](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Input-images-guidelines.md)
 
 * [File structure](https://github.com/junlabucsd/napari-mm3/blob/main/docs/file-structure.md)
 
