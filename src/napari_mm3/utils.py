@@ -3,19 +3,13 @@ from functools import wraps
 import numpy as np
 import pandas as pd
 import six
-
+import json
 from scipy import ndimage as ndi
 from skimage import filters, morphology
 from skimage.filters import median
 from pathlib import Path
-
 import warnings
 import tifffile as tiff
-
-import seaborn as sns
-
-sns.set(style="ticks", color_codes=True)
-sns.set_palette("deep")
 
 TIFF_FILE_FORMAT_PEAK = "%s_xy%03d_p%04d_%s.tif"
 TIFF_FILE_FORMAT_NO_PEAK = "%s_xy%03d_%s.tif"
@@ -28,7 +22,30 @@ def load_tiff_stack_simple(dir: Path, prefix, fov, postfix, peak=None):
 
     with tiff.TiffFile(dir / filename) as tif:
         return tif.asarray()
+    
+### functions and classes for reading / writing .json files
 
+# numpy dtypes are not json serializable - need to convert
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
+
+def write_cells_to_json(Cells, path_out):
+    json_out = {}
+    for cell_id, cell in Cells.items():
+        json_out[cell_id] = vars(cell)
+        try:
+            json_out[cell_id].pop('time_table')
+        except:
+            pass
+    with open(path_out, 'w') as fout:
+        json.dump(json_out, fout, sort_keys=True, indent=2, cls=NpEncoder)
 
 ### Cell class and related functions
 

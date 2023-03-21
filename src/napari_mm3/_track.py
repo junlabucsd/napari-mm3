@@ -30,8 +30,9 @@ from .utils import (
     find_complete_cells,
     find_cells_of_birth_label,
     find_cells_of_fov_and_peak,
-)
+    write_cells_to_json
 
+)
 
 # load the time table
 def load_time_table(ana_dir):
@@ -867,15 +868,21 @@ def Track_Cells(params):
     # this returns only cells with a parent and daughters
     Complete_Cells = find_complete_cells(Cells)
 
-    ### save the cell data. Use the script mm3_OutputData for additional outputs.
+    ### save the cell data
     # All cell data (includes incomplete cells)
     with open(p["cell_dir"] / "all_cells.pkl", "wb") as cell_file:
         pickle.dump(Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    ### save to .json
+    write_cells_to_json(Cells, p["cell_dir"] / "all_cells.json")
 
     # Just the complete cells, those with mother and daugther
     # This is a dictionary of cell objects.
     with open(p["cell_dir"] / "complete_cells.pkl", "wb") as cell_file:
         pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    ### save to .json
+    write_cells_to_json(Complete_Cells, p["cell_dir"] / "complete_cells.json")
 
     information("Finished curating and saving cell data.")
 
