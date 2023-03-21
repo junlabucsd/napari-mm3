@@ -197,7 +197,6 @@ class Cell:
         self.elong_rate = None
         self.septum_position = None
         self.width = None
-        self.death = None
 
     def grow(self, time_table, region, t):
         """Append data from a region to this cell.
@@ -228,12 +227,6 @@ class Cell:
 
         self.orientations.append(ori)
         self.centroids.append(region.centroid)
-
-    def die(self, region, t):
-        """
-        Annotate cell as dying from current t to next t.
-        """
-        self.death = t
 
     def divide(self, daughter1, daughter2, t):
         """Divide the cell and update stats.
