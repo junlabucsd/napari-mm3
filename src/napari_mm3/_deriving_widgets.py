@@ -139,8 +139,18 @@ def load_time_table(ana_dir: Path):
 
 def get_valid_planes(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
-    filepaths = [f for f in found_files][0]
-    num_channels = tiff.imread(filepaths).shape[0]
+    #pull out first tiff to extract dims
+    filepath = [f for f in found_files][0]
+    dim = tiff.imread(filepath).ndim
+    if dim == 3:
+        # first axis has imaging planes
+        num_channels = dim
+    elif dim == 2:
+        # only one plane (phase or fluorescence)
+        num_channels = 1
+    else:
+        raise ValueError(f'Expected 2 or 3 dimensions but found {dim}.')
+    
     return [f"c{c+1}" for c in range(num_channels)]
 
 
@@ -356,7 +366,7 @@ class MM3Container(Container):
         try:
             self.valid_planes = get_valid_planes(self.TIFF_folder)
             self.found_planes = True
-        except:
+        except FileNotFoundError:
             self.found_planes = False
 
     def _validate_folders(self):

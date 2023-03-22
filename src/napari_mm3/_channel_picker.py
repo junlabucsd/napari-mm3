@@ -257,8 +257,9 @@ class ChannelPicker(MM3Container):
         display_image_stack(self.viewer, image_fov_stack, self.default_plane)
 
         # Set up selection box dimensions
-        height = image_fov_stack.shape[2]
-        width = image_fov_stack.shape[3]
+        height = image_fov_stack.shape[-2]
+        width = image_fov_stack.shape[-1]
+        
 
         channel_height = height
         channel_width = width / len(self.sorted_peaks)
