@@ -271,7 +271,7 @@ class Cell:
         self.delta = self.sd - self.sb
 
         # generation time. Use more accurate times and convert to minutes
-        self.tau = float((self.abs_times[-1] - self.abs_times[0]) / 60.0)
+        self.tau = np.float64((self.abs_times[-1] - self.abs_times[0]) / 60.0)
 
         # include the data points from the daughters
         self.lengths_w_div = [l * self.pxl2um for l in self.lengths] + [
@@ -294,13 +294,13 @@ class Cell:
         # calculate elongation rate.
 
         try:
-            times = float((np.array(self.abs_times) - self.abs_times[0]) / 60.0)
-            log_lengths = float(np.log(self.lengths_w_div))
+            times = np.float64((np.array(self.abs_times) - self.abs_times[0]) / 60.0)
+            log_lengths = np.float64(np.log(self.lengths_w_div))
             p = np.polyfit(times, log_lengths, 1)  # this wants float64
             self.elong_rate = p[0] * 60.0  # convert to hours
 
         except:
-            self.elong_rate = float("NaN")
+            self.elong_rate = np.float64("NaN")
             print("Elongation rate calculate failed for {}.".format(self.id))
 
         # calculate the septum position as a number between 0 and 1
