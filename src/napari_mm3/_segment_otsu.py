@@ -21,7 +21,7 @@ from ._deriving_widgets import (
     load_specs,
     information,
     load_stack_params,
-    warning
+    warning,
 )
 
 # Do segmentation for an channel time stack
@@ -73,7 +73,6 @@ def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
             os.path.join(params["seg_dir"], seg_filename), segmented_imgs, compress=5
         )
         if view_result:
-            # if fov_id==1:
             viewer = napari.current_viewer()
 
             viewer.add_labels(

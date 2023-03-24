@@ -30,8 +30,7 @@ from .utils import (
     find_complete_cells,
     find_cells_of_birth_label,
     find_cells_of_fov_and_peak,
-    write_cells_to_json
-
+    write_cells_to_json,
 )
 
 # load the time table
@@ -301,7 +300,12 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         ):
                             cell_id = create_cell_id(region, t, peak_id, fov_id)
                             Cells[cell_id] = Cell(
-                                params["pxl2um"], time_table, cell_id, region, t, parent_id=None
+                                params["pxl2um"],
+                                time_table,
+                                cell_id,
+                                region,
+                                t,
+                                parent_id=None,
                             )
                             cell_leaves.append(cell_id)  # add to leaves
                         else:
@@ -389,7 +393,12 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         ):
                             cell_id = create_cell_id(region2, t, peak_id, fov_id)
                             Cells[cell_id] = Cell(
-                                params["pxl2um"], time_table, cell_id, region2, t, parent_id=None
+                                params["pxl2um"],
+                                time_table,
+                                cell_id,
+                                region2,
+                                t,
+                                parent_id=None,
                             )
                             cell_leaves.append(cell_id)  # add to leaves
 
@@ -403,7 +412,12 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                         ):
                             cell_id = create_cell_id(region1, t, peak_id, fov_id)
                             Cells[cell_id] = Cell(
-                                params["pxl2um"], time_table, cell_id, region1, t, parent_id=None
+                                params["pxl2um"],
+                                time_table,
+                                cell_id,
+                                region1,
+                                t,
+                                parent_id=None,
                             )
                             cell_leaves.append(cell_id)  # add to leaves
 
@@ -876,7 +890,7 @@ def Track_Cells(params):
     ### save to .json
     write_cells_to_json(Cells, p["cell_dir"] / "all_cells.json")
 
-    # Just the complete cells, those with mother and daugther
+    # Just the complete cells, those with mother and daughter
     # This is a dictionary of cell objects.
     with open(p["cell_dir"] / "complete_cells.pkl", "wb") as cell_file:
         pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
