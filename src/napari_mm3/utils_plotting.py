@@ -560,42 +560,36 @@ def plot_distributions(df, columns, labels= None, titles = None):
 
     for i,c in enumerate(columns):
         mu1 = df[c].mean()
-        mu2 = df[c].mean()
         cv1 = df[c].std()/df[c].mean()
-        cv2 = df[c].std()/df[c].mean()
         
         ax[i].set_title(titles[i],fontsize=14)
         b1, v1 = make_line_hist(df[c],density=True)
         ax[i].plot(b1,v1, ls='-',color='C0',
                 label='$\mu$ = {:2.2f}\nCV = {:2.2f}'.format(mu1,cv1)
                 ,lw=1)
-        b2, v2 = make_line_hist(df[c],density=True)
-        ax[i].plot(b2,v2, ls='-',color='C1',
-                label='$\mu$ = {:2.2f}\nCV = {:2.2f}'.format(mu2,cv2),
-                lw=1)
+        
         ax[i].set_xlabel(labels[i],fontsize=12)
-        ax[i].set_ylim(0,np.max(v2)*1.3)
+        ax[i].set_ylim(0,np.max(v1)*1.3)
         ax[i].set_yticks([])
     #     ax[i].legend(frameon=False,fontsize=6,loc=1)
 
     sns.despine(left=True)
     plt.tight_layout()
 
-
-def plot_hex_time(Cells_df, t_int, time_mark='birth_time', x_extents=None, bin_extents=None):
+def plot_hex_time(Cells_df, time_mark='birth_time', x_extents=None, bin_extents=None):
     '''
     Plots cell parameters over time using a hex scatter plot and a moving average
     '''
 
     # lists for plotting and formatting
-    columns = ['sb', 'elong_rate', 'sd', 'tau', 'delta', 'septum_position','C_min','D_min','unit_size']
+    columns = ['sb', 'elong_rate', 'sd', 'tau', 'delta', 'septum_position']
     titles = ['Length at Birth', 'Elongation Rate', 'Length at Division',
-              'Generation Time', 'Delta', 'Septum Position','C', 'D','Initiation size']
-    ylabels = ['$\mu$m', '$\lambda$', '$\mu$m', 'min', '$\mu$m','daughter/mother', 'min','min','S$_{i}$']
+              'Generation Time', 'Delta', 'Septum Position']
+    ylabels = ['$\mu$m', '$\lambda$', '$\mu$m', 'min', '$\mu$m','daughter/mother']
 
     # create figure, going to apply graphs to each axis sequentially
-    fig, axes = plt.subplots(nrows=3, ncols=3,
-                             figsize=[15,10], squeeze=False)
+    fig, axes = plt.subplots(nrows=3, ncols=2,
+                             figsize=[8,8], squeeze=False)
 
     ax = np.ravel(axes)
     # binning parameters, should be arguments
@@ -627,7 +621,7 @@ def plot_hex_time(Cells_df, t_int, time_mark='birth_time', x_extents=None, bin_e
 
         # plot the hex scatter plot
         p = ax[i].hexbin(time_df[time_mark], time_df[column],
-                         mincnt=binmin, gridsize=bingrid, extent=bin_extents[i])
+                         mincnt=binmin, gridsize=bingrid)
 
         # graph moving average
         # xlims = (time_df['birth_time'].min(), time_df['birth_time'].max()) # x lims for bins
@@ -647,12 +641,8 @@ def plot_hex_time(Cells_df, t_int, time_mark='birth_time', x_extents=None, bin_e
 
         p.set_cmap(cmap=plt.cm.Blues) # set color and style
 
-    #ax[8].legend(['%s frame binned average' % moving_window], loc='lower right')
-    ax[7].set_xlabel('%s [frame]' % time_mark)
-    ax[8].set_xlabel('%s [frame]' % time_mark)
-    ax[6].set_xlabel('%s [frame]' % time_mark)
-
-
+    ax[5].set_xlabel('%s [frame]' % time_mark)
+    ax[4].set_xlabel('%s [frame]' % time_mark)
 
     plt.tight_layout()
 
