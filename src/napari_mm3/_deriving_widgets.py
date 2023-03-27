@@ -17,6 +17,7 @@ import tifffile as tiff
 import re
 import time
 import sys
+import traceback
 
 # print a warning
 def warning(*objs):
@@ -41,6 +42,7 @@ def gen_tiff_filename(prefix, fov_id: int, postfix: str, peak_id: int = None):
     if peak_id:
         return TIFF_FILE_FORMAT_PEAK % (prefix, fov_id, peak_id, postfix)
     return TIFF_FILE_FORMAT_NO_PEAK % (prefix, fov_id, postfix)
+
 
 def load_stack_params(params, fov_id, peak_id, postfix="c1"):
     """
@@ -97,7 +99,10 @@ def load_stack_params(params, fov_id, peak_id, postfix="c1"):
             img_dir = params["seg_dir"]
 
         img_filename = gen_tiff_filename(
-            prefix=params["experiment_name"], fov_id=fov_id, peak_id=peak_id, postfix=postfix
+            prefix=params["experiment_name"],
+            fov_id=fov_id,
+            peak_id=peak_id,
+            postfix=postfix,
         )
         return load_tiff(img_dir / img_filename)
 
@@ -139,7 +144,7 @@ def load_time_table(ana_dir: Path):
 
 def get_valid_planes(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
-    #pull out first tiff to extract dims
+    # pull out first tiff to extract dims
     filepath = [f for f in found_files][0]
     dim = tiff.imread(filepath).ndim
     if dim == 3:
@@ -149,15 +154,15 @@ def get_valid_planes(TIFF_folder):
         # only one plane (phase or fluorescence)
         num_channels = 1
     else:
-        raise ValueError(f'Expected 2 or 3 dimensions but found {dim}.')
-    
+        raise ValueError(f"Expected 2 or 3 dimensions but found {dim}.")
+
     return [f"c{c+1}" for c in range(num_channels)]
 
 
 def get_valid_fovs(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
     filenames = [f.name for f in found_files]
-    get_fov_regex = re.compile(r"xy(\d+)",re.IGNORECASE)
+    get_fov_regex = re.compile(r"xy(\d+)", re.IGNORECASE)
     fov_strings = set(get_fov_regex.findall(filename)[0] for filename in filenames)
     fovs = map(int, sorted(fov_strings))
     return list(fovs)
@@ -166,7 +171,7 @@ def get_valid_fovs(TIFF_folder):
 def get_valid_times(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
     filenames = [f.name for f in found_files]
-    get_time_regex = re.compile(r"t(\d+)",re.IGNORECASE)
+    get_time_regex = re.compile(r"t(\d+)", re.IGNORECASE)
     time_strings = set(get_time_regex.findall(filename)[0] for filename in filenames)
     times = list(map(int, sorted(time_strings)))
     return (min(times), max(times))
@@ -314,10 +319,17 @@ class MM3Container(Container):
 
     def _load_from_data_conditional(self):
         if self.validate_folders and not self._validate_folders():
+            print(f"A folder validation was requested but not successful.\n")
+            print("Limited traceback:")
+            traceback.print_stack(limit=1)
             return
         if self.found_planes and self.found_fovs and self.found_times:
             self.create_widgets()
             self.append(self.run_widget)
+        print(f"Failed to find a key piece of info:")
+        print(f"{self.found_planes=}, {self.found_fovs=}, {self.found_times=}\n")
+        print("Limited traceback:")
+        traceback.print_stack(limit=1)
 
     def _run_conditional(self):
         if self.found_planes and self.found_fovs and self.found_times:
