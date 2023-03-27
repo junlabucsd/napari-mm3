@@ -23,10 +23,10 @@ https://napari.org/plugins/stable/index.html
 
 ## Installation
 
-We describe installation with conda. Run the following command:
+We describe installation with mamba, a faster version of conda which we recommend. Installation with conda is the exact same, except replace `mamba` with `conda` Run the following command:
 
 ```
-conda create -n napari-mm3 -c conda-forge conda-build tensorflow napari
+mamba create -n napari-mm3 -c conda-forge conda-build tensorflow napari
 ``` 
 Now, you need to install our code (please let us know if this causes problems -- it has been a pain point in the past). To do so, clone the repository. Then, run the following commands from within your conda environment:
 ```
@@ -39,7 +39,7 @@ If you would like to have a more stable verison, simply run `pip install napari-
 
 NOTES:
 Not running the conda command above and trying to install things in a different way may lead to difficult issues with PyQt5. We recommend following the above commands to simplify the situation.
-Using `pip -e .` instead of `conda develop .` is a deliberate choice, the former did not seem to register the plugin with napari.
+Using `pip -e .` instead of `mamba develop .` is a deliberate choice, the former did not seem to register the plugin with napari.
 
 ## Contributing
 
