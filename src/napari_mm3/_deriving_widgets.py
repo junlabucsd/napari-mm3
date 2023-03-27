@@ -326,8 +326,11 @@ class MM3Container(Container):
         if self.found_planes and self.found_fovs and self.found_times:
             self.create_widgets()
             self.append(self.run_widget)
+            return
         print(f"Failed to find a key piece of info:")
-        print(f"{self.found_planes=}, {self.found_fovs=}, {self.found_times=}\n")
+        print(f"planes found: {self.found_planes}")
+        print(f"fovs found: {self.found_fovs}")
+        print(f"times found: {self.found_times}")
         print("Limited traceback:")
         traceback.print_stack(limit=1)
 
