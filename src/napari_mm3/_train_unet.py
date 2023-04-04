@@ -1309,6 +1309,7 @@ class TrainUnet(MM3Container):
 
         self.model_file_widget.changed.connect(self.set_model_file)
         self.image_widget.changed.connect(self.set_image_dir)
+        self.mask_widget.changed.connect(self.set_mask_dir)
         self.weights_widget.changed.connect(self.set_weights_dir)
         self.test_widget.changed.connect(self.set_test_dir)
         self.epochs_widget.changed.connect(self.set_epochs)
