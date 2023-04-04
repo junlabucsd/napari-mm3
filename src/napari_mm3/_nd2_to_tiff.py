@@ -105,14 +105,16 @@ def nd2ToTIFF(
                 image_end = min(len(nd2f), image_end)
             extraction_range = range(image_start, image_end + 1)
 
-            nd2f.iter_axes = 'v'
+            nd2f.iter_axes = 't'
 
             for t in progress(extraction_range):
                 # timepoint output name (1 indexed rather than 0 indexed)
                 t_id = t - 1
                 # set counter for FOV output name
                 out_fov_number = 0
-                for fov_id, image_data in enumerate(nd2f):
+                for fov_id in range(nd2f.sizes["v"]):
+
+                    nd2f.default_coords["v"] = fov_id
                     # fov_id is the fov index according to elements, fov is the output fov ID
                     fov = fov_id + 1
                     
@@ -125,6 +127,7 @@ def nd2ToTIFF(
                         out_fov_number += 1
                     else:
                         out_fov_number = fov
+                    image_data = nd2f[t_id]
 
                     seconds = copy.deepcopy(image_data.metadata['events'][t_id]["time"]) / 1000.0
                     minutes = seconds / 60.0
