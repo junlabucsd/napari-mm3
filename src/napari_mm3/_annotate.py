@@ -14,6 +14,7 @@ from ._deriving_widgets import (
     load_tiff,
 )
 
+
 def load_specs(analysis_folder):
     """
     Loads the specifications YAML file for the analysis and returns its contents as a dictionary.
@@ -30,6 +31,7 @@ def load_specs(analysis_folder):
     """
     with (analysis_folder / "specs.yaml").open(mode="r") as specs_file:
         return yaml.safe_load(specs_file)
+
 
 def get_peaks(specs, fov):
     """
@@ -61,6 +63,7 @@ class PeakCounter:
     fov : str
         The name of the field of view.
     """
+
     def __init__(self, specs, fov):
         self.specs = specs
         self.fov = fov
@@ -112,6 +115,7 @@ class Annotate(MM3Container):
     """
     A class that handles the user interface for manual annotation.
     """
+
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See _deriving_widgets.MM3Container for details."""
         self.load_recent_widget.hide()
