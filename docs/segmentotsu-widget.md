@@ -1,7 +1,8 @@
 ## Segment images. 
 
 <img width="1486" alt="otsu" src="https://user-images.githubusercontent.com/40699438/177629756-2bf87d2e-6ec8-4580-8675-648d68b29cb5.png">
-mm3 can use either deep learning or a traditional machine vision approach (Otsu thresholding, morphological operations and watershedding) to locate cells from the subtracted images. For info on the deep learning-based segmentation widget, see [SegmentUnet](/docs/user-manual.md#segmentunet).
+
+MM3 can use either deep learning or a traditional machine vision approach (Otsu thresholding, morphological operations and watershedding) to locate cells from the subtracted images. For info on the deep learning-based segmentation widget, see [SegmentUNet](https://github.com/junlabucsd/napari-mm3/blob/main/docs/segmentunet-widget.md).
 
 The following four parameters are important for finding markers in order to do watershedding/diffusion for segmentation. They should be changed depending on cell size and magnification/imaging conditions.
 
