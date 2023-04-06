@@ -18,6 +18,7 @@ from napari.utils import progress
 from magicgui.widgets import Container, FileEdit, CheckBox, PushButton, FloatSpinBox
 from ._deriving_widgets import FOVChooser, TimeRangeSelector, information
 
+
 def get_nd2_fovs(exp_dir):
     nd2files = list(exp_dir.glob("*.nd2"))
 
@@ -31,7 +32,41 @@ def get_nd2_times(exp_dir):
 
     for nd2_file in nd2files:
         with nd2reader.reader.ND2Reader(str(nd2_file)) as nd2f:
-            return (1, nd2f.sizes["t"])
+            return (1, nd2f.sizes["t"] - 1)
+
+
+def nd2_iter(nd2f: nd2reader.ND2Reader, time_range, fov_list):
+    """
+    Iterates over the contents of an ND2File.
+
+    params:
+        nd2f: The ND2Reader object to use.
+
+    returns:
+        t: the time-index of the returned frame.
+        fov: the fov-index of the returned frame.
+        image_data: the image at the given time/fov.
+    """
+    # TODO: Move this into the UI code.
+    print(fov_list)
+    fov_list = [fov - 1 for fov in fov_list]
+    nd2_fov_list = set(range(0, nd2f.sizes["v"]))
+    if fov_list == []:
+        fov_list = nd2_fov_list
+    nd2_time_range = set(range(0, nd2f.sizes["t"]))
+
+    valid_fovs = set(fov_list).intersection(nd2_fov_list)
+    if valid_fovs != set(fov_list):
+        information("The following FOVs were not in the nd2, and thus were omitted:")
+        information(set(fov_list) - valid_fovs)
+    nd2f.iter_axes = "t"
+    for fov in valid_fovs:
+        nd2f.default_coords["v"] = fov
+        for t in nd2_time_range:
+            if t not in time_range:
+                continue
+            image_data = nd2f[t]
+            yield t, fov, image_data
 
 
 def nd2ToTIFF(
@@ -43,185 +78,108 @@ def nd2ToTIFF(
     vertical_crop=None,
     tworow_crop=None,
     fov_list=[],
-    reset_numbering=False,
 ):
     """
-    This script converts a Nikon Elements .nd2 file to individual TIFF files per time point. Multiple color planes are stacked in each time point to make a multipage TIFF.
+    This script converts a Nikon Elements .nd2 file to individual TIFF files per time point.
+    Multiple color planes are stacked in each time point to make a multipage TIFF.
 
     params:
         experiment_directory: Path to the experimental data
         tif_dir: Where to put the TIFFs when we are done.
         tif_filename: A prefix for the output tifs
         vertical_crop: [ymin, ymax]. Percentage crop. Optional.
-        tworow_crop: [[y1_min, y1_max], [y1_min, y2_max]]. Used for cropping if you have multiple rows; currently only two are supported.
+        tworow_crop: [[y1_min, y1_max], [y2_min, y2_max]]. Used for cropping if you have multiple rows; currently only two are supported.
         FOVs: String specifying a range (or a single number) of FOVs to convert to nd2
         image_start, image_end: Image range that we want to turn into TIFFs (inclusive)
         tif_compress: image compression level, 1-9
     """
-
-    # Load the project parameters file
-    information("Loading experiment parameters.")
-
-    # set up image and analysis folders if they do not already exist
+    # set up image folders if they do not already exist
     if not os.path.exists(tif_dir):
         os.makedirs(tif_dir)
 
     # Load ND2 files into a list for processing
     information(f"Experiment directory: {experiment_directory.name}")
     nd2files = list(experiment_directory.glob("*.nd2"))
-    information(f"Found {len(nd2files)} files to analyze in experiment directory.")
+    # TODO: Remove. Replace with a single file.
+    nd2file = nd2files[0]  # only modify first nd2 file.
+    file_prefix = os.path.split(os.path.splitext(nd2file)[0])[1]
+    information("Extracting {file_prefix} ...")
+    with nd2reader.reader.ND2Reader(str(nd2file)) as nd2f:
+        starttime = nd2f.metadata["date"]  # starttime is jd
+        planes = list(nd2f.metadata["channels"])
+        if len(planes) > 1:
+            nd2f.bundle_axes = ["c", "y", "x"]
 
-    for nd2_file in nd2files:
-        file_prefix = os.path.split(os.path.splitext(nd2_file)[0])[1]
-        information("Extracting {file_prefix} ...")
+        # Extraction range is the time points that will be taken out.
+        time_range = range(image_start, image_end)
+        for t_id, fov_id, image_data in nd2_iter(
+            nd2f, time_range=time_range, fov_list=fov_list
+        ):
+            # timepoint and fov output name (1 indexed rather than 0 indexed)
+            t, fov = t_id + 1, fov_id + 1
 
-        # load the nd2. the nd2f file object has lots of information thanks to pims
-        with nd2reader.reader.ND2Reader(str(nd2_file)) as nd2f:
-            starttime = nd2f.metadata["date"]  # starttime is jd
-            information("Starttime got from nd2 metadata.")
+            milliseconds = copy.deepcopy(image_data.metadata["events"][t_id]["time"])
+            acq_days = milliseconds / 1000.0 / 60.0 / 60.0 / 24.0
+            acq_time = starttime.timestamp() + acq_days
 
-            # get the color names out. Kinda roundabout way.
-            planes = [
-                nd2f.metadata[md]["name"]
-                for md in nd2f.metadata
-                if md[0:6] == "plane_" and not md == "plane_count"
-            ]
+            # make dictionary which will be the metdata for this TIFF
+            metadata_json = json.dumps(
+                {
+                    "fov": fov,
+                    "t": t,
+                    "jd": acq_time,
+                    "planes": planes,
+                }
+            )
 
-            # planes = [c for c in nd2f.metadata['channels']]
-            planes = list(nd2f.metadata['channels'])
+            # add extra axis to make below slicing simpler. removed automatically if only one color
+            if len(image_data.shape) < 3:
+                image_data = np.expand_dims(image_data, axis=0)
 
-            # this ensures all colors will be saved when saving tiff
-            if len(planes) > 1:
-                nd2f.bundle_axes = ["c", "y", "x"]
+            # crop tiff if specified. Lots of flags for if there are double rows or  multiple colors
+            if tworow_crop:
+                crop1_y1, crop1_y2 = tworow_crop[0][0], tworow_crop[0][1]
+                crop2_y1, crop2_y2 = tworow_crop[0][0], tworow_crop[0][1]
+                image_upper_row = image_data[:, crop1_y1:crop2_y2, :]
+                image_lower_row = image_data[:, crop2_y1:crop2_y2, :]
 
-            # extraction range is the time points that will be taken out. Note the indexing,
-            # it is zero indexed to grab from nd2, but TIFF naming starts at 1.
-            # if there is more than one FOV (len(nd2f) != 1), make sure the user input
-            # last time index is before the actual time index. Ignore it.
-            image_start = max(1, image_start)
-            if not image_end:
-                image_end = len(nd2f)
-            elif len(nd2f) > 1:
-                image_end = min(len(nd2f), image_end)
-            extraction_range = range(image_start, image_end + 1)
+                upper_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_1.tif"
+                information("Saving %s." % tif_filename)
+                tiff.imsave(
+                    tif_dir / upper_row_filename,
+                    image_upper_row,
+                    description=metadata_json,
+                    compress=tif_compress,
+                    photometric="minisblack",
+                )
 
-            nd2f.iter_axes = 't'
+                # cut and save bottom row
+                lower_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_2.tif"
+                information("Saving %s." % lower_row_filename)
+                tiff.imsave(
+                    tif_dir / lower_row_filename,
+                    image_lower_row,
+                    description=metadata_json,
+                    compress=tif_compress,
+                    photometric="minisblack",
+                )
+                continue
+            # for just a simple crop
+            elif vertical_crop:
+                nc, H, W = image_data.shape
+                ylo = int(vertical_crop[0] * H)
+                yhi = int(vertical_crop[1] * H)
+                image_data = image_data[:, ylo:yhi, :]
 
-            for t in progress(extraction_range):
-                # timepoint output name (1 indexed rather than 0 indexed)
-                t_id = t - 1
-                # set counter for FOV output name
-                out_fov_number = 0
-                for fov_id in range(nd2f.sizes["v"]):
-
-                    nd2f.default_coords["v"] = fov_id
-                    # fov_id is the fov index according to elements, fov is the output fov ID
-                    fov = fov_id + 1
-                    
-                    # skip FOVs as specified above
-                    if len(fov_list) > 0 and not (fov in fov_list):
-                        continue
-
-                    # Only want to increment this if we are saving the current image
-                    if reset_numbering:
-                        out_fov_number += 1
-                    else:
-                        out_fov_number = fov
-                    image_data = nd2f[t_id]
-
-                    seconds = copy.deepcopy(image_data.metadata['events'][t_id]["time"]) / 1000.0
-                    minutes = seconds / 60.0
-                    hours = minutes / 60.0
-                    days = hours / 24.0
-                    acq_time = starttime.timestamp() + days
-
-                    # make dictionary which will be the metdata for this TIFF
-                    metadata_t = {
-                        "fov": fov,
-                        "t": t,
-                        "jd": acq_time,
-                        "planes": planes,
-                    }
-                    metadata_json = json.dumps(metadata_t)
-
-                    # crop tiff if specified. Lots of flags for if there are double rows or  multiple colors
-                    if vertical_crop or tworow_crop:
-                        # add extra axis to make below slicing simpler.
-                        if len(image_data.shape) < 3:
-                            image_data = np.expand_dims(image_data, axis=0)
-
-                        # for dealing with two rows of channel
-                        if tworow_crop:
-                            # cut and save top row
-                            image_data_one = image_data[
-                                :, tworow_crop[0][0] : tworow_crop[0][1], :
-                            ]
-                            tif_filename = file_prefix + "_t%04dxy%02d_1.tif" % (
-                                t,
-                                out_fov_number,
-                            )
-                            information("Saving %s." % tif_filename)
-                            tiff.imsave(
-                                tif_dir / tif_filename,
-                                image_data_one,
-                                description=metadata_json,
-                                compress=tif_compress,
-                                photometric="minisblack",
-                            )
-
-                            # cut and save bottom row
-                            metadata_t["fov"] = fov  # update metdata
-                            metadata_json = json.dumps(metadata_t)
-                            image_data_two = image_data[
-                                :, tworow_crop[1][0] : tworow_crop[1][1], :
-                            ]
-                            tif_filename = file_prefix + "_t%04dxy%02d_2.tif" % (
-                                t,
-                                out_fov_number,
-                            )
-                            information("Saving %s." % tif_filename)
-                            tiff.imsave(
-                                tif_dir / tif_filename,
-                                image_data_two,
-                                description=metadata_json,
-                                compress=tif_compress,
-                                photometric="minisblack",
-                            )
-
-                        # for just a simple crop
-                        elif vertical_crop:
-                            nc, H, W = image_data.shape
-                            ylo = int(vertical_crop[0] * H)
-                            yhi = int(vertical_crop[1] * H)
-                            image_data = image_data[:, ylo:yhi, :]
-
-                            # save the tiff
-                            tif_filename = file_prefix + "_t%04dxy%02d.tif" % (
-                                t,
-                                out_fov_number,
-                            )
-                            information("Saving %s." % tif_filename)
-                            tiff.imsave(
-                                tif_dir / tif_filename,
-                                image_data,
-                                description=metadata_json,
-                                compress=tif_compress,
-                                photometric="minisblack",
-                            )
-
-                    else:  # just save the image if no cropping was done.
-                        tif_filename = file_prefix + "_t%04dxy%02d.tif" % (
-                            t,
-                            out_fov_number,
-                        )
-                        information("Saving %s." % tif_filename)
-                        tiff.imsave(
-                            tif_dir / tif_filename,
-                            image_data,
-                            description=metadata_json,
-                            compress=tif_compress,
-                            photometric="minisblack",
-                        )
+            tif_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}.tif"
+            information("Saving %s." % tif_filename)
+            tiff.imsave(
+                tif_dir / tif_filename,
+                image_data,
+                description=metadata_json,
+                compress=tif_compress,
+                photometric="minisblack",
+            )
 
 
 class Nd2ToTIFF(Container):
@@ -245,15 +203,14 @@ class Nd2ToTIFF(Container):
         )
         self.FOVs_range_widget = FOVChooser(self.valid_fovs)
         self.time_range_widget = TimeRangeSelector(self.valid_times)
-        self.upper_crop_widget = FloatSpinBox(label='Crop y max',value=0.9, min=0.5, max = 1, step=.01)
-        self.lower_crop_widget = FloatSpinBox(label='Crop y min',value = 0.1, min=0, max = 0.5, step=.01)
+        self.upper_crop_widget = FloatSpinBox(
+            label="Crop y max", value=0.9, min=0.5, max=1, step=0.01
+        )
+        self.lower_crop_widget = FloatSpinBox(
+            label="Crop y min", value=0.1, min=0, max=0.5, step=0.01
+        )
 
         self.display_after_export_widget = CheckBox(label="display after export")
-        self.reset_numbering_widget = CheckBox(
-            label="reset numbering",
-            tooltip="Whether or not to preserve FOV numbering in the TIFF filenames. Use this to remove unwanted FOVs (e.g, blank FOVs)",
-            value=True,
-        )
         self.run_widget = PushButton(text="run")
 
         self.experiment_directory_widget.changed.connect(self.set_experiment_directory)
@@ -272,7 +229,6 @@ class Nd2ToTIFF(Container):
         self.append(self.upper_crop_widget)
         self.append(self.lower_crop_widget)
         self.append(self.display_after_export_widget)
-        self.append(self.reset_numbering_widget)
         self.append(self.run_widget)
 
         self.set_experiment_directory()
@@ -289,12 +245,11 @@ class Nd2ToTIFF(Container):
             self.experiment_directory,
             self.image_directory,
             tif_compress=5,  # TODO: assign from UI
-            image_start=self.time_range[0],
-            image_end=self.time_range[1] + 1,
+            image_start=self.time_range[0] - 1,
+            image_end=self.time_range[1],
             vertical_crop=[self.lower_crop, self.upper_crop],
             fov_list=self.fovs,
             tworow_crop=None,
-            reset_numbering=self.reset_numbering_widget.value,
         )
 
         if self.display_after_export_widget.value:
@@ -308,7 +263,7 @@ class Nd2ToTIFF(Container):
         image_name_list = [
             filename.name for filename in self.image_directory.glob("*xy*")
         ]
-        fov_regex = re.compile(r"xy\d*",re.IGNORECASE)
+        fov_regex = re.compile(r"xy\d*", re.IGNORECASE)
         fovs = list(
             sorted(
                 set(
