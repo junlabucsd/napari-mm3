@@ -1,5 +1,7 @@
 ## Annotate training data for U-Net segmentation
 
+<img width="1184" alt="annotate" src="https://user-images.githubusercontent.com/40699438/230508777-522d89ad-7361-47a9-8946-0228e2681ef6.png">
+
 This widget allows manual annotation and curation of segmentation masks for training the U-Net model. By default, it looks for image stacks in the format output by the Compile widget in the "channels" subfolder within the user's chosen analysis directory. The masks can be drawn as labels using napari's paintbrush tool.
 
 **Parameters**
