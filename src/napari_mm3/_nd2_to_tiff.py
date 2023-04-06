@@ -19,20 +19,14 @@ from magicgui.widgets import Container, FileEdit, CheckBox, PushButton, FloatSpi
 from ._deriving_widgets import FOVChooser, TimeRangeSelector, information
 
 
-def get_nd2_fovs(exp_dir):
-    nd2files = list(exp_dir.glob("*.nd2"))
-
-    for nd2_file in nd2files:
-        with nd2reader.reader.ND2Reader(str(nd2_file)) as nd2f:
-            return (1, nd2f.sizes["v"])
+def get_nd2_fovs(data_path):
+    with nd2reader.reader.ND2Reader(str(data_path)) as nd2f:
+        return (1, nd2f.sizes["v"])
 
 
-def get_nd2_times(exp_dir):
-    nd2files = list(exp_dir.glob("*.nd2"))
-
-    for nd2_file in nd2files:
-        with nd2reader.reader.ND2Reader(str(nd2_file)) as nd2f:
-            return (1, nd2f.sizes["t"] - 1)
+def get_nd2_times(data_path):
+    with nd2reader.reader.ND2Reader(str(data_path)) as nd2f:
+        return (1, nd2f.sizes["t"] - 1)
 
 
 def nd2_iter(nd2f: nd2reader.ND2Reader, time_range, fov_list):
@@ -48,7 +42,6 @@ def nd2_iter(nd2f: nd2reader.ND2Reader, time_range, fov_list):
         image_data: the image at the given time/fov.
     """
     # TODO: Move this into the UI code.
-    print(fov_list)
     fov_list = [fov - 1 for fov in fov_list]
     nd2_fov_list = set(range(0, nd2f.sizes["v"]))
     if fov_list == []:
@@ -70,7 +63,7 @@ def nd2_iter(nd2f: nd2reader.ND2Reader, time_range, fov_list):
 
 
 def nd2ToTIFF(
-    experiment_directory: Path,
+    data_path: Path,
     tif_dir: str,
     tif_compress: int,
     image_start: int,
@@ -84,7 +77,7 @@ def nd2ToTIFF(
     Multiple color planes are stacked in each time point to make a multipage TIFF.
 
     params:
-        experiment_directory: Path to the experimental data
+        data_path: Path to the experimental data
         tif_dir: Where to put the TIFFs when we are done.
         tif_filename: A prefix for the output tifs
         vertical_crop: [ymin, ymax]. Percentage crop. Optional.
@@ -97,11 +90,7 @@ def nd2ToTIFF(
     if not os.path.exists(tif_dir):
         os.makedirs(tif_dir)
 
-    # Load ND2 files into a list for processing
-    information(f"Experiment directory: {experiment_directory.name}")
-    nd2files = list(experiment_directory.glob("*.nd2"))
-    # TODO: Remove. Replace with a single file.
-    nd2file = nd2files[0]  # only modify first nd2 file.
+    nd2file = data_path
     file_prefix = os.path.split(os.path.splitext(nd2file)[0])[1]
     information("Extracting {file_prefix} ...")
     with nd2reader.reader.ND2Reader(str(nd2file)) as nd2f:
@@ -182,18 +171,27 @@ def nd2ToTIFF(
             )
 
 
-class Nd2ToTIFF(Container):
+class TIFFExport(Container):
     """No good way to make this derive MM3Widget; have to roll a custom version here."""
 
     def __init__(self):
         super().__init__()
 
-        self.valid_times = get_nd2_times(Path("."))
-        self.valid_fovs = get_nd2_fovs(Path("."))
+        nd2files = list(Path(".").glob("*.nd2"))
+        if len(nd2files) == 0:
+            napari.utils.notifications.show_info("No Nd2 files found in current directory." + 
+            "\nSpecify a custom data file manually, it will be converted to TIFFs with bioformats.")
+            self.nd2file = ""
+            self.valid_times = [1,1]
+            self.valid_fovs = [1,1]
+        else:
+            self.nd2file = nd2files[0]
+            self.valid_times = get_nd2_times(self.nd2file)
+            self.valid_fovs = get_nd2_fovs(self.nd2file)
 
-        self.experiment_directory_widget = FileEdit(
-            label="experiment_directory",
-            value=Path("."),
+        self.data_path_widget = FileEdit(
+            label="data_path",
+            value=self.nd2file,
             tooltip="Directory within which all your nd2 files are located.",
         )
         self.image_directory_widget = FileEdit(
@@ -213,8 +211,8 @@ class Nd2ToTIFF(Container):
         self.display_after_export_widget = CheckBox(label="display after export")
         self.run_widget = PushButton(text="run")
 
-        self.experiment_directory_widget.changed.connect(self.set_experiment_directory)
-        self.experiment_directory_widget.changed.connect(self.set_widget_bounds)
+        self.data_path_widget.changed.connect(self.set_data_path)
+        self.data_path_widget.changed.connect(self.set_widget_bounds)
         self.image_directory_widget.changed.connect(self.set_image_directory)
         self.FOVs_range_widget.connect_callback(self.set_fovs)
         self.time_range_widget.changed.connect(self.set_time_range)
@@ -222,7 +220,7 @@ class Nd2ToTIFF(Container):
         self.lower_crop_widget.changed.connect(self.set_lower_crop)
         self.run_widget.clicked.connect(self.run)
 
-        self.append(self.experiment_directory_widget)
+        self.append(self.data_path_widget)
         self.append(self.image_directory_widget)
         self.append(self.FOVs_range_widget)
         self.append(self.time_range_widget)
@@ -231,7 +229,8 @@ class Nd2ToTIFF(Container):
         self.append(self.display_after_export_widget)
         self.append(self.run_widget)
 
-        self.set_experiment_directory()
+
+        self.set_data_path()
         self.set_fovs(list(range(self.valid_fovs[0], self.valid_fovs[1] + 1)))
         self.set_time_range()
         self.set_image_directory()
@@ -242,7 +241,7 @@ class Nd2ToTIFF(Container):
 
     def run(self):
         nd2ToTIFF(
-            self.experiment_directory,
+            self.data_path,
             self.image_directory,
             tif_compress=5,  # TODO: assign from UI
             image_start=self.time_range[0] - 1,
@@ -300,7 +299,7 @@ class Nd2ToTIFF(Container):
             # viewer.add_image(stack,name='FOV %02d' % fov_id)
 
     def set_widget_bounds(self):
-        self.valid_fovs = get_nd2_fovs(self.experiment_directory)
+        self.valid_fovs = get_nd2_fovs(self.data_path)
         self.FOVs_range_widget.max_FOV = min(self.valid_fovs)
         self.FOVs_range_widget.max_FOV = max(self.valid_fovs)
         self.FOVs_range_widget.label = (
@@ -308,7 +307,7 @@ class Nd2ToTIFF(Container):
         )
         self.FOVs_range_widget.value = f"{min(self.valid_fovs)}-{max(self.valid_fovs)}"
 
-        self.valid_times = get_nd2_times(self.experiment_directory)
+        self.valid_times = get_nd2_times(self.data_path)
         self.time_range_widget.start.min = min(self.valid_times)
         self.time_range_widget.start.max = max(self.valid_times)
         self.time_range_widget.stop.min = min(self.valid_times)
@@ -322,8 +321,8 @@ class Nd2ToTIFF(Container):
     def set_image_directory(self):
         self.image_directory = self.image_directory_widget.value
 
-    def set_experiment_directory(self):
-        self.experiment_directory = self.experiment_directory_widget.value
+    def set_data_path(self):
+        self.data_path = self.data_path_widget.value
 
     def set_time_range(self):
         self.time_range = (

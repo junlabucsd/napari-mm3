@@ -2,9 +2,9 @@ name: napari-mm3
 schema_version: 0.1.0
 contributions:
   commands:
-  - id: napari-mm3.Nd2ToTIFF
-    title: Converts an nd2 file to a TIFF
-    python_name: napari_mm3._nd2_to_tiff:Nd2ToTIFF
+  - id: napari-mm3.TIFFConverter
+    title: Converts an nd2 (or other bioformats supported filetype) file to TIFFs.
+    python_name: napari_mm3._nd2_to_tiff:TIFFExport
   - id: napari-mm3.Compile
     title: Performs Mother Machine Analysis
     python_name: napari_mm3._compile:Compile
@@ -39,8 +39,8 @@ contributions:
   #   title: Performs Mother Machine analysis
   #   python_name: napari_mm3._function:DebugOtsu
   widgets:
-  - command: napari-mm3.Nd2ToTIFF
-    display_name: nd2ToTIFF
+  - command: napari-mm3.TIFFConverter
+    display_name: TIFFConverter
     autogenerate: False
   - command: napari-mm3.Compile
     display_name: Compile
