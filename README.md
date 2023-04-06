@@ -58,7 +58,7 @@ the coverage at least stays the same before you submit a pull request.
 
 ### b. Segmentation
 
-___With Otsu:___
+___With Otsu's method:___
 
 * [PickChannels](https://github.com/junlabucsd/napari-mm3/blob/main/docs/pickchannels-widget.md) -- User guided selection of empty and full traps.
 
@@ -66,7 +66,7 @@ ___With Otsu:___
 
 * [SegmentOtsu](https://github.com/junlabucsd/napari-mm3/blob/main/docs/segmentotsu-widget.md) -- Use Otsu segmentation to segment cells.
 
-___With UNet:___
+___With U-Net:___
 
 * [Annotate](https://github.com/junlabucsd/napari-mm3/blob/main/docs/annotate-widget.md) -- annotate images for ML (U-Net or similar) training purposes.
 
