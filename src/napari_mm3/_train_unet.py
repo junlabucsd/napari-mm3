@@ -36,7 +36,10 @@ from keras.models import Model
 from keras.layers import (
     Input,
     Conv2D,
+    Conv2DTranspose,
     MaxPooling2D,
+    BatchNormalization,
+    Activation,
     Dropout,
     UpSampling2D,
     Concatenate,
@@ -746,203 +749,111 @@ def trainGenerator(
         yield (image_arr, mask_wei_arr)
 
 
-def expanding_block(
-    input_layer: tf.Tensor,
-    skip_layer: tf.Tensor,
-    filters: int,
-    conv2d_parameters: Dict,
-    dropout: float = 0,
-    name: str = "Expanding",
-) -> tf.Tensor:
+# define what happens at each layer
+def conv_block(input_tensor, num_filters):
+    """Creates a block of two convolutional layers with ReLU activation and batch normalization.
+
+    Args:
+        input_tensor: Input tensor to the block.
+        num_filters: Number of filters in each convolutional layer.
+
+    Returns:
+        encoder: Output tensor of the block.
     """
-    A block of layers for 1 expanding level of the U-Net
+    encoder = Conv2D(num_filters, (3, 3), padding="same")(input_tensor)
+    encoder = BatchNormalization()(encoder)
+    encoder = Activation("relu")(encoder)
+    encoder = Conv2D(num_filters, (3, 3), padding="same")(encoder)
+    encoder = BatchNormalization()(encoder)
+    encoder = Activation("relu")(encoder)
+    return encoder
 
-    Parameters
-    ----------
-    input_layer : tf.Tensor
-        The convolutional layer that is the output of the lower level's
-        expanding block
-    skip_layer : tf.Tensor
-        The convolutional layer that is the output of this level's
-        contracting block
-    filters : int
-        filters input for the Conv2D layers of the block.
-    conv2d_parameters : dict()
-        kwargs for the Conv2D layers of the block.
-    dropout : float, optional
-        Dropout layer rate in the block. Valid range is [0,1). If 0, no dropout
-        layer is added.
-        The default is 0
-    name : str, optional
-        Name prefix for the layers in this block. The default is "Expanding".
 
-    Returns
-    -------
-    conv3 : tf.Tensor
-        Output of this level's expanding block.
+def encoder_block(input_tensor, num_filters):
 
+    """Creates an encoder block consisting of a convolutional block followed by max pooling.
+
+    Args:
+        input_tensor: Input tensor to the block.
+        num_filters: Number of filters in the convolutional block.
+
+    Returns:
+        encoder_pool: Max pooled output tensor of the block.
+        encoder: Output tensor of the convolutional block.
     """
 
-    # Up-sampling:
-    up = UpSampling2D(size=(2, 2), name=name + "_UpSampling2D")(input_layer)
-    conv1 = Conv2D(filters, 2, **conv2d_parameters, name=name + "_Conv2D_1")(up)
-
-    # Merge with skip connection layer:
-    merge = Concatenate(axis=3, name=name + "_Concatenate")([skip_layer, conv1])
-
-    # Convolution layers:
-    conv2 = Conv2D(filters, 3, **conv2d_parameters, name=name + "_Conv2D_2")(merge)
-    conv3 = Conv2D(filters, 3, **conv2d_parameters, name=name + "_Conv2D_3")(conv2)
-
-    # Add dropout if necessary, otherwise return:
-    if dropout == 0:
-        return conv3
-    else:
-        drop = Dropout(dropout, name=name + "_Dropout")(conv3)
-        return drop
+    encoder = conv_block(input_tensor, num_filters)
+    encoder_pool = MaxPooling2D((2, 2), strides=(2, 2))(encoder)
+    return encoder_pool, encoder
 
 
-def contracting_block(
-    input_layer: tf.Tensor,
-    filters: int,
-    conv2d_parameters: Dict,
-    dropout: float = 0,
-    name: str = "Contracting",
-) -> tf.Tensor:
-    """
-    A block of layers for 1 contracting level of the U-Net
+def decoder_block(input_tensor, concat_tensor, num_filters):
 
-    Parameters
-    ----------
-    input_layer : tf.Tensor
-        The convolutional layer that is the output of the upper level's
-        contracting block.
-    filters : int
-        filters input for the Conv2D layers of the block.
-    conv2d_parameters : dict()
-        kwargs for the Conv2D layers of the block.
-    dropout : float, optional
-        Dropout layer rate in the block. Valid range is [0,1). If 0, no dropout
-        layer is added.
-        The default is 0
-    name : str, optional
-        Name prefix for the layers in this block. The default is "Contracting".
+    """Creates a decoder block consisting of an up-sampling layer, concatenation with skip connection,
+    and a convolutional block.
 
-    Returns
-    -------
-    conv2 : tf.Tensor
-        Output of this level's contracting block.
+    Args:
+        input_tensor: Input tensor to the block.
+        concat_tensor: Skip connection tensor from the encoder block.
+        num_filters: Number of filters in the convolutional block.
 
+    Returns:
+        decoder: Output tensor of the decoder block.
     """
 
-    # Pooling layer: (sample 'images' down by factor 2)
-    pool = MaxPooling2D(pool_size=(2, 2), name=name + "_MaxPooling2D")(input_layer)
-
-    # First convolution layer:
-    conv1 = Conv2D(filters, 3, **conv2d_parameters, name=name + "_Conv2D_1")(pool)
-
-    # Second convolution layer:
-    conv2 = Conv2D(filters, 3, **conv2d_parameters, name=name + "_Conv2D_2")(conv1)
-
-    # Add dropout if necessary, otherwise return:
-    if dropout == 0:
-        return conv2
-    else:
-        drop = Dropout(dropout, name=name + "_Dropout")(conv2)
-        return drop
-
-
-# Generic unet declaration:
-def unet(
-    input_size: Tuple[int, int, int] = (256, 32, 1),
-    final_activation: str = "sigmoid",
-    output_classes: int = 1,
-    dropout: float = 0,
-    levels: int = 5,
-) -> Model:
-    """
-    Generic U-Net declaration.
-
-    Parameters
-    ----------
-    input_size : tuple of 3 ints, optional
-        Dimensions of the input tensor, excluding batch size.
-        The default is (256,32,1).
-    final_activation : string or function, optional
-        Activation function for the final 2D convolutional layer. see
-        keras.activations
-        The default is 'sigmoid'.
-    output_classes : int, optional
-        Number of output classes, ie dimensionality of the output space of the
-        last 2D convolutional layer.
-        The default is 1.
-    dropout : float, optional
-        Dropout layer rate in the contracting & expanding blocks. Valid range
-        is [0,1). If 0, no dropout layer is added.
-        The default is 0.
-    levels : int, optional
-        Number of levels of the U-Net, ie number of successive contraction then
-        expansion blocks are combined together.
-        The default is 5.
-
-    Returns
-    -------
-    model : Model
-        Defined U-Net model (not compiled yet).
-
-    """
-
-    # Default conv2d parameters:
-    conv2d_parameters = {
-        "activation": "relu",
-        "padding": "same",
-        "kernel_initializer": "he_normal",
-    }
-
-    # Inputs layer:
-    inputs = Input(input_size, name="true_input")
-
-    # First level input convolutional layers:
-    filters = 64
-    conv = Conv2D(filters, 3, **conv2d_parameters, name="Level0_Conv2D_1")(inputs)
-    conv = Conv2D(filters, 3, **conv2d_parameters, name="Level0_Conv2D_2")(conv)
-
-    # Generate contracting path:
-    level = 0
-    contracting_outputs = [conv]
-    for level in range(1, levels):
-        filters *= 2
-        contracting_outputs.append(
-            contracting_block(
-                contracting_outputs[-1],
-                filters,
-                conv2d_parameters,
-                dropout=dropout,
-                name=f"Level{level}_Contracting",
-            )
-        )
-
-    # Generate expanding path:
-    expanding_output = contracting_outputs.pop()
-    while level > 0:
-        level -= 1
-        filters = int(filters / 2)
-        expanding_output = expanding_block(
-            expanding_output,
-            contracting_outputs.pop(),
-            filters,
-            conv2d_parameters,
-            dropout=dropout,
-            name=f"Level{level}_Expanding",
-        )
-
-    # Final output layer:
-    output = Conv2D(output_classes, 1, activation=final_activation, name="true_output")(
-        expanding_output
+    decoder = Conv2DTranspose(num_filters, (2, 2), strides=(2, 2), padding="same")(
+        input_tensor
     )
+    # decoder = Concatenate([concat_tensor, decoder], axis=-1)
+    decoder = Concatenate(axis=-1)([concat_tensor, decoder])
+    decoder = BatchNormalization()(decoder)
+    decoder = Activation("relu")(decoder)
+    decoder = Conv2D(num_filters, (3, 3), padding="same")(decoder)
+    decoder = BatchNormalization()(decoder)
+    decoder = Activation("relu")(decoder)
+    decoder = Conv2D(num_filters, (3, 3), padding="same")(decoder)
+    decoder = BatchNormalization()(decoder)
+    decoder = Activation("relu")(decoder)
+    return decoder
 
-    model = Model(inputs=inputs, outputs=output)
 
+def unet(target_size=(256, 32, 1)):
+    """Creates a U-Net model consisting of an encoder, center, and decoder.
+
+    Args:
+        target_size: Size of the input image.
+
+    Returns:
+        model: U-Net model.
+    """
+
+    # make the layers
+    inputs = Input(shape=target_size)
+    # 256
+    encoder0_pool, encoder0 = encoder_block(inputs, 32)
+    # 128
+    encoder1_pool, encoder1 = encoder_block(encoder0_pool, 64)
+    # 64
+    encoder2_pool, encoder2 = encoder_block(encoder1_pool, 128)
+    # 32
+    encoder3_pool, encoder3 = encoder_block(encoder2_pool, 256)
+    # 16
+    center = conv_block(encoder3_pool, 512)  # we were using 128 before
+    # center
+    # 32
+    decoder3 = decoder_block(center, encoder3, 256)
+    # 64
+    decoder2 = decoder_block(decoder3, encoder2, 128)
+    # 64
+    decoder1 = decoder_block(decoder2, encoder1, 64)
+    # 128
+    decoder0 = decoder_block(decoder1, encoder0, 32)
+    # 256
+    outputs = Conv2D(1, (1, 1), activation="sigmoid")(decoder0)
+    # outputs = Conv2D(1, (1, 1), activation='tanh')(decoder0)
+
+    # make the model
+    model = models.Model(inputs=[inputs], outputs=[outputs])
     return model
 
 
@@ -975,12 +886,7 @@ def unet_seg(
 
     """
 
-    model = unet(
-        input_size=input_size,
-        final_activation="sigmoid",
-        output_classes=1,
-        levels=levels,
-    )
+    model = unet(input_size)
 
     loss = pixelwise_weighted_bce
     metrics = [binary_acc]
@@ -1079,29 +985,6 @@ def binary_acc(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         pass
 
     return keras.metrics.binary_accuracy(seg, y_pred)
-
-
-def dice_coeff(y_true, y_pred):
-    smooth = 0.01  # originally 1. Make sure this is float.
-    score_factor = 2.0  # originally 2. Same, keep as float.
-    # Flatten
-    y_true_f = tf.reshape(y_true, [-1])  # flattens tensor
-    y_pred_f = tf.reshape(y_pred, [-1])
-    intersection = tf.reduce_sum(y_true_f * y_pred_f)  # sums the resulting product
-    score = (score_factor * intersection + smooth) / (
-        tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth
-    )
-    return score
-
-
-def dice_loss(y_true, y_pred):
-    loss = 1 - dice_coeff(y_true, y_pred)
-    return loss
-
-
-def bce_dice_loss(y_true, y_pred):
-    loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
-    return loss
 
 
 def train_model(
