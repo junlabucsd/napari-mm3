@@ -58,7 +58,7 @@ the coverage at least stays the same before you submit a pull request.
 
 ### b. Segmentation
 
-___With Otsu:___
+___With Otsu's method:___
 
 * [PickChannels](https://github.com/junlabucsd/napari-mm3/blob/main/docs/pickchannels-widget.md) -- User guided selection of empty and full traps.
 
@@ -66,11 +66,11 @@ ___With Otsu:___
 
 * [SegmentOtsu](https://github.com/junlabucsd/napari-mm3/blob/main/docs/segmentotsu-widget.md) -- Use Otsu segmentation to segment cells.
 
-___With UNet:___
+___With U-Net:___
 
-* [Annotate] -- annotate images for ML (U-Net or similar) training purposes.
+* [Annotate](https://github.com/junlabucsd/napari-mm3/blob/main/docs/annotate-widget.md) -- annotate images for ML (U-Net or similar) training purposes.
 
-* [Train U-Net] -- Train a model for cell segmentation.
+* [Train U-Net](https://github.com/junlabucsd/napari-mm3/blob/main/docs/trainunet-widget.md) -- Train a U-Net model for cell segmentation.
 
 * [SegmentUnet](https://github.com/junlabucsd/napari-mm3/blob/main/docs/segmentunet-widget.md) -- Run U-Net segmentation (you will need to supply your own model)
 
@@ -120,7 +120,7 @@ If you encounter any problems, please [file an issue] along with a detailed desc
 [Mozilla Public License 2.0]: https://www.mozilla.org/media/MPL/2.0/index.txt
 [cookiecutter-napari-plugin]: https://github.com/napari/cookiecutter-napari-plugin
 
-[file an issue]: https://github.com/ahirsharan/napari-mm3/issues
+[file an issue]: https://github.com/junlabucsd/napari-mm3/issues
 
 [napari]: https://github.com/napari/napari
 [tox]: https://tox.readthedocs.io/en/latest/

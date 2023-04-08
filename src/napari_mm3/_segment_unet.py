@@ -11,7 +11,14 @@ import multiprocessing
 import numpy as np
 import napari
 from magicgui import magicgui
-from magicgui.widgets import FileEdit, SpinBox, FloatSlider, CheckBox, ComboBox, PushButton
+from magicgui.widgets import (
+    FileEdit,
+    SpinBox,
+    FloatSlider,
+    CheckBox,
+    ComboBox,
+    PushButton,
+)
 from napari.types import ImageData, LabelsData
 import os
 
@@ -28,7 +35,7 @@ from ._deriving_widgets import (
     load_specs,
     information,
     load_stack_params,
-    warning
+    warning,
 )
 
 # loss functions for model
@@ -210,11 +217,15 @@ def save_out(params, segmented_imgs, fov_id, peak_id):
 
     return
 
+
 def normalize_to_one(img_stack):
     # # robust normalization of peak's image stack to 1
 
     # permute to take advantage of numpy slicing
-    img_stack = np.transpose((np.transpose(img_stack)-np.min(img_stack,axis=(1,2)))/np.ptp(img_stack,axis=(1,2)))
+    img_stack = np.transpose(
+        (np.transpose(img_stack) - np.min(img_stack, axis=(1, 2)))
+        / np.ptp(img_stack, axis=(1, 2))
+    )
 
     return img_stack
 
@@ -333,8 +344,9 @@ def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
 
     return
 
+
 def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params):
-    #params
+    # params
     cellClassThreshold = params["segment"]["cell_class_threshold"]
     min_object_size = params["segment"]["min_object_size"]
 
@@ -354,11 +366,12 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
             min_object_size=min_object_size,
         )
 
-        #should be 8bit
+        # should be 8bit
         segmented_imgs = segmented_imgs.astype("uint8")
 
         # save the segmented images
         save_out(params, segmented_imgs, fov_id, peak_id)
+
 
 def segment_peak_unet(img_stack, unet_shape, pad_dict, model, params):
     # arguments to predict
@@ -516,8 +529,8 @@ class SegmentUnet(MM3Container):
         self.params["segment"]["trained_model_image_width"] = self.width_widget.value
         self.params["segment"]["batch_size"] = self.batch_size_widget.value
         self.params["segment"][
-                "cell_class_threshold"
-            ] = self.cell_class_threshold_widget.value
+            "cell_class_threshold"
+        ] = self.cell_class_threshold_widget.value
         self.params["segment"]["min_object_size"] = self.min_object_size_widget.value
         self.params["segment"]["normalize_to_one"] = self.normalize_widget.value
         self.params["num_analyzers"] = multiprocessing.cpu_count()
@@ -534,7 +547,6 @@ class SegmentUnet(MM3Container):
         self.params["pred_dir"] = self.params["ana_dir"] / "predictions"
         self.params["cell_dir"] = self.params["ana_dir"] / "cell_data"
         self.params["track_dir"] = self.params["ana_dir"] / "tracking"
-
 
     def run(self):
         """Overriding method. Perform mother machine analysis."""
@@ -582,7 +594,9 @@ class SegmentUnet(MM3Container):
             self.params["segment"]["trained_model_image_width"],
         )
 
-        img_stack = load_stack_params(self.params, valid_fov, valid_peak, postfix=self.params['phase_plane'])
+        img_stack = load_stack_params(
+            self.params, valid_fov, valid_peak, postfix=self.params["phase_plane"]
+        )
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
 
@@ -596,14 +610,16 @@ class SegmentUnet(MM3Container):
             custom_objects=custom_objects,
         )
 
-        predictions = segment_peak_unet(img_stack, unet_shape, pad_dict, seg_model, self.params)
+        predictions = segment_peak_unet(
+            img_stack, unet_shape, pad_dict, seg_model, self.params
+        )
 
         del seg_model
 
         min_object_size = self.params["segment"]["min_object_size"]
         cellClassThreshold = self.params["segment"]["cell_class_threshold"]
 
-        #binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
+        # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
         segmented_imgs = binarize_and_label(
             predictions,
             cellClassThreshold,
