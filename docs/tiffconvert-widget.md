@@ -2,6 +2,9 @@
 
 **Input**
 * .nd2 file as produced by Nikon Elements
+OR
+
+* Any bioformats supported file.
 
 **Output**
 * Individual TIFF files. 
