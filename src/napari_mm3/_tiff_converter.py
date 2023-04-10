@@ -11,7 +11,6 @@ import io
 import numpy as np
 import datetime
 
-from dask import delayed
 from pathlib import Path
 from skimage import io
 from napari.utils import progress
@@ -427,26 +426,23 @@ class TIFFExport(Container):
         viewer.grid.enabled = True
         viewer.grid.shape = (-1, 4)
 
-        # Print out results!
+        # display images
         for fov_id in fovs:
             # TODO: Can allow xy in any position via regex! But it currently does not
-            found_files = self.exp_dir.glob(f"*xy{fov_id:02d}.tif")
+            path = self.exp_dir / "TIFF"
+            found_files = path.glob(f"*xy{fov_id:02d}.tif")
+            found_files = sorted(found_files)  # sort by timepoint
 
-            found_files = sorted(found_files)  # should sort by timepoint
+            stack = []
+            for f in list(found_files):
+                stack.append(io.imread(f))
 
-            sample = io.imread(found_files[0])
-
-            lazy_imread = delayed(io.imread)  # lazy reader
-            lazy_arrays = [lazy_imread(fn) for fn in found_files]
-            dask_arrays = [
-                da.from_delayed(delayed_reader, shape=sample.shape, dtype=sample.dtype)
-                for delayed_reader in lazy_arrays
-            ]
-            # Stack into one large dask.array
-            stack = da.stack(dask_arrays, axis=0)
-
-            viewer.add_image(stack, name="FOV %02d" % fov_id, contrast_limits=[90, 250])
-            # viewer.add_image(stack,name='FOV %02d' % fov_id)
+            viewer.add_image(
+                np.array(stack),
+                name="FOV %02d" % fov_id,
+                multiscale=False,
+                contrast_limits=[90, 250],
+            )
 
     def set_widget_bounds(self):
         if self.nd2files_found:
