@@ -397,7 +397,7 @@ def segment_peak_unet(img_stack, unet_shape, pad_dict, model, params):
     )  # keep same order
 
     # predict cell locations. This has multiprocessing built in but I need to mess with the parameters to see how to best utilize it. ***
-    predictions = model.predict_generator(image_generator, **predict_args)
+    predictions = model.predict(image_generator, **predict_args)
     predictions = pad_back(predictions, unet_shape, pad_dict)
 
     return predictions
@@ -494,7 +494,7 @@ class SegmentUnet(MM3Container):
         self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
         self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
         self.model_source_widget = ComboBox(
-            label="Model source", choices=["MM3", "DeLTA"]
+            label="Model source", choices=["Pixelwise weighted","Unweighted"]
         )
         self.preview_widget = PushButton(label="generate preview", value=False)
 
@@ -553,13 +553,13 @@ class SegmentUnet(MM3Container):
         self.set_params()
         self.model_source = self.model_source_widget.value
 
-        if self.model_source == "DeLTA":
+        if self.model_source == "Pixelwise weighted":
             custom_objects = {
                 "binary_acc": binary_acc,
                 "pixelwise_weighted_bce": pixelwise_weighted_bce,
             }
 
-        elif self.model_source == "MM3":
+        elif self.model_source == "Unweighted":
             custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
 
         segmentUNet(self.params, custom_objects)
@@ -573,13 +573,13 @@ class SegmentUnet(MM3Container):
 
         self.model_source = self.model_source_widget.value
 
-        if self.model_source == "DeLTA":
+        if self.model_source == "Pixelwise weighted":
             custom_objects = {
                 "binary_acc": binary_acc,
                 "pixelwise_weighted_bce": pixelwise_weighted_bce,
             }
 
-        elif self.model_source == "MM3":
+        elif self.model_source == "Unweighted":
             custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
 
         # TODO: Add ability to change these to other FOVs
