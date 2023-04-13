@@ -21,6 +21,10 @@ and review the napari docs for plugin developers:
 https://napari.org/plugins/stable/index.html
 -->
 
+
+https://user-images.githubusercontent.com/40699438/231625885-02f2f925-2ce0-430a-b726-86826abdeedb.mp4
+
+
 ## Installation
 
 We describe installation with mamba, a faster version of conda which we recommend. Installation with conda is the exact same, except replace `mamba` with `conda` Run the following command:
