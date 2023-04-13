@@ -9,7 +9,6 @@ import tifffile as tiff
 import re
 import io
 import numpy as np
-import datetime
 
 from pathlib import Path
 from skimage import io
@@ -426,10 +425,12 @@ class TIFFExport(Container):
         viewer.grid.enabled = True
         viewer.grid.shape = (-1, 4)
 
+        path = self.exp_dir / "TIFF"
+
         # display images
         for fov_id in fovs:
             # TODO: Can allow xy in any position via regex! But it currently does not
-            path = self.exp_dir / "TIFF"
+
             found_files = path.glob(f"*xy{fov_id:02d}.tif")
             found_files = sorted(found_files)  # sort by timepoint
 
@@ -440,6 +441,7 @@ class TIFFExport(Container):
             viewer.add_image(
                 np.array(stack),
                 name="FOV %02d" % fov_id,
+                colormap="gray",
                 multiscale=False,
                 contrast_limits=[90, 250],
             )
