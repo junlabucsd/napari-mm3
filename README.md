@@ -22,7 +22,9 @@ https://napari.org/plugins/stable/index.html
 -->
 
 
-https://user-images.githubusercontent.com/40699438/231625885-02f2f925-2ce0-430a-b726-86826abdeedb.mp4
+
+https://user-images.githubusercontent.com/40699438/232159063-01e9c222-3ea1-44a2-a154-d39b89077120.mp4
+
 
 
 ## Installation
