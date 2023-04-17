@@ -77,8 +77,6 @@ def get_tif_params(params, image_filename, find_channels=True):
     'fov' : image_metadata['fov'], # fov id
     't' : image_metadata['t'], # time point
     'jdn' : image_metadata['jdn'], # absolute julian time
-    'x' : image_metadata['x'], # x position on stage [um]
-    'y' : image_metadata['y'], # y position on stage [um]
     'plane_names' : image_metadata['plane_names'] # list of plane names
     'channels': cp_dict, # dictionary of channel locations, in the case of Unet-based channel segmentation, it's a dictionary of channel labels
 
@@ -97,9 +95,9 @@ def get_tif_params(params, image_filename, find_channels=True):
 
             if params["TIFF_source"] == "TIFF_from_elements":
                 image_metadata = get_tif_metadata_elements(tif)
-            elif params["TIFF_source"] == "nd2ToTIFF":
-                image_metadata = get_tif_metadata_nd2ToTIFF(tif)
-            elif params["TIFF_source"] == "other":
+            elif params["TIFF_source"] == "nd2":
+                image_metadata = get_tif_metadata_nd2(tif)
+            elif params["TIFF_source"] == "BioFormats":
                 image_metadata = get_tif_metadata_filename(tif)
 
         # look for channels if flagged
@@ -128,8 +126,6 @@ def get_tif_params(params, image_filename, find_channels=True):
             "fov": image_metadata["fov"],  # fov id
             "t": image_metadata["t"],  # time point
             "jd": image_metadata["jd"],  # absolute julian time
-            "x": image_metadata["x"],  # x position on stage [um]
-            "y": image_metadata["y"],  # y position on stage [um]
             "planes": image_metadata["planes"],  # list of plane names
             "shape": img_shape,  # image shape x y in pixels
             # 'channels' : {1 : {'A' : 1, 'B' : 2}, 2 : {'C' : 3, 'D' : 4}}}
@@ -137,7 +133,7 @@ def get_tif_params(params, image_filename, find_channels=True):
         }  # dictionary of channel locations
 
     except:
-        warning("Failed get_params for " + image_filename.name)
+        warning(f"Failed get_params for {image_filename}")
         information(sys.exc_info()[0])
         information(sys.exc_info()[1])
         information(traceback.print_tb(sys.exc_info()[2]))
@@ -147,9 +143,9 @@ def get_tif_params(params, image_filename, find_channels=True):
         }
 
 
-def get_tif_metadata_nd2ToTIFF(tif):
+def get_tif_metadata_nd2(tif):
     """This function pulls out the metadata from a tif file and returns it as a dictionary.
-    This if tiff files as exported by the mm3 function mm3_nd2ToTIFF.py. All the metdata
+    This if tiff files as exported by the mm3 function mm3_nd2.py. All the metdata
     is found in that script and saved in json format to the tiff, so it is simply extracted here
 
     Paramters:
@@ -159,8 +155,6 @@ def get_tif_metadata_nd2ToTIFF(tif):
             'fov': int,
             't' : int,
             'jdn' (float)
-            'x' (float)
-            'y' (float)
             'planes' (list of strings)
 
     Called by
@@ -191,8 +185,6 @@ def get_tif_metadata_filename(tif):
             'fov': int,
             't' : int,
             'jdn' (float)
-            'x' (float)
-            'y' (float)
 
     Called by
     mm3_Compile.get_tif_params
@@ -202,8 +194,6 @@ def get_tif_metadata_filename(tif):
         "fov": get_fov(tif.filename),  # fov id
         "t": get_time(tif.filename),  # time point
         "jd": -1 * 0.0,  # absolute julian time
-        "x": -1 * 0.0,  # x position on stage [um]
-        "y": -1 * 0.0,
         "planes": get_plane(tif.filename),
     }  # y position on stage [um]
 
@@ -237,8 +227,6 @@ def get_tif_metadata_elements(tif):
         "fov": -1,
         "t": -1,
         "jd": -1 * 0.0,
-        "x": -1 * 0.0,
-        "y": -1 * 0.0,
         "planes": [],
     }
 
@@ -1117,7 +1105,7 @@ def compile(params):
     analyzed_imgs = {}  # for storing get_params pool results.
 
     ## need to stack phase and fl plane if not exported from .nd2
-    if p["TIFF_source"] == "other":
+    if p["TIFF_source"] == "BioFormats":
         information("Checking if phase & fluorescence planes are separated")
         found_files = list(p["TIFF_dir"].glob("*.tif"))
         found_files = sorted(found_files)  # sort by timepoint
@@ -1226,9 +1214,9 @@ def compile(params):
             # for each file name. True means look for channels
 
             # This is the non-parallelized version (useful for debug)
-            # analyzed_imgs[fn] = get_tif_params(fn, True)
+            # analyzed_imgs[fn] = get_tif_params(params,fn, True)
 
-            # Parallelized
+            # # Parallelized
             analyzed_imgs[fn] = pool.apply_async(
                 get_tif_params, args=(params, fn, True)
             )
@@ -1446,7 +1434,7 @@ class Compile(MM3Container):
         # TODO: Auto-infer?
         self.image_source_widget = ComboBox(
             label="image source",
-            choices=["nd2ToTIFF", "TIFF_from_elements", "other"],
+            choices=["nd2", "BioFormats", "TIFF_from_elements"],
         )
         self.phase_plane_widget = PlanePicker(
             self.valid_planes, label="phase plane channel"
@@ -1551,7 +1539,7 @@ class Compile(MM3Container):
             "cell_dir": self.analysis_folder / "cell_data",
             "track_dir": self.analysis_folder / "tracking",
             # use jd time in image metadata to make time table. Set to false if no jd time
-            "use_jd": self.image_source in {"nd2ToTIFF", "TIFF_from_elements"},
+            "use_jd": self.image_source in {"nd2", "TIFF_from_elements"},
         }
         self.viewer.window._status_bar._toggle_activity_dock(True)
 
