@@ -7,7 +7,7 @@ It is also at this time that metadata is drawn from the images and saved.
 
 **Parameters**
 
-* `TIFF_source` needs to be specified to indicate how the script should look for TIFF metadata. Choices are `elements`, `nd2ToTIFF`, and `other`. `elements` indicates that the TIFFs came from nikon elements. `nd2ToTIFF` indicates that TIFF files were exported by our [nd2ToTIFF](#0-generating-a-tiff-stack) script. Finally, `other` indicates that the subsequent scripts should simply read in information from TIFF names.
+* `TIFF_source` needs to be specified to indicate how the script should look for TIFF metadata. Choices are `nd2`, `BioFormats`. `elements`. `nd2` indicates that TIFF files were exported by nd2reader within the [TIFFconverter](https://github.com/junlabucsd/napari-mm3/blob/main/docs/tiffconvert-widget.md) script. `BioFormats` indicates that the TIFFs were extracted via Bio-Formats in the TIFFconverter widget and subsequent scripts should read in information from the TIFF names. Lastly, `elements` indicates that the TIFFs came from Nikon Elements.
 * `channel_width`, `channel_separation`, and `channel_detection_snr`, which are used to help find the channels.
 * `channel_length_pad` and `channel_width_pad` will increase the size of your channel slices.
 * `phase_plane` is the postfix of the channel which contains the phase images
