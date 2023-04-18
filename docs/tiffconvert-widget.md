@@ -9,9 +9,9 @@ OR
 **Output**
 * Individual TIFF files. 
 
-mm3 currently currently takes individual TIFF images as its input. 
-If there are multiple color layers, then each TIFF image should be a stack of planes corresponding to a color. 
-The quality of your images is important for mm3 to work properly.
+By default, napari-mm3 will first look for raw images in the directory from which napari is launched.
+
+napari- mm3 currently currently takes individual TIFF images as its input. If there are multiple color layers, then each TIFF image should be a stack of planes corresponding to a color. The quality of your images is important for mm3 to work properly.
 
 The working directory now contains:
 ```
