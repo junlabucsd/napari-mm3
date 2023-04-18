@@ -20,8 +20,4 @@ The working directory now contains:
 ├── TIFF
 ```
 
-### Notes on metadata
-
-mm3_nd2ToTIFF.py reads the metadata directly from the .nd2 and then writes it into the header of the TIFF file when saving. The format is a json representation of a Python dictionary, and is recognized later by Compile.  
-
 
