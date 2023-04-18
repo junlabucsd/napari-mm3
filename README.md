@@ -34,14 +34,26 @@ We describe installation with mamba, a faster version of conda which we recommen
 ```
 mamba create -n napari-mm3 -c conda-forge conda-build tensorflow napari
 ``` 
-Now, you need to install our code (please let us know if this causes problems -- it has been a pain point in the past). To do so, clone the repository. Then, run the following commands from within your conda environment:
+Now, you need to install our code (please let us know if this causes problems -- it has been a pain point in the past). To do so, clone the repository:
+
+```
+git clone https://github.com/junlabucsd/napari-mm3.git
+```
+
+Then, run the following commands from within your conda environment:
 ```
 cd napari-mm3
 pip install -e .
 ```
 This supplies you with the latest, most recent version of our code.
 
-If you would like to have a more stable verison, simply run `pip install napari-mm3`. In general, we recommend going off of the github version.
+If you would like to have a more stable version, simply run `pip install napari-mm3`. In general, we recommend going off of the github version.
+
+napari-MM3 can use the [python-bioformats](https://pypi.org/project/python-bioformats/) library to import various image file formats. It can be installed with pip:
+```
+pip install python-bioformats
+```
+If your raw images are in the .nd2 format, they will be read in with the nd2reader package. In this case, Bio-Formats is not required.
 
 NOTES:
 Not running the conda command above and trying to install things in a different way may lead to difficult issues with PyQt5. We recommend following the above commands to simplify the situation.
@@ -58,7 +70,7 @@ the coverage at least stays the same before you submit a pull request.
 
 ### a. Preprocessing
 
-* [TIFFConverter](https://github.com/junlabucsd/napari-mm3/blob/main/docs/tiffconvert-widget.md) -- Turn your nd2 microscopy data, or other format via bioformats, into TIFFs. If your data is not in the nd2 format, follow the [input image guidelines](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Input-images-guidelines.md). Make sure to set 'image source' in Compile to 'Other'.
+* [TIFFConverter](https://github.com/junlabucsd/napari-mm3/blob/main/docs/tiffconvert-widget.md) -- Turn your nd2 microscopy data, or other format via bioformats, into TIFFs. If your data is not in the nd2 format, follow the [input image guidelines](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Input-images-guidelines.md). Make sure to set 'image source' in Compile to 'BioFormats / Other'.
 
 * [Compile](https://github.com/junlabucsd/napari-mm3/blob/main/docs/compile-widget.md) -- Locate traps, separate their timelapses into their own TIFFs, and return metadata.
 
