@@ -74,11 +74,11 @@ the coverage at least stays the same before you submit a pull request.
 
 * [Compile](https://github.com/junlabucsd/napari-mm3/blob/main/docs/compile-widget.md) -- Locate traps, separate their timelapses into their own TIFFs, and return metadata.
 
+* [PickChannels](https://github.com/junlabucsd/napari-mm3/blob/main/docs/pickchannels-widget.md) -- User guided selection of empty and full traps.
+
 ### b. Segmentation
 
 ___With Otsu's method:___
-
-* [PickChannels](https://github.com/junlabucsd/napari-mm3/blob/main/docs/pickchannels-widget.md) -- User guided selection of empty and full traps.
 
 * [Subtract](https://github.com/junlabucsd/napari-mm3/blob/main/docs/subtract-widget.md) -- Remove (via subtraction) empty traps from the background of traps that contain cells; run this on the phase contrast channel.
 
