@@ -14,7 +14,7 @@ from pathlib import Path
 from skimage import io
 from napari.utils import progress
 from magicgui.widgets import Container, FileEdit, CheckBox, PushButton, FloatSpinBox
-from ._deriving_widgets import FOVChooser, TimeRangeSelector, information
+from ._deriving_widgets import FOVChooser, TimeRangeSelector, warning, information
 
 
 def get_nd2_fovs(data_path):
@@ -311,16 +311,16 @@ class TIFFExport(Container):
         nd2files = list(Path(".").glob("*.nd2"))
         self.nd2files_found = len(nd2files) != 0
         if not self.nd2files_found:
+            warning(
+                "No nd2 files found in current directory. \nIf your data is in .nd2 format, launch napari from the directory containing the .nd2 file.\nNow looking for bioformats..."
+            )
+
             global bioformats, javabridge
             import javabridge
             import bioformats
 
             javabridge.start_vm(class_path=bioformats.JARS)
 
-            napari.utils.notifications.show_info(
-                "No Nd2 files found in current directory."
-                + "\nSpecify a custom data file manually, it will be converted to TIFFs with bioformats."
-            )
             self.nd2file = ""
             self.valid_times = [1, 1]
             self.valid_fovs = [1, 1]
@@ -332,11 +332,13 @@ class TIFFExport(Container):
         self.data_path_widget = FileEdit(
             label="data_path",
             value=self.nd2file,
+            mode="d",
             tooltip="Directory within which all your nd2 files are located.",
         )
         self.exp_dir_widget = FileEdit(
             label="experiment_directory",
             value=Path("./"),
+            mode="d",
             tooltip="Directory within which to put your TIFFs",
         )
         self.FOVs_range_widget = FOVChooser(self.valid_fovs)
