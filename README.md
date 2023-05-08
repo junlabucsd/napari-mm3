@@ -114,7 +114,7 @@ Finally, to better understand the data formats, you may wish to refer to the fol
 
 * [File structure](https://github.com/junlabucsd/napari-mm3/blob/main/docs/file-structure.md)
 
-* [Output file structure](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Cell-class-docs.md)
+* [Output data structure](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Cell-class-docs.md)
 
 ## License
 
