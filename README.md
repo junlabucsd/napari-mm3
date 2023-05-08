@@ -70,7 +70,7 @@ the coverage at least stays the same before you submit a pull request.
 
 ### a. Preprocessing
 
-* [TIFFConverter](https://github.com/junlabucsd/napari-mm3/blob/main/docs/tiffconvert-widget.md) -- Turn your nd2 microscopy data, or other format via bioformats, into TIFFs. If your data is not in the nd2 format, follow the [input image guidelines](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Input-images-guidelines.md). Make sure to set 'image source' in Compile to 'BioFormats / Other'.
+* [TIFFConverter](https://github.com/junlabucsd/napari-mm3/blob/main/docs/tiffconvert-widget.md) -- Turn your nd2 microscopy data, or other format via bioformats, into TIFFs. If your data is already exported as individual TIFF files, skip to the [Compile](https://github.com/junlabucsd/napari-mm3/blob/main/docs/compile-widget.md) widget. Take note of the [input image guidelines](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Input-images-guidelines.md).
 
 * [Compile](https://github.com/junlabucsd/napari-mm3/blob/main/docs/compile-widget.md) -- Locate traps, separate their timelapses into their own TIFFs, and return metadata.
 
