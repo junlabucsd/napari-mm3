@@ -1,6 +1,6 @@
 # Description of cell data
 
-When cells are made during lineage creation, the information is stored per cell in an object called Cell. The Cell object is the fundamental unit of data produced by mm3. Every Cell object has a unique identifier (`id`) as well as all the other pertinent information. The default data format save by the track widget is a dictionary of these cell objecs, where the keys are each cell id and the values are the object itself. Below is a description of the information contained in a Cell object and how to export it to other formats. For an overview on classes in Python see [here](https://learnpythonthehardway.org/book/ex40.html).
+When cells are made during lineage creation, the information is stored per cell in an object called Cell. The Cell object is the fundamental unit of data produced by mm3. Every Cell object has a unique identifier (`id`) as well as all the other pertinent information. The default data format saved by the track widget is a dictionary of these cell objecs, where the keys are each cell id and the values are the object itself. Below is a description of the information contained in a Cell object and how to export it to other formats. For an overview on classes in Python see [here](https://docs.python.org/3/tutorial/classes.html).
 
 ## Cell object attributes
 
