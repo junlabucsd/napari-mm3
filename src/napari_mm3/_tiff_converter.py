@@ -236,10 +236,12 @@ def nd2ToTIFF(
         ):
             # timepoint and fov output name (1 indexed rather than 0 indexed)
             t, fov = t_id + 1, fov_id + 1
-
-            milliseconds = copy.deepcopy(image_data.metadata["events"][t_id]["time"])
-            acq_days = milliseconds / 1000.0 / 60.0 / 60.0 / 24.0
-            acq_time = starttime.timestamp() + acq_days
+            try:
+                milliseconds = copy.deepcopy(image_data.metadata["events"][t_id]["time"])
+                acq_days = milliseconds / 1000.0 / 60.0 / 60.0 / 24.0
+                acq_time = starttime.timestamp() + acq_days
+            except IndexError:
+                acq_time = None
 
             # make dictionary which will be the metdata for this TIFF
             metadata_json = json.dumps(

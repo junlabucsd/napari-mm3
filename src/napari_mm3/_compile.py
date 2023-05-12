@@ -886,8 +886,12 @@ def make_time_table(params, analyzed_imgs):
     # need to go through the data once to find the first time
     for iname, idata in six.iteritems(analyzed_imgs):
         if params["use_jd"]:
-            if idata["jd"] < first_time:
-                first_time = idata["jd"]
+            try:
+                if idata["jd"] < first_time:
+                    first_time = idata["jd"]
+            except TypeError:
+                if idata["t"] < first_time:
+                    first_time = idata["t"]
         else:
             if idata["t"] < first_time:
                 first_time = idata["t"]
@@ -899,9 +903,14 @@ def make_time_table(params, analyzed_imgs):
     for iname, idata in six.iteritems(analyzed_imgs):
         if params["use_jd"]:
             # convert jd time to elapsed time in seconds
-            t_in_seconds = np.around(
-                (idata["jd"] - first_time) * 24 * 60 * 60, decimals=0
-            ).astype("uint32")
+            try:
+                t_in_seconds = np.around(
+                    (idata["jd"] - first_time) * 24 * 60 * 60, decimals=0
+                ).astype("uint32")
+            except:
+                t_in_seconds = np.around(
+                    (idata["t"] - first_time) * params["seconds_per_time_index"], decimals=0
+                ).astype("uint32")
         else:
             t_in_seconds = np.around(
                 (idata["t"] - first_time) * params["seconds_per_time_index"], decimals=0
