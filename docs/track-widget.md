@@ -4,7 +4,7 @@
 
 This widget reconstructs cell lineages from the segmented images.
 
-After cells are found for each channel in each time point, these labeled cells are connected across time to create complete cells and lineages.
+After cells are found for each channel in each time point, these labeled cells are connected across time to create complete cells and lineages. The lineage information is saved to a .json file. The notebook [here](https://github.com/junlabucsd/napari-mm3/blob/main/notebooks/napari_mm3_analysis_template.ipynb) demonstrates how to extract and visualize the data.
 
 **Input**
 * segmented channel TIFFs.
@@ -46,7 +46,7 @@ The working directory is now:
 ```
 
 **Output**
-* Data for all cells. Saved as a dictionary of Cell objects (see below) in the `cell_data` subfolder in the analysis directory. The file `all_cells.pkl` contains all identified cells, while `complete_cells.pkl` contains only cells with a mother and daughter identified.
+* Data for all cells. Saved as a dictionary of Cell objects (see below) in the `cell_data` subfolder in the analysis directory. The files `all_cells.pkl` and `all_cells.json` contain all identified cells, while `complete_cells.pkl` and `complete_cells.json` contain only cells with a mother and daughter identified.
 * (Optional) Lineage images. Lineage and segmentation information overlayed on the subtracted images across time frames.
 
 ### Notes on use
