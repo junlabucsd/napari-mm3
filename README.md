@@ -104,10 +104,14 @@ ___With U-Net:___
 
 ### e. Focus tracking
 
-* [Foci](https://github.com/junlabucsd/napari-mm3/blob/main/docs/foci-widget.md) -- We use this to track `foci' (bright fluorescent spots) inside of cells.
+* [Foci](https://github.com/junlabucsd/napari-mm3/blob/main/docs/foci-widget.md) -- We use this to track `foci` (bright fluorescent spots) inside of cells.
+
+### f. Extracting data and plotting
+
+* The notebook [here](https://github.com/junlabucsd/napari-mm3/blob/main/notebooks/napari_mm3_analysis_template.ipynb) demonstrates how to extract, filter and visualize the lineage data output by the [Track](https://github.com/junlabucsd/napari-mm3/blob/main/docs/track-widget.md) widget.
 
 
-### f. Outputs, inputs, and file structure
+### g. Outputs, inputs, and file structure
 Finally, to better understand the data formats, you may wish to refer to the following documents:
 
 * [Input image guidelines](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Input-images-guidelines.md)
