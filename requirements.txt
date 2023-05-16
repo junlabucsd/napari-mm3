@@ -10,3 +10,4 @@ scikit-image
 tensorflow
 nd2reader
 seaborn
+elasticdeform
