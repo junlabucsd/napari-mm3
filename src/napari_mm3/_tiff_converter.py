@@ -440,15 +440,17 @@ class TIFFExport(Container):
 
             stack = []
             for f in list(found_files):
-                stack.append(io.imread(f))
+                with tiff.TiffFile(f) as tif:
+                    stack.append(tif.asarray())
 
             viewer.add_image(
                 np.array(stack),
                 name="FOV %02d" % fov_id,
                 colormap="gray",
                 multiscale=False,
-                contrast_limits=[90, 250],
             )
+            viewer.dims.current_step = (0, 0)
+
 
     def set_widget_bounds(self):
         if self.nd2files_found:
