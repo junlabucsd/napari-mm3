@@ -490,7 +490,7 @@ class SegmentUnet(MM3Container):
         self.cell_class_threshold_widget = FloatSlider(
             label="cell class threshold", min=0, max=1.0, value=0.6
         )
-        self.normalize_widget = CheckBox(label="normalize to one", value=True)
+        self.normalize_widget = CheckBox(label="Rescale pixel intensity", value=True)
         self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
         self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
         self.model_source_widget = ComboBox(
