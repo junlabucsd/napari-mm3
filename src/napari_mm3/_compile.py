@@ -1562,7 +1562,7 @@ class Compile(MM3Container):
         images = self.viewer.add_image(np.array(image_fov_stack))
         self.viewer.dims.current_step = (0, 0)
         images.reset_contrast_limits()
-        images.gamma = 0.5
+        # images.gamma = 0.5
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value
