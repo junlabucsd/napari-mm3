@@ -647,8 +647,7 @@ def predictGenerator(
                 img = readreshape(
                     os.path.join(files_path, fname),
                     target_size=target_size,
-                    order=1,
-                    crop=crop,
+                    order=1
                 )
                 # Tensorflow needs one extra single dimension (so that it is a 4D tensor)
                 img = np.reshape(img, (1,) + img.shape)
@@ -760,12 +759,8 @@ def conv_block(input_tensor, num_filters):
     Returns:
         encoder: Output tensor of the block.
     """
-    encoder = Conv2D(num_filters, (3, 3), padding="same")(input_tensor)
-    encoder = BatchNormalization()(encoder)
-    encoder = Activation("relu")(encoder)
-    encoder = Conv2D(num_filters, (3, 3), padding="same")(encoder)
-    encoder = BatchNormalization()(encoder)
-    encoder = Activation("relu")(encoder)
+    encoder = Conv2D(num_filters, (3, 3), padding="same",activation='relu')(input_tensor)
+    encoder = Conv2D(num_filters, (3, 3), padding="same",activation='relu')(encoder)
     return encoder
 
 
@@ -801,23 +796,17 @@ def decoder_block(input_tensor, concat_tensor, num_filters):
         decoder: Output tensor of the decoder block.
     """
 
-    decoder = Conv2DTranspose(num_filters, (2, 2), strides=(2, 2), padding="same")(
+    decoder = Conv2DTranspose(num_filters, (2, 2), strides=(2, 2), padding="same",activation = 'relu')(
         input_tensor
     )
-    # decoder = Concatenate([concat_tensor, decoder], axis=-1)
     decoder = Concatenate(axis=-1)([concat_tensor, decoder])
-    decoder = BatchNormalization()(decoder)
-    decoder = Activation("relu")(decoder)
-    decoder = Conv2D(num_filters, (3, 3), padding="same")(decoder)
-    decoder = BatchNormalization()(decoder)
-    decoder = Activation("relu")(decoder)
-    decoder = Conv2D(num_filters, (3, 3), padding="same")(decoder)
-    decoder = BatchNormalization()(decoder)
-    decoder = Activation("relu")(decoder)
+    decoder = Conv2D(num_filters, (3, 3), padding="same", activation = 'relu')(decoder)
+    decoder = Conv2D(num_filters, (3, 3), padding="same",activation = 'relu')(decoder)
+
     return decoder
 
 
-def unet(target_size=(256, 32, 1)):
+def unet(target_size=(256, 32, 1),num_filters=64):
     """Creates a U-Net model consisting of an encoder, center, and decoder.
 
     Args:
@@ -830,32 +819,30 @@ def unet(target_size=(256, 32, 1)):
     # make the layers
     inputs = Input(shape=target_size)
     # 256
-    encoder0_pool, encoder0 = encoder_block(inputs, 32)
+    encoder0_pool, encoder0 = encoder_block(inputs, num_filters)
     # 128
-    encoder1_pool, encoder1 = encoder_block(encoder0_pool, 64)
+    encoder1_pool, encoder1 = encoder_block(encoder0_pool, num_filters*2)
     # 64
-    encoder2_pool, encoder2 = encoder_block(encoder1_pool, 128)
+    encoder2_pool, encoder2 = encoder_block(encoder1_pool, num_filters*4)
     # 32
-    encoder3_pool, encoder3 = encoder_block(encoder2_pool, 256)
+    encoder3_pool, encoder3 = encoder_block(encoder2_pool, num_filters*8)
     # 16
-    center = conv_block(encoder3_pool, 512)  # we were using 128 before
+    center = conv_block(encoder3_pool, num_filters*16)  # we were using 128 before
     # center
     # 32
-    decoder3 = decoder_block(center, encoder3, 256)
+    decoder3 = decoder_block(center, encoder3, num_filters*8)
     # 64
-    decoder2 = decoder_block(decoder3, encoder2, 128)
+    decoder2 = decoder_block(decoder3, encoder2, num_filters*4)
     # 64
-    decoder1 = decoder_block(decoder2, encoder1, 64)
+    decoder1 = decoder_block(decoder2, encoder1, num_filters*2)
     # 128
-    decoder0 = decoder_block(decoder1, encoder0, 32)
+    decoder0 = decoder_block(decoder1, encoder0, num_filters)
     # 256
     outputs = Conv2D(1, (1, 1), activation="sigmoid")(decoder0)
-    # outputs = Conv2D(1, (1, 1), activation='tanh')(decoder0)
 
     # make the model
     model = models.Model(inputs=[inputs], outputs=[outputs])
     return model
-
 
 # Use the following model for segmentation:
 def unet_seg(
@@ -1092,25 +1079,25 @@ class TrainUnet(MM3Container):
         self.image_widget = FileEdit(
             mode="d",
             label="image directory",
-            value=Path(self.analysis_folder / "training/images/"),
+            value=Path(self.analysis_folder / "training" / "images"),
         )
 
         self.mask_widget = FileEdit(
             mode="d",
             label="mask directory",
-            value=Path(self.analysis_folder / "training/masks/"),
+            value=Path(self.analysis_folder / "training" / "masks"),
         )
 
         self.weights_widget = FileEdit(
             mode="d",
             label="weights directory",
-            value=Path(self.analysis_folder / "training/weights"),
+            value=Path(self.analysis_folder / "training" / "weights"),
         )
 
         self.test_widget = FileEdit(
             mode="d",
             label="test data directory",
-            value=Path(self.analysis_folder / "training/test/"),
+            value=Path(self.analysis_folder / "training" / "test"),
         )
 
         self.load_existing_widget = CheckBox(label="Load pretrained weights")
@@ -1121,7 +1108,7 @@ class TrainUnet(MM3Container):
             mode="r",
             label="model file",
             tooltip="Location to save model to.",
-            value=Path("./models/test.hdf5"),
+            value=Path(".") / "models" / "test.hdf5",
         )
 
         self.validation_split_widget = FloatSpinBox(

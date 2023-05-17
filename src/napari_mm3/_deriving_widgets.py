@@ -258,13 +258,13 @@ class MM3Container(Container):
             mode="d",
             label="analysis folder",
             tooltip="Required. Location for outputting analysis. If in doubt, leave as default.",
-            value=Path("./analysis"),
+            value=Path(".") / "analysis",
         )
         self.TIFF_folder_widget = FileEdit(
             mode="d",
             label="TIFF folder",
             tooltip="Required. Location for the input images. If in doubt, leave as default.",
-            value=Path("./TIFF"),
+            value=Path(".") / "TIFF",
         )
         self.experiment_name_widget = LineEdit(
             label="output prefix",
