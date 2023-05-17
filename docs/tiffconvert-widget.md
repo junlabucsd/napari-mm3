@@ -1,4 +1,5 @@
 ## Generating a TIFF stack 
+<img width="1187" alt="177629474-5fd7ee80-682e-4aaa-bf6e-dd547e40c458" src="https://github.com/junlabucsd/napari-mm3/assets/40699438/3cd33810-bad0-40cc-a33d-8a5c5ed89cca">
 
 **Input**
 * .nd2 file as produced by Nikon Elements
