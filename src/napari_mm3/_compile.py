@@ -12,6 +12,7 @@ import tifffile as tiff
 import numpy as np
 import json
 import struct
+import nd2reader
 
 from scipy import ndimage as ndi
 from skimage.feature import match_template
@@ -1482,6 +1483,8 @@ class Compile(MM3Container):
             max=1,
         )
 
+        self.inspect_widget = PushButton(text="visualize all FOVs (from .nd2)")
+
         self.fov_widget.connect_callback(self.set_fovs)
         self.image_source_widget.changed.connect(self.set_image_source)
         self.phase_plane_widget.changed.connect(self.set_phase_plane)
@@ -1489,6 +1492,7 @@ class Compile(MM3Container):
         self.seconds_per_frame_widget.changed.connect(self.set_seconds_per_frame)
         self.channel_width_widget.changed.connect(self.set_channel_width)
         self.channel_separation_widget.changed.connect(self.set_channel_separation)
+        self.inspect_widget.clicked.connect(self.display_all_fovs)
 
         self.append(self.fov_widget)
         self.append(self.image_source_widget)
@@ -1497,6 +1501,7 @@ class Compile(MM3Container):
         self.append(self.seconds_per_frame_widget)
         self.append(self.channel_width_widget)
         self.append(self.channel_separation_widget)
+        self.append(self.inspect_widget)
 
         self.set_image_source()
         self.set_phase_plane()
@@ -1506,7 +1511,8 @@ class Compile(MM3Container):
         self.set_channel_width()
         self.set_channel_separation()
 
-        self.display_image()
+        self.display_single_fov()
+        # self.render_images()
 
     def run(self):
         """Overriding method. Performs Mother Machine Analysis"""
@@ -1555,7 +1561,7 @@ class Compile(MM3Container):
         compile(params)
         information("Finished.")
 
-    def display_image(self):
+    def display_single_fov(self):
         self.viewer.layers.clear()
         self.viewer.text_overlay.visible = False
         image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
@@ -1563,6 +1569,45 @@ class Compile(MM3Container):
         self.viewer.dims.current_step = (0, 0)
         images.reset_contrast_limits()
         # images.gamma = 0.5
+
+
+    def display_all_fovs(self):
+        viewer = self.viewer
+        viewer.layers.clear()
+        viewer.grid.enabled = True
+
+        filepath = Path('.')
+        nd2file = list(filepath.glob('*.nd2'))[0]
+
+        if not nd2file:
+            warning(f'Could not find .nd2 file to display in directory {filepath.resolve()}')
+            return
+        
+        with nd2reader.reader.ND2Reader(str(nd2file)) as ndx:
+            sizes = ndx.sizes
+    
+            if 't' not in sizes:
+                sizes['t'] = 1
+            if 'z' not in sizes:
+                sizes['z'] = 1
+            if 'c' not in sizes:
+                sizes['c'] = 1
+            ndx.bundle_axes = 'zcyx'
+            ndx.iter_axes = 't'
+            n = len(ndx)
+
+            shape = (sizes['t'], sizes['z'], sizes['v'],sizes['c'], sizes['y'], sizes['x'])
+            image  = np.zeros(shape, dtype=np.float32)
+
+            for i in range(n):
+                image[i] = ndx.get_frame(i)
+
+        image = np.squeeze(image)
+
+        viewer.add_image(image, channel_axis = 1, colormap='gray')
+        viewer.grid.shape = (-1, 3)
+
+        viewer.dims.current_step = (0, 0)
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value

@@ -296,7 +296,7 @@ def pad_back(predictions, unet_shape, pad_dict):
     return predictions
 
 
-def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
+def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None, view_result: bool = False):
     """
     Segments the channels from one fov using the U-net CNN model.
 
@@ -338,14 +338,26 @@ def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None):
             ana_peak_ids.append(peak_id)
     ana_peak_ids.sort()  # sort for repeatability
 
-    segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params)
+    segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params, view_result)
 
     information("Finished segmentation for FOV {}.".format(fov_id))
 
     return
 
 
-def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params):
+def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params, view_result: bool = False):
+    """
+    Segments cells using U-net model.
+
+    Args:
+        ana_peak_ids (list): List of peak IDs to segment.
+        fov_id (str): FOV ID.
+        pad_dict (dict): Dictionary containing padding information.
+        unet_shape (tuple): Shape of the U-net model.
+        model: U-net model.
+        params (dict): Parameters for cell segmentation.
+        view_result (bool, optional): Whether to display the segmentation results. Defaults to False.
+    """
     # params
     cellClassThreshold = params["segment"]["cell_class_threshold"]
     min_object_size = params["segment"]["min_object_size"]
@@ -366,6 +378,17 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
             min_object_size=min_object_size,
         )
 
+        if view_result:
+            viewer = napari.current_viewer()
+            viewer.grid.enabled = True
+            viewer.grid.shape = (-1, 20)
+
+            viewer.add_labels(
+                segmented_imgs.astype('int'),
+                name=peak_id,
+                visible=True,
+            )
+
         # should be 8bit
         segmented_imgs = segmented_imgs.astype("uint8")
 
@@ -374,6 +397,19 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
 
 
 def segment_peak_unet(img_stack, unet_shape, pad_dict, model, params):
+    """
+    Segments a peak using U-net model.
+
+    Args:
+        img_stack: Image stack for the peak.
+        unet_shape (tuple): Shape of the U-net model.
+        pad_dict (dict): Dictionary containing padding information.
+        model: U-net model.
+        params (dict): Parameters for cell segmentation.
+
+    Returns:
+        numpy.ndarray: Predictions of the U-net model for the peak.
+    """
     # arguments to predict
     predict_args = dict(
         use_multiprocessing=True, workers=params["num_analyzers"], verbose=1
@@ -403,8 +439,15 @@ def segment_peak_unet(img_stack, unet_shape, pad_dict, model, params):
     return predictions
 
 
-def segmentUNet(params, custom_objects):
+def segmentUNet(params, custom_objects, view_result):
+    """
+    Segments cells using U-net model.
 
+    Args:
+        params (dict): Experiment parameters.
+        custom_objects (dict): Custom objects for model loading.
+        view_result (bool): Whether to display the segmentation results.
+    """
     information("Loading experiment parameters.")
     p = params
 
@@ -451,10 +494,11 @@ def segmentUNet(params, custom_objects):
     information("Model loaded.")
 
     for fov_id in fov_id_list:
-        segment_fov_unet(fov_id, specs, seg_model, params, color=p["phase_plane"])
+        segment_fov_unet(fov_id, specs, seg_model, params, color=p["phase_plane"], view_result=view_result)
 
     del seg_model
     information("Finished segmentation.")
+
 
 
 class SegmentUnet(MM3Container):
@@ -488,7 +532,7 @@ class SegmentUnet(MM3Container):
             max=9999,
         )
         self.cell_class_threshold_widget = FloatSlider(
-            label="cell class threshold", min=0, max=1.0, value=0.6
+            label="cell class threshold", min=0, max=1.0, value=0.5
         )
         self.normalize_widget = CheckBox(label="Rescale pixel intensity", value=True)
         self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
@@ -497,6 +541,7 @@ class SegmentUnet(MM3Container):
             label="Model source", choices=["Pixelwise weighted","Unweighted"]
         )
         self.preview_widget = PushButton(label="generate preview", value=False)
+        self.display_widget = CheckBox(label='Display results',value=True)
 
         self.append(self.fov_widget)
         self.append(self.plane_widget)
@@ -509,11 +554,16 @@ class SegmentUnet(MM3Container):
         self.append(self.width_widget)
         self.append(self.model_source_widget)
         self.append(self.preview_widget)
+        self.append(self.display_widget)
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.preview_widget.clicked.connect(self.render_preview)
+        self.display_widget.clicked.connect(self.set_view_result)
+        self.model_source_widget.changed.connect(self.set_model_source)
 
         self.set_fovs(self.valid_fovs)
+        self.set_view_result()
+        self.set_model_source()
 
     def set_params(self):
         self.params = dict()
@@ -551,7 +601,7 @@ class SegmentUnet(MM3Container):
     def run(self):
         """Overriding method. Perform mother machine analysis."""
         self.set_params()
-        self.model_source = self.model_source_widget.value
+        self.viewer.layers.clear()
 
         if self.model_source == "Pixelwise weighted":
             custom_objects = {
@@ -562,10 +612,16 @@ class SegmentUnet(MM3Container):
         elif self.model_source == "Unweighted":
             custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
 
-        segmentUNet(self.params, custom_objects)
+        segmentUNet(self.params, custom_objects, view_result = self.view_result)
 
     def set_fovs(self, fovs):
         self.fovs = fovs
+
+    def set_view_result(self):
+        self.view_result = self.display_widget.value
+
+    def set_model_source(self):
+        self.model_source = self.model_source_widget.value
 
     def render_preview(self):
         self.viewer.layers.clear()

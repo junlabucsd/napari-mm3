@@ -23,7 +23,7 @@ from ._deriving_widgets import (
     information,
     load_stack_params,
 )
-from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox
+from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, CheckBox
 
 from .utils import (
     Cell,
@@ -169,7 +169,7 @@ def create_cell_id(region, t, peak, fov, experiment_name=None):
 
 
 # Creates lineage for a single channel
-def make_lineage_chnl_stack(params, fov_and_peak_id):
+def make_lineage_chnl_stack(params, fov_and_peak_id, display_results: bool = False):
     """
     Create the lineage for a set of segmented images for one channel. Start by making the regions in the first time points potenial cells.
     Go forward in time and map regions in the timepoint to the potential cells in previous time points, building the life of a cell.
@@ -421,12 +421,15 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                             )
                             cell_leaves.append(cell_id)  # add to leaves
 
+    # plot lineage tree
+    if display_results:
+        Lineage(params, fov_id, peak_id, Cells)
     # return the dictionary with all the cells
     return Cells
 
 
 # finds lineages for all peaks in a fov
-def make_lineages_fov(params, fov_id, specs):
+def make_lineages_fov(params, fov_id, specs, display_results: bool = False):
     """
     For a given fov, create the lineages from the segmented images.
 
@@ -451,7 +454,7 @@ def make_lineages_fov(params, fov_id, specs):
         # returning empty dictionary will add nothing to current cells dictionary
         return {}
 
-    # This is a list of tuples (fov_id, peak_id) to send to the Pool command
+    ## This is a list of tuples (fov_id, peak_id) to send to the Pool command
     fov_and_peak_ids_list = [(fov_id, peak_id) for peak_id in ana_peak_ids]
 
     # # set up multiprocessing pool. will complete pool before going on
@@ -459,15 +462,15 @@ def make_lineages_fov(params, fov_id, specs):
 
     # # create the lineages for each peak individually
     # # the output is a list of dictionaries
-    # lineages = pool.map(make_lineage_chnl_stack, fov_and_peak_ids_list, chunksize=8)
+    # lineages = pool.map(make_lineage_chnl_stack, params, fov_and_peak_ids_list, chunksize=8)
 
     # pool.close() # tells the process nothing more will be added.
     # pool.join() # blocks script until everything has been processed and workers exit
 
-    # This is the non-parallelized version (useful for debug)
+    # # This is the non-parallelized version (useful for debug)
     lineages = []
     for fov_and_peak_ids in progress(fov_and_peak_ids_list):
-        lineages.append(make_lineage_chnl_stack(params, fov_and_peak_ids))
+        lineages.append(make_lineage_chnl_stack(params, fov_and_peak_ids,display_results))
 
     # combine all dictionaries into one dictionary
     Cells = {}  # create dictionary to hold all information
@@ -477,68 +480,40 @@ def make_lineages_fov(params, fov_id, specs):
     return Cells
 
 
-def Lineage(params):
+def Lineage(params, fov_id, peak_id, Cells):
     """Produces a lineage image for the first valid FOV containing cells"""
     # plotting lineage trees for complete cells
-    # load specs file
-    with open(params["ana_dir"] / "specs.yaml", "r") as specs_file:
-        specs = yaml.safe_load(specs_file)
-    with open(params["cell_dir"] / "all_cells.pkl", "rb") as cell_file:
-        Cells = pickle.load(cell_file)
-    with open(params["cell_dir"] / "complete_cells.pkl", "rb") as cell_file:
-        Cells2 = pickle.load(cell_file)
-        Cells2 = find_cells_of_birth_label(Cells2, label_num=[1, 2])
 
     lin_dir = params["ana_dir"] / "lineages"
     if not os.path.exists(lin_dir):
         os.makedirs(lin_dir)
 
-    # Find the first valid FOV with an available peak
-    for fov in params["FOV"]:
-        peak_found = False
-        # Analyze the first valid peak
-        for peak_id, spec in six.iteritems(specs[fov]):
-            if (
-                spec == 1
-            ):  # 0 means it should be used for empty, -1 is ignore, 1 is analyzed
-                sample_img = load_stack_params(params, fov, peak_id)
-                peak_len = np.shape(sample_img)[0]
-                peak_found = True
-                break
-        if peak_found:
-            break
-
     viewer = napari.current_viewer()
-    viewer.layers.clear()
-    # need this to avoid vispy bug for some reason
-    # related to https://github.com/napari/napari/issues/2584
-    viewer.add_image(np.zeros((1, 1)))
-    viewer.layers.clear()
+    viewer.grid.enabled = True
+    viewer.grid.shape = (-1,1)
 
     fig, ax = plot_lineage_images(
-        params, Cells, fov, peak_id, Cells2, bgcolor=params["phase_plane"]
+        params, Cells, fov_id, peak_id, bgcolor=params["phase_plane"]
     )
-    lin_filename = params["experiment_name"] + "_demo_image.tif"
+    lin_filename = f'{params["experiment_name"]}_{fov_id}_{peak_id}.tif'
     lin_filepath = lin_dir / lin_filename
     fig.savefig(lin_filepath, dpi=75)
     plt.close(fig)
 
     img = io.imread(lin_filepath)
-    viewer = napari.current_viewer()
     imgs = []
-    # get height of image
 
-    # get the length of each peak
-    for i in range(0, len(img[0]), int(len(img[0]) / peak_len) + 1):
-        crop_img = img[:, i : i + 300, :]
-        if len(crop_img[0]) == 300:
+    crop = min(2000, len(img[0]))
+    for i in range(0, len(img[0]), int(len(img[0]) / 50) + 1):
+        crop_img = img[:, i : i + crop, :]
+        if len(crop_img[0]) == crop:
             imgs.append(crop_img)
 
     img_stack = np.stack(imgs, axis=0)
 
     viewer.add_image(img_stack, name=lin_filename)
 
-    information("Completed Plotting")
+    # information("Completed Plotting")
 
 
 def plot_lineage_images(
@@ -833,7 +808,7 @@ def plot_lineage_images(
     return fig, ax
 
 
-def Track_Cells(params):
+def Track_Cells(params, display_results: bool = False):
     # Load the project parameters file
     information("Loading experiment parameters.")
     p = params
@@ -873,7 +848,7 @@ def Track_Cells(params):
     for fov_id in fov_id_list:
         # update will add the output from make_lineages_function, which is a
         # dict of Cell entries, into Cells
-        Cells.update(make_lineages_fov(params, fov_id, specs))
+        Cells.update(make_lineages_fov(params, fov_id, specs, display_results = display_results))
     information("Finished lineage creation.")
 
     ### Now prune and save the data.
@@ -979,6 +954,7 @@ class Track(MM3Container):
         self.segmentation_method_widget = ComboBox(
             label="segmentation method", choices=["Otsu", "U-net"]
         )
+        self.display_results_widget = CheckBox(label='Visualize results', value=True)
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.pxl2um_widget.changed.connect(self.set_pxl2um)
@@ -994,6 +970,8 @@ class Track(MM3Container):
         self.min_growth_area_widget.changed.connect(self.set_min_growth_area)
         self.segmentation_method_widget.changed.connect(self.set_segmentation_method)
 
+        self.display_results_widget.changed.connect(self.set_display_results)
+
         self.append(self.fov_widget)
         self.append(self.pxl2um_widget)
         self.append(self.phase_plane_widget)
@@ -1005,6 +983,7 @@ class Track(MM3Container):
         self.append(self.max_growth_area_widget)
         self.append(self.min_growth_area_widget)
         self.append(self.segmentation_method_widget)
+        self.append(self.display_results_widget)
 
         self.set_fovs(self.valid_fovs)
         self.set_pxl2um()
@@ -1017,6 +996,7 @@ class Track(MM3Container):
         self.set_max_growth_area()
         self.set_min_growth_area()
         self.set_segmentation_method()
+        self.set_display_results()
 
     def run(self):
         """Overriding method. Performs Mother Machine Analysis"""
@@ -1052,8 +1032,14 @@ class Track(MM3Container):
         params["track_dir"] = params["ana_dir"] / "tracking"
 
         self.viewer.window._status_bar._toggle_activity_dock(True)
-        Track_Cells(params)
-        Lineage(params)
+        viewer = napari.current_viewer()
+        viewer.layers.clear()
+        # need this to avoid vispy bug for some reason
+        # related to https://github.com/napari/napari/issues/2584
+        viewer.add_image(np.zeros((1, 1)))
+        viewer.layers.clear()
+        Track_Cells(params, display_results = self.display_results)
+        # Lineage(params)
 
     def set_fovs(self, fovs):
         self.fovs = fovs
@@ -1090,3 +1076,6 @@ class Track(MM3Container):
 
     def set_segmentation_method(self):
         self.segmentation_method = self.segmentation_method_widget.value
+
+    def set_display_results(self):
+        self.display_results = self.display_results_widget.value

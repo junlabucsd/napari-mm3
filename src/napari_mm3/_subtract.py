@@ -618,7 +618,7 @@ class Subtract(MM3Container):
         self.subtraction_plane_widget = PlanePicker(
             self.valid_planes, label="subtraction plane"
         )
-        self.output_display_widget = CheckBox(label="display output results")
+        self.output_display_widget = CheckBox(label="display output")
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.alignment_pad_widget.changed.connect(self.set_alignment_pad)

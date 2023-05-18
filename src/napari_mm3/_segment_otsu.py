@@ -75,6 +75,8 @@ def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
         if view_result:
             viewer = napari.current_viewer()
 
+            viewer.grid.enabled = True
+
             viewer.add_labels(
                 segmented_imgs,
                 name="Segmented"
@@ -278,9 +280,9 @@ class SegmentOtsu(MM3Container):
             label="second opening size", min=0, value=1
         )
         self.min_object_size_widget = SpinBox(label="min object size", min=0, value=25)
-        self.preview_widget = PushButton(label="generate preview", value=False)
+        self.preview_widget = PushButton(label="generate preview")
         self.fov_widget = FOVChooser(self.valid_fovs)
-        self.view_result_widget = CheckBox(label="view result")
+        self.view_result_widget = CheckBox(label="display output", value=True)
 
         self.plane_picker_widget.changed.connect(self.set_phase_plane)
         self.fov_widget.connect_callback(self.set_fovs)
@@ -290,6 +292,7 @@ class SegmentOtsu(MM3Container):
         self.second_opening_size_widget.changed.connect(self.set_second_opening_size)
         self.min_object_size_widget.changed.connect(self.set_min_object_size)
         self.preview_widget.clicked.connect(self.render_preview)
+        self.view_result_widget.changed.connect(self.set_view_result)
 
         self.append(self.plane_picker_widget)
         self.append(self.otsu_threshold_widget)
@@ -360,6 +363,9 @@ class SegmentOtsu(MM3Container):
 
     def set_min_object_size(self):
         self.min_object_size = self.min_object_size_widget.value
+
+    def set_view_result(self):
+        self.view_result = self.view_result_widget.value
 
     def render_preview(self):
         self.viewer.layers.clear()

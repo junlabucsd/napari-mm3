@@ -310,6 +310,8 @@ class TIFFExport(Container):
     def __init__(self):
         super().__init__()
 
+        self.viewer = napari.current_viewer()
+
         nd2files = list(Path(".").glob("*.nd2"))
         self.nd2files_found = len(nd2files) != 0
         if not self.nd2files_found:
@@ -334,8 +336,8 @@ class TIFFExport(Container):
         self.data_path_widget = FileEdit(
             label="data_path",
             value=self.nd2file,
-            mode="d",
-            tooltip="Directory within which all your nd2 files are located.",
+            mode="r",
+            tooltip="Path to raw data (.nd2 or other Bio-Formats supported type)",
         )
         self.exp_dir_widget = FileEdit(
             label="experiment_directory",
@@ -346,13 +348,13 @@ class TIFFExport(Container):
         self.FOVs_range_widget = FOVChooser(self.valid_fovs)
         self.time_range_widget = TimeRangeSelector(self.valid_times)
         self.upper_crop_widget = FloatSpinBox(
-            label="Crop y max", value=0.9, min=0.5, max=1, step=0.01
+            label="Crop y max", value=1, min=0, max=1, step=0.01
         )
         self.lower_crop_widget = FloatSpinBox(
-            label="Crop y min", value=0.1, min=0, max=0.5, step=0.01
+            label="Crop y min", value=0, min=0, max=0.5, step=0.01
         )
 
-        self.display_after_export_widget = CheckBox(label="display after export")
+        self.display_nd2_widget = PushButton(text='visualize all FOVs (.nd2 only)')
         self.run_widget = PushButton(text="run")
 
         self.data_path_widget.changed.connect(self.set_data_path)
@@ -363,6 +365,7 @@ class TIFFExport(Container):
         self.upper_crop_widget.changed.connect(self.set_upper_crop)
         self.lower_crop_widget.changed.connect(self.set_lower_crop)
         self.run_widget.clicked.connect(self.run)
+        self.display_nd2_widget.clicked.connect(self.render_nd2)
 
         self.append(self.data_path_widget)
         self.append(self.exp_dir_widget)
@@ -370,7 +373,7 @@ class TIFFExport(Container):
         self.append(self.time_range_widget)
         self.append(self.upper_crop_widget)
         self.append(self.lower_crop_widget)
-        self.append(self.display_after_export_widget)
+        self.append(self.display_nd2_widget)
         self.append(self.run_widget)
 
         self.set_data_path()
@@ -405,51 +408,44 @@ class TIFFExport(Container):
                 fov_list=self.fovs,
             )
 
-        if self.display_after_export_widget.value:
-            self.render_images()
         information("Finished TIFF export")
 
-    def render_images(self):
-        viewer = napari.current_viewer()
+    def render_nd2(self):
+        viewer = self.viewer
         viewer.layers.clear()
-
-        image_name_list = [filename.name for filename in self.exp_dir.glob("*xy*")]
-        fov_regex = re.compile(r"xy\d*", re.IGNORECASE)
-        fovs = list(
-            sorted(
-                set(
-                    int(fov_regex.search(filename).group()[2:])
-                    for filename in image_name_list
-                )
-            )
-        )
-        if self.fovs:
-            fovs = self.fovs
-
         viewer.grid.enabled = True
-        viewer.grid.shape = (-1, 4)
 
-        path = self.exp_dir / "TIFF"
+        try:
+            # nd2file = list(self.data_path.glob('*.nd2'))[0]
+            nd2file = self.data_path
+        except:
+            warning(f'Could not find .nd2 file to display in directory {self.data_path.resolve()}')
+            return
+        
+        with nd2reader.reader.ND2Reader(str(nd2file)) as ndx:
+            sizes = ndx.sizes
+    
+            if 't' not in sizes:
+                sizes['t'] = 1
+            if 'z' not in sizes:
+                sizes['z'] = 1
+            if 'c' not in sizes:
+                sizes['c'] = 1
+            ndx.bundle_axes = 'zcyx'
+            ndx.iter_axes = 't'
+            n = len(ndx)
 
-        # display images
-        for fov_id in fovs:
-            # TODO: Can allow xy in any position via regex! But it currently does not
+            shape = (sizes['t'], sizes['z'], sizes['v'],sizes['c'], sizes['y'], sizes['x'])
+            image  = np.zeros(shape, dtype=np.float32)
 
-            found_files = path.glob(f"*xy{fov_id:02d}.tif")
-            found_files = sorted(found_files)  # sort by timepoint
+            for i in range(n):
+                image[i] = ndx.get_frame(i)
 
-            stack = []
-            for f in list(found_files):
-                with tiff.TiffFile(f) as tif:
-                    stack.append(tif.asarray())
+        image = np.squeeze(image)
 
-            viewer.add_image(
-                np.array(stack),
-                name="FOV %02d" % fov_id,
-                colormap="gray",
-                multiscale=False,
-            )
-            viewer.dims.current_step = (0, 0)
+        viewer.add_image(image, channel_axis = 1, colormap='gray')
+        viewer.grid.shape = (-1, 3)
+        viewer.dims.current_step = (0, 0)
 
 
     def set_widget_bounds(self):
