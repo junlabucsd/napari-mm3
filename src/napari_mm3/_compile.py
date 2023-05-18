@@ -1162,9 +1162,9 @@ def compile(params):
     else:
         information("Finding image parameters.")
         # get all the TIFFs in the folder
-        found_files = glob.glob(os.path.join(p["TIFF_dir"], "*.tif"))  # get all tiffs
+        found_files = p["TIFF_dir"].glob("*.tif")  # get all tiffs
         found_files = [
-            filepath.split("/")[-1] for filepath in found_files
+            filepath.name for filepath in found_files
         ]  # remove pre-path
         found_files = sorted(found_files)  # should sort by timepoint
 

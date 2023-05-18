@@ -583,24 +583,18 @@ def seg_weights_2D(
 
     return weightmap
 
-
 def save_weights(mask_source_path, weights_path):
 
-    mask_files = glob.glob(os.path.join(mask_source_path, "*.tif"))
-    mask_names = [name.split("/")[-1] for name in mask_files]
+    mask_files = list(mask_source_path.glob('*.tif'))
 
     if not weights_path.exists():
         weights_path.mkdir()
-
-    for (mask_file, mask_name) in zip(mask_files, mask_names):
-
+    
+    for mask_file in mask_files:
         with tiff.TiffFile(mask_file) as tif:
             mask = tif.asarray()
-
         weightmap = seg_weights_2D(mask)
-
-        tiff.imwrite(weights_path / mask_name, weightmap)
-
+        tiff.imwrite(weights_path / mask_file.name, weightmap)
 
 def predictGenerator(
     files_path: str,
