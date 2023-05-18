@@ -1278,6 +1278,8 @@ class TrainUnet(MM3Container):
         self.viewer.add_image(np.stack(preload_img))
         self.viewer.add_labels(np.stack(preload_mask).astype(int))
         self.viewer.add_image(np.stack(preload_weight), name="Weights")
+        self.viewer.layers[-1].opacity=.25
+        self.viewer.layers[-2].opacity=.5
         return
 
     def set_model_source(self):
