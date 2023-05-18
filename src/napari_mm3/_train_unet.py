@@ -591,6 +591,7 @@ def save_weights(mask_source_path, weights_path):
         weights_path.mkdir()
     
     for mask_file in mask_files:
+        information(f'Constructing weight map for {mask_file}')
         with tiff.TiffFile(mask_file) as tif:
             mask = tif.asarray()
         weightmap = seg_weights_2D(mask)
@@ -1186,16 +1187,16 @@ class TrainUnet(MM3Container):
 
     def run(self):
         """Overriding method. Perform mother machine analysis."""
-        ## pass path to training data
 
-        ## add computation of the custom weights using seg_weights_2d
-
+        information('Making pixelwise weight maps')
         save_weights(self.mask_dir, self.weights_dir)
 
         if self.load_existing:
             model_source = self.model_source
         else:
             model_source = None
+
+        information('Loading training data')
 
         train_model(
             self.image_dir,
