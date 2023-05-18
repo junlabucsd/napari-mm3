@@ -1079,25 +1079,25 @@ class TrainUnet(MM3Container):
         self.image_widget = FileEdit(
             mode="d",
             label="image directory",
-            value=Path(self.analysis_folder / "training" / "images"),
+            value=self.analysis_folder / "training" / "images",
         )
 
         self.mask_widget = FileEdit(
             mode="d",
             label="mask directory",
-            value=Path(self.analysis_folder / "training" / "masks"),
+            value= self.analysis_folder / "training" / "masks",
         )
 
         self.weights_widget = FileEdit(
             mode="d",
             label="weights directory",
-            value=Path(self.analysis_folder / "training" / "weights"),
+            value=self.analysis_folder / "training" / "weights",
         )
 
         self.test_widget = FileEdit(
             mode="d",
             label="test data directory",
-            value=Path(self.analysis_folder / "training" / "test"),
+            value=self.analysis_folder / "training" / "test",
         )
 
         self.load_existing_widget = CheckBox(label="Load pretrained weights")

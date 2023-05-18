@@ -889,7 +889,7 @@ def make_time_table(params, analyzed_imgs):
             try:
                 if idata["jd"] < first_time:
                     first_time = idata["jd"]
-            except TypeError:
+            except:
                 if idata["t"] < first_time:
                     first_time = idata["t"]
         else:

@@ -339,7 +339,7 @@ class TIFFExport(Container):
         )
         self.exp_dir_widget = FileEdit(
             label="experiment_directory",
-            value=Path("./"),
+            value=Path("."),
             mode="d",
             tooltip="Directory within which to put your TIFFs",
         )
