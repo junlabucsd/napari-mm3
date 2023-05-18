@@ -156,7 +156,9 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
     information(
         "Loading empty stack from FOV {} to save for FOV {}.".format(from_fov, to_fov)
     )
-    avg_empty_stack = load_stack_params(params, from_fov, 0, postfix="empty_{}".format(color))
+    avg_empty_stack = load_stack_params(
+        params, from_fov, 0, postfix="empty_{}".format(color)
+    )
 
     # save out data
     if params["output"] == "TIFF":
@@ -218,7 +220,9 @@ def subtract_fov_stack(
     information("Subtracting peaks for FOV %d." % fov_id)
 
     # load empty stack feed dummy peak number to get empty
-    avg_empty_stack = load_stack_params(params, fov_id, 0, postfix="empty_{}".format(color))
+    avg_empty_stack = load_stack_params(
+        params, fov_id, 0, postfix="empty_{}".format(color)
+    )
 
     # determine which peaks are to be analyzed
     ana_peak_ids = []
@@ -443,9 +447,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
         for t in time_points:
             # get images from one timepoint at a time and send to alignment and averaging
             imgs = [stack[t] for stack in empty_stacks]
-            avg_empty = average_empties(
-                params, imgs, align=align
-            )  # function is in mm3
+            avg_empty = average_empties(params, imgs, align=align)  # function is in mm3
             avg_empty_stack.append(avg_empty)
 
         # concatenate list and then save out to tiff stack

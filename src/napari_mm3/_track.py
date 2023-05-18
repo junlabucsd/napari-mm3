@@ -470,7 +470,9 @@ def make_lineages_fov(params, fov_id, specs, display_results: bool = False):
     # # This is the non-parallelized version (useful for debug)
     lineages = []
     for fov_and_peak_ids in progress(fov_and_peak_ids_list):
-        lineages.append(make_lineage_chnl_stack(params, fov_and_peak_ids,display_results))
+        lineages.append(
+            make_lineage_chnl_stack(params, fov_and_peak_ids, display_results)
+        )
 
     # combine all dictionaries into one dictionary
     Cells = {}  # create dictionary to hold all information
@@ -490,7 +492,7 @@ def Lineage(params, fov_id, peak_id, Cells):
 
     viewer = napari.current_viewer()
     viewer.grid.enabled = True
-    viewer.grid.shape = (-1,1)
+    viewer.grid.shape = (-1, 1)
 
     fig, ax = plot_lineage_images(
         params, Cells, fov_id, peak_id, bgcolor=params["phase_plane"]
@@ -848,7 +850,9 @@ def Track_Cells(params, display_results: bool = False):
     for fov_id in fov_id_list:
         # update will add the output from make_lineages_function, which is a
         # dict of Cell entries, into Cells
-        Cells.update(make_lineages_fov(params, fov_id, specs, display_results = display_results))
+        Cells.update(
+            make_lineages_fov(params, fov_id, specs, display_results=display_results)
+        )
     information("Finished lineage creation.")
 
     ### Now prune and save the data.
@@ -954,7 +958,7 @@ class Track(MM3Container):
         self.segmentation_method_widget = ComboBox(
             label="segmentation method", choices=["Otsu", "U-net"]
         )
-        self.display_results_widget = CheckBox(label='Visualize results', value=True)
+        self.display_results_widget = CheckBox(label="Visualize results", value=True)
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.pxl2um_widget.changed.connect(self.set_pxl2um)
@@ -1038,7 +1042,7 @@ class Track(MM3Container):
         # related to https://github.com/napari/napari/issues/2584
         viewer.add_image(np.zeros((1, 1)))
         viewer.layers.clear()
-        Track_Cells(params, display_results = self.display_results)
+        Track_Cells(params, display_results=self.display_results)
         # Lineage(params)
 
     def set_fovs(self, fovs):

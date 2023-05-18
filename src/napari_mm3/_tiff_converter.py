@@ -237,7 +237,9 @@ def nd2ToTIFF(
             # timepoint and fov output name (1 indexed rather than 0 indexed)
             t, fov = t_id + 1, fov_id + 1
             try:
-                milliseconds = copy.deepcopy(image_data.metadata["events"][t_id]["time"])
+                milliseconds = copy.deepcopy(
+                    image_data.metadata["events"][t_id]["time"]
+                )
                 acq_days = milliseconds / 1000.0 / 60.0 / 60.0 / 24.0
                 acq_time = starttime.timestamp() + acq_days
             except IndexError:
@@ -354,7 +356,7 @@ class TIFFExport(Container):
             label="Crop y min", value=0, min=0, max=0.5, step=0.01
         )
 
-        self.display_nd2_widget = PushButton(text='visualize all FOVs (.nd2 only)')
+        self.display_nd2_widget = PushButton(text="visualize all FOVs (.nd2 only)")
         self.run_widget = PushButton(text="run")
 
         self.data_path_widget.changed.connect(self.set_data_path)
@@ -419,34 +421,42 @@ class TIFFExport(Container):
             # nd2file = list(self.data_path.glob('*.nd2'))[0]
             nd2file = self.data_path
         except:
-            warning(f'Could not find .nd2 file to display in directory {self.data_path.resolve()}')
+            warning(
+                f"Could not find .nd2 file to display in directory {self.data_path.resolve()}"
+            )
             return
-        
+
         with nd2reader.reader.ND2Reader(str(nd2file)) as ndx:
             sizes = ndx.sizes
-    
-            if 't' not in sizes:
-                sizes['t'] = 1
-            if 'z' not in sizes:
-                sizes['z'] = 1
-            if 'c' not in sizes:
-                sizes['c'] = 1
-            ndx.bundle_axes = 'zcyx'
-            ndx.iter_axes = 't'
+
+            if "t" not in sizes:
+                sizes["t"] = 1
+            if "z" not in sizes:
+                sizes["z"] = 1
+            if "c" not in sizes:
+                sizes["c"] = 1
+            ndx.bundle_axes = "zcyx"
+            ndx.iter_axes = "t"
             n = len(ndx)
 
-            shape = (sizes['t'], sizes['z'], sizes['v'],sizes['c'], sizes['y'], sizes['x'])
-            image  = np.zeros(shape, dtype=np.float32)
+            shape = (
+                sizes["t"],
+                sizes["z"],
+                sizes["v"],
+                sizes["c"],
+                sizes["y"],
+                sizes["x"],
+            )
+            image = np.zeros(shape, dtype=np.float32)
 
             for i in range(n):
                 image[i] = ndx.get_frame(i)
 
         image = np.squeeze(image)
 
-        viewer.add_image(image, channel_axis = 1, colormap='gray')
+        viewer.add_image(image, channel_axis=1, colormap="gray")
         viewer.grid.shape = (-1, 3)
         viewer.dims.current_step = (0, 0)
-
 
     def set_widget_bounds(self):
         if self.nd2files_found:

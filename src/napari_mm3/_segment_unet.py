@@ -296,7 +296,9 @@ def pad_back(predictions, unet_shape, pad_dict):
     return predictions
 
 
-def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None, view_result: bool = False):
+def segment_fov_unet(
+    fov_id: int, specs: dict, model, params: dict, color=None, view_result: bool = False
+):
     """
     Segments the channels from one fov using the U-net CNN model.
 
@@ -338,14 +340,18 @@ def segment_fov_unet(fov_id: int, specs: dict, model, params: dict, color=None, 
             ana_peak_ids.append(peak_id)
     ana_peak_ids.sort()  # sort for repeatability
 
-    segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params, view_result)
+    segment_cells_unet(
+        ana_peak_ids, fov_id, pad_dict, unet_shape, model, params, view_result
+    )
 
     information("Finished segmentation for FOV {}.".format(fov_id))
 
     return
 
 
-def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params, view_result: bool = False):
+def segment_cells_unet(
+    ana_peak_ids, fov_id, pad_dict, unet_shape, model, params, view_result: bool = False
+):
     """
     Segments cells using U-net model.
 
@@ -384,7 +390,7 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model, params
             viewer.grid.shape = (-1, 20)
 
             viewer.add_labels(
-                segmented_imgs.astype('int'),
+                segmented_imgs.astype("int"),
                 name=peak_id,
                 visible=True,
             )
@@ -494,11 +500,17 @@ def segmentUNet(params, custom_objects, view_result):
     information("Model loaded.")
 
     for fov_id in fov_id_list:
-        segment_fov_unet(fov_id, specs, seg_model, params, color=p["phase_plane"], view_result=view_result)
+        segment_fov_unet(
+            fov_id,
+            specs,
+            seg_model,
+            params,
+            color=p["phase_plane"],
+            view_result=view_result,
+        )
 
     del seg_model
     information("Finished segmentation.")
-
 
 
 class SegmentUnet(MM3Container):
@@ -538,10 +550,10 @@ class SegmentUnet(MM3Container):
         self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
         self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
         self.model_source_widget = ComboBox(
-            label="Model source", choices=["Pixelwise weighted","Unweighted"]
+            label="Model source", choices=["Pixelwise weighted", "Unweighted"]
         )
         self.preview_widget = PushButton(label="generate preview", value=False)
-        self.display_widget = CheckBox(label='Display results',value=True)
+        self.display_widget = CheckBox(label="Display results", value=True)
 
         self.append(self.fov_widget)
         self.append(self.plane_widget)
@@ -612,7 +624,7 @@ class SegmentUnet(MM3Container):
         elif self.model_source == "Unweighted":
             custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
 
-        segmentUNet(self.params, custom_objects, view_result = self.view_result)
+        segmentUNet(self.params, custom_objects, view_result=self.view_result)
 
     def set_fovs(self, fovs):
         self.fovs = fovs

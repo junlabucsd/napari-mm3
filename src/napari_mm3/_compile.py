@@ -350,7 +350,9 @@ def channel_xcorr(params, fov_id, peak_id):
     number_of_images = 20
 
     # load the phase contrast images
-    image_data = load_stack_params(params, fov_id, peak_id, postfix=params["phase_plane"])
+    image_data = load_stack_params(
+        params, fov_id, peak_id, postfix=params["phase_plane"]
+    )
 
     # if there are more images than number_of_images, use number_of_images images evenly
     # spaced across the range
@@ -910,7 +912,8 @@ def make_time_table(params, analyzed_imgs):
                 ).astype("uint32")
             except:
                 t_in_seconds = np.around(
-                    (idata["t"] - first_time) * params["seconds_per_time_index"], decimals=0
+                    (idata["t"] - first_time) * params["seconds_per_time_index"],
+                    decimals=0,
                 ).astype("uint32")
         else:
             t_in_seconds = np.around(
@@ -1125,7 +1128,7 @@ def compile(params):
 
         ## if there is a second plane, stack and save them out
         if string_c2:
-            information('Restacking TIFFs')
+            information("Restacking TIFFs")
             found_files_c1 = [f for f in found_files if re.search(string_c1, f.name)]
             found_files_c2 = [f for f in found_files if re.search(string_c2, f.name)]
 
@@ -1137,7 +1140,7 @@ def compile(params):
                 im1 = tiff.imread(f1)
                 im2 = tiff.imread(f2)
                 im_out = np.stack((im1, im2), axis=0)
-                name_out = str(f1).replace("C1","")
+                name_out = str(f1).replace("C1", "")
                 # 'minisblack' necessary to ensure that it interprets image as black/white.
                 tiff.imwrite(name_out, im_out, photometric="minisblack")
 
@@ -1145,7 +1148,7 @@ def compile(params):
                 old_tiff_path = p["TIFF_dir"].parent / "TIFF_unstacked"
                 if not old_tiff_path.exists():
                     old_tiff_path.mkdir()
-                    information('Creating directory for original TIFFs')
+                    information("Creating directory for original TIFFs")
                 f1.replace(str(f1).replace(str(p["TIFF_dir"]), "TIFF_unstacked"))
                 f2.replace(str(f2).replace(str(p["TIFF_dir"]), "TIFF_unstacked"))
         else:
@@ -1164,9 +1167,7 @@ def compile(params):
         information("Finding image parameters.")
         # get all the TIFFs in the folder
         found_files = p["TIFF_dir"].glob("*.tif")  # get all tiffs
-        found_files = [
-            filepath.name for filepath in found_files
-        ]  # remove pre-path
+        found_files = [filepath.name for filepath in found_files]  # remove pre-path
         found_files = sorted(found_files)  # should sort by timepoint
 
         # keep images starting at this timepoint
@@ -1175,7 +1176,7 @@ def compile(params):
             # go through list and find first place where timepoint is equivalent to t_start
             for n, ifile in enumerate(found_files):
                 string = re.compile(
-                    "t{:0=3}xy|t{:0=4}xy".format(t_start, t_start),re.IGNORECASE
+                    "t{:0=3}xy|t{:0=4}xy".format(t_start, t_start), re.IGNORECASE
                 )  # account for 3 and 4 digit
                 # if re.search == True then a match was found
                 if re.search(string, ifile):
@@ -1189,7 +1190,7 @@ def compile(params):
             # go through list and find first place where timepoint is equivalent to t_end
             for n, ifile in enumerate(found_files):
                 string = re.compile(
-                    "t%03dxy|t%04dxy" % (t_end, t_end),re.IGNORECASE
+                    "t%03dxy|t%04dxy" % (t_end, t_end), re.IGNORECASE
                 )  # account for 3 and 4 digit
                 if re.search(string, ifile):
                     found_files = found_files[:n]
@@ -1411,9 +1412,9 @@ def compile(params):
 def load_fov(image_directory, fov_id):
     information("getting files")
     found_files = image_directory.glob("*.tif")
-    file_string = re.compile(f"xy{fov_id:02d}.*.tif",re.IGNORECASE)
-    found_files = [f.name for f in found_files if re.search(file_string,f.name)]
-    
+    file_string = re.compile(f"xy{fov_id:02d}.*.tif", re.IGNORECASE)
+    found_files = [f.name for f in found_files if re.search(file_string, f.name)]
+
     information("sorting files")
     found_files = sorted(found_files)  # should sort by timepoint
 
@@ -1570,41 +1571,49 @@ class Compile(MM3Container):
         images.reset_contrast_limits()
         # images.gamma = 0.5
 
-
     def display_all_fovs(self):
         viewer = self.viewer
         viewer.layers.clear()
         viewer.grid.enabled = True
 
-        filepath = Path('.')
-        nd2file = list(filepath.glob('*.nd2'))[0]
+        filepath = Path(".")
+        nd2file = list(filepath.glob("*.nd2"))[0]
 
         if not nd2file:
-            warning(f'Could not find .nd2 file to display in directory {filepath.resolve()}')
+            warning(
+                f"Could not find .nd2 file to display in directory {filepath.resolve()}"
+            )
             return
-        
+
         with nd2reader.reader.ND2Reader(str(nd2file)) as ndx:
             sizes = ndx.sizes
-    
-            if 't' not in sizes:
-                sizes['t'] = 1
-            if 'z' not in sizes:
-                sizes['z'] = 1
-            if 'c' not in sizes:
-                sizes['c'] = 1
-            ndx.bundle_axes = 'zcyx'
-            ndx.iter_axes = 't'
+
+            if "t" not in sizes:
+                sizes["t"] = 1
+            if "z" not in sizes:
+                sizes["z"] = 1
+            if "c" not in sizes:
+                sizes["c"] = 1
+            ndx.bundle_axes = "zcyx"
+            ndx.iter_axes = "t"
             n = len(ndx)
 
-            shape = (sizes['t'], sizes['z'], sizes['v'],sizes['c'], sizes['y'], sizes['x'])
-            image  = np.zeros(shape, dtype=np.float32)
+            shape = (
+                sizes["t"],
+                sizes["z"],
+                sizes["v"],
+                sizes["c"],
+                sizes["y"],
+                sizes["x"],
+            )
+            image = np.zeros(shape, dtype=np.float32)
 
             for i in range(n):
                 image[i] = ndx.get_frame(i)
 
         image = np.squeeze(image)
 
-        viewer.add_image(image, channel_axis = 1, colormap='gray')
+        viewer.add_image(image, channel_axis=1, colormap="gray")
         viewer.grid.shape = (-1, 3)
 
         viewer.dims.current_step = (0, 0)
