@@ -22,8 +22,9 @@ from ._deriving_widgets import (
     load_specs,
     information,
     load_stack_params,
+    warning,
 )
-from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, CheckBox
+from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, CheckBox, PushButton
 
 from .utils import (
     Cell,
@@ -169,7 +170,7 @@ def create_cell_id(region, t, peak, fov, experiment_name=None):
 
 
 # Creates lineage for a single channel
-def make_lineage_chnl_stack(params, fov_and_peak_id, display_results: bool = False):
+def make_lineage_chnl_stack(params, fov_and_peak_id):
     """
     Create the lineage for a set of segmented images for one channel. Start by making the regions in the first time points potenial cells.
     Go forward in time and map regions in the timepoint to the potential cells in previous time points, building the life of a cell.
@@ -421,15 +422,15 @@ def make_lineage_chnl_stack(params, fov_and_peak_id, display_results: bool = Fal
                             )
                             cell_leaves.append(cell_id)  # add to leaves
 
-    # plot lineage tree
-    if display_results:
-        Lineage(params, fov_id, peak_id, Cells)
+    ## plot kymograph with lineage overlay & save it out
+    make_lineage_plot(params, fov_id, peak_id, Cells)
+    
     # return the dictionary with all the cells
     return Cells
 
 
 # finds lineages for all peaks in a fov
-def make_lineages_fov(params, fov_id, specs, display_results: bool = False):
+def make_lineages_fov(params, fov_id, specs):
     """
     For a given fov, create the lineages from the segmented images.
 
@@ -470,9 +471,7 @@ def make_lineages_fov(params, fov_id, specs, display_results: bool = False):
     # # This is the non-parallelized version (useful for debug)
     lineages = []
     for fov_and_peak_ids in progress(fov_and_peak_ids_list):
-        lineages.append(
-            make_lineage_chnl_stack(params, fov_and_peak_ids, display_results)
-        )
+        lineages.append(make_lineage_chnl_stack(params, fov_and_peak_ids))
 
     # combine all dictionaries into one dictionary
     Cells = {}  # create dictionary to hold all information
@@ -482,17 +481,13 @@ def make_lineages_fov(params, fov_id, specs, display_results: bool = False):
     return Cells
 
 
-def Lineage(params, fov_id, peak_id, Cells):
+def make_lineage_plot(params, fov_id, peak_id, Cells):
     """Produces a lineage image for the first valid FOV containing cells"""
     # plotting lineage trees for complete cells
 
     lin_dir = params["ana_dir"] / "lineages"
     if not os.path.exists(lin_dir):
         os.makedirs(lin_dir)
-
-    viewer = napari.current_viewer()
-    viewer.grid.enabled = True
-    viewer.grid.shape = (-1, 1)
 
     fig, ax = plot_lineage_images(
         params, Cells, fov_id, peak_id, bgcolor=params["phase_plane"]
@@ -501,6 +496,13 @@ def Lineage(params, fov_id, peak_id, Cells):
     lin_filepath = lin_dir / lin_filename
     fig.savefig(lin_filepath, dpi=75)
     plt.close(fig)
+
+
+def load_lineage_image(params, fov_id, peak_id):
+    lin_dir = params["ana_dir"] / "lineages"
+
+    lin_filename = f'{params["experiment_name"]}_{fov_id}_{peak_id}.tif'
+    lin_filepath = lin_dir / lin_filename
 
     img = io.imread(lin_filepath)
     imgs = []
@@ -513,9 +515,7 @@ def Lineage(params, fov_id, peak_id, Cells):
 
     img_stack = np.stack(imgs, axis=0)
 
-    viewer.add_image(img_stack, name=lin_filename)
-
-    # information("Completed Plotting")
+    return img_stack
 
 
 def plot_lineage_images(
@@ -810,7 +810,7 @@ def plot_lineage_images(
     return fig, ax
 
 
-def Track_Cells(params, display_results: bool = False):
+def Track_Cells(params):
     # Load the project parameters file
     information("Loading experiment parameters.")
     p = params
@@ -850,9 +850,7 @@ def Track_Cells(params, display_results: bool = False):
     for fov_id in fov_id_list:
         # update will add the output from make_lineages_function, which is a
         # dict of Cell entries, into Cells
-        Cells.update(
-            make_lineages_fov(params, fov_id, specs, display_results=display_results)
-        )
+        Cells.update(make_lineages_fov(params, fov_id, specs))
     information("Finished lineage creation.")
 
     ### Now prune and save the data.
@@ -958,7 +956,12 @@ class Track(MM3Container):
         self.segmentation_method_widget = ComboBox(
             label="segmentation method", choices=["Otsu", "U-net"]
         )
-        self.display_results_widget = CheckBox(label="Visualize results", value=True)
+
+        self.run_widget = PushButton(text="Construct lineages")
+        self.display_widget = PushButton(text="Display results")
+        self.set_display_fovs_widget = FOVChooser(
+            self.valid_fovs, custom_label="Display results from FOVs "
+        )
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.pxl2um_widget.changed.connect(self.set_pxl2um)
@@ -974,7 +977,9 @@ class Track(MM3Container):
         self.min_growth_area_widget.changed.connect(self.set_min_growth_area)
         self.segmentation_method_widget.changed.connect(self.set_segmentation_method)
 
-        self.display_results_widget.changed.connect(self.set_display_results)
+        self.run_widget.clicked.connect(self.run)
+        self.display_widget.clicked.connect(self.display_fovs)
+        self.set_display_fovs_widget.connect_callback(self.set_display_fovs)
 
         self.append(self.fov_widget)
         self.append(self.pxl2um_widget)
@@ -987,7 +992,9 @@ class Track(MM3Container):
         self.append(self.max_growth_area_widget)
         self.append(self.min_growth_area_widget)
         self.append(self.segmentation_method_widget)
-        self.append(self.display_results_widget)
+        self.append(self.run_widget)
+        self.append(self.display_widget)
+        self.append(self.set_display_fovs_widget)
 
         self.set_fovs(self.valid_fovs)
         self.set_pxl2um()
@@ -1000,40 +1007,43 @@ class Track(MM3Container):
         self.set_max_growth_area()
         self.set_min_growth_area()
         self.set_segmentation_method()
-        self.set_display_results()
+        self.set_display_fovs(self.valid_fovs)
+
+    def set_params(self):
+        self.params = dict()
+        self.params["experiment_name"] = self.experiment_name
+        self.params["FOV"] = self.fovs
+        self.params["phase_plane"] = self.phase_plane
+        self.params["pxl2um"] = self.pxl2um
+        self.params["output"] = "TIFF"
+        self.params["num_analyzers"] = multiprocessing.cpu_count()
+        self.params["track"] = dict()
+        self.params["track"]["lost_cell_time"] = self.lost_cell_time
+        self.params["track"]["new_cell_y_cutoff"] = self.new_cell_y_cutoff
+        self.params["track"]["new_cell_region_cutoff"] = self.new_cell_region_cutoff
+        self.params["track"]["max_growth_length"] = self.max_growth_length
+        self.params["track"]["min_growth_length"] = self.min_growth_length
+        self.params["track"]["max_growth_area"] = self.max_growth_area
+        self.params["track"]["min_growth_area"] = self.min_growth_area
+        if self.segmentation_method == "Otsu":
+            self.params["track"]["seg_img"] = "seg_otsu"
+        elif self.segmentation_method == "U-net":
+            self.params["track"]["seg_img"] = "seg_unet"
+
+        # useful folder shorthands for opening files
+        self.params["TIFF_dir"] = self.TIFF_folder
+        self.params["ana_dir"] = self.analysis_folder
+        self.params["hdf5_dir"] = self.params["ana_dir"] / "hdf5"
+        self.params["chnl_dir"] = self.params["ana_dir"] / "channels"
+        self.params["empty_dir"] = self.params["ana_dir"] / "empties"
+        self.params["sub_dir"] = self.params["ana_dir"] / "subtracted"
+        self.params["seg_dir"] = self.params["ana_dir"] / "segmented"
+        self.params["cell_dir"] = self.params["ana_dir"] / "cell_data"
+        self.params["track_dir"] = self.params["ana_dir"] / "tracking"
 
     def run(self):
         """Overriding method. Performs Mother Machine Analysis"""
-        params = dict()
-        params["experiment_name"] = self.experiment_name
-        params["FOV"] = self.fovs
-        params["phase_plane"] = self.phase_plane
-        params["pxl2um"] = self.pxl2um
-        params["output"] = "TIFF"
-        params["num_analyzers"] = multiprocessing.cpu_count()
-        params["track"] = dict()
-        params["track"]["lost_cell_time"] = self.lost_cell_time
-        params["track"]["new_cell_y_cutoff"] = self.new_cell_y_cutoff
-        params["track"]["new_cell_region_cutoff"] = self.new_cell_region_cutoff
-        params["track"]["max_growth_length"] = self.max_growth_length
-        params["track"]["min_growth_length"] = self.min_growth_length
-        params["track"]["max_growth_area"] = self.max_growth_area
-        params["track"]["min_growth_area"] = self.min_growth_area
-        if self.segmentation_method == "Otsu":
-            params["track"]["seg_img"] = "seg_otsu"
-        elif self.segmentation_method == "U-net":
-            params["track"]["seg_img"] = "seg_unet"
-
-        # useful folder shorthands for opening files
-        params["TIFF_dir"] = self.TIFF_folder
-        params["ana_dir"] = self.analysis_folder
-        params["hdf5_dir"] = params["ana_dir"] / "hdf5"
-        params["chnl_dir"] = params["ana_dir"] / "channels"
-        params["empty_dir"] = params["ana_dir"] / "empties"
-        params["sub_dir"] = params["ana_dir"] / "subtracted"
-        params["seg_dir"] = params["ana_dir"] / "segmented"
-        params["cell_dir"] = params["ana_dir"] / "cell_data"
-        params["track_dir"] = params["ana_dir"] / "tracking"
+        self.set_params()
 
         self.viewer.window._status_bar._toggle_activity_dock(True)
         viewer = napari.current_viewer()
@@ -1042,8 +1052,37 @@ class Track(MM3Container):
         # related to https://github.com/napari/napari/issues/2584
         viewer.add_image(np.zeros((1, 1)))
         viewer.layers.clear()
-        Track_Cells(params, display_results=self.display_results)
-        # Lineage(params)
+        Track_Cells(self.params)
+
+    def display_fovs(self):
+        viewer = napari.current_viewer()
+        viewer.layers.clear()
+
+        self.set_params()
+        specs = load_specs(self.params["ana_dir"])
+
+        for fov_id in self.fovs_to_display:
+            ana_peak_ids = []  # channels to be analyzed
+            for peak_id, spec in six.iteritems(specs[int(fov_id)]):
+                if spec == 1:  # 1 means analyze
+                    ana_peak_ids.append(peak_id)
+            ana_peak_ids = sorted(ana_peak_ids)  # sort for repeatability
+
+            for peak_id in ana_peak_ids:
+                try:
+                    img_stack = load_lineage_image(self.params, fov_id, peak_id)
+                    lin_filename = (
+                        f'{self.params["experiment_name"]}_{fov_id}_{peak_id}.tif'
+                    )
+
+                    viewer.grid.enabled = True
+                    viewer.grid.shape = (-1, 1)
+
+                    viewer.add_image(img_stack, name=lin_filename)
+                except:
+                    warning(
+                        f"No lineage found for FOV {fov_id}, peak {peak_id}. Run lineage construction first!"
+                    )
 
     def set_fovs(self, fovs):
         self.fovs = fovs
@@ -1081,5 +1120,5 @@ class Track(MM3Container):
     def set_segmentation_method(self):
         self.segmentation_method = self.segmentation_method_widget.value
 
-    def set_display_results(self):
-        self.display_results = self.display_results_widget.value
+    def set_display_fovs(self, fovs):
+        self.fovs_to_display = fovs

@@ -576,10 +576,13 @@ class FOVChooser(LineEdit):
     parameter (the range of FOVs)
     """
 
-    def __init__(self, permitted_FOVs):
+    def __init__(self, permitted_FOVs, custom_label = None):
         self.min_FOV = min(permitted_FOVs)
         self.max_FOV = max(permitted_FOVs)
-        label_str = f"FOVs ({self.min_FOV}-{self.max_FOV})"
+        if custom_label:
+            label_str = f"{custom_label} ({self.min_FOV}-{self.max_FOV})"
+        else:
+            label_str = f"FOVs ({self.min_FOV}-{self.max_FOV})"
         value_str = f"{self.min_FOV}-{self.max_FOV}"
         super().__init__(
             label=label_str,
