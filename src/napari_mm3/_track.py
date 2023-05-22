@@ -424,7 +424,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
 
     ## plot kymograph with lineage overlay & save it out
     make_lineage_plot(params, fov_id, peak_id, Cells)
-    
+
     # return the dictionary with all the cells
     return Cells
 
@@ -514,7 +514,7 @@ def load_lineage_image(params, fov_id, peak_id):
     -------
     img_stack : np.ndarray
         Image stack of lineage images
-        """
+    """
     lin_dir = params["ana_dir"] / "lineages"
 
     lin_filename = f'{params["experiment_name"]}_{fov_id}_{peak_id}.tif'
