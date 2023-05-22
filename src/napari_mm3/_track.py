@@ -499,6 +499,22 @@ def make_lineage_plot(params, fov_id, peak_id, Cells):
 
 
 def load_lineage_image(params, fov_id, peak_id):
+    """Loads a lineage image for the given FOV and peak
+
+    Parameters
+    ----------
+    params : dict
+        Dictionary of parameters
+    fov_id : int
+        FOV ID
+    peak_id : int
+        Peak ID
+
+    Returns
+    -------
+    img_stack : np.ndarray
+        Image stack of lineage images
+        """
     lin_dir = params["ana_dir"] / "lineages"
 
     lin_filename = f'{params["experiment_name"]}_{fov_id}_{peak_id}.tif'
@@ -811,6 +827,12 @@ def plot_lineage_images(
 
 
 def Track_Cells(params):
+    """Track cells in a set of FOVs.
+    Parameters
+    ----------
+    params : dict
+        Dictionary containing all parameters for the analysis.
+    """
     # Load the project parameters file
     information("Loading experiment parameters.")
     p = params
