@@ -21,6 +21,19 @@ import seaborn as sns
 ### Data conversion functions ######################################################################
 
 def read_cells_from_json(path_in):
+    '''
+    Read in a json file of cell data and return a dictionary of Cell objects.
+    
+    Parameters
+    ----------
+    path_in : str
+        Path to json file.
+    
+    Returns
+    -------
+    Cells_new : dict
+        Dictionary of Cell objects.
+    '''
     with open(path_in, 'r') as fin:
         Cells = json.load(fin)
     Cells_new = {}
@@ -548,6 +561,27 @@ def make_line_hist(data,bins=None,density=True):
     return(bin_centers,bin_vals)
 
 def plot_distributions(df, columns, labels= None, titles = None):
+    """
+    Plot distributions of cell cycle parameters
+    
+    Parameters
+    ----------
+    df : pandas dataframe
+        dataframe containing cell cycle parameters to plot
+    columns : list
+        list of column names to plot
+    labels : list
+        list of labels for each column
+    titles : list
+        list of titles for each column
+    
+    Returns
+    -------
+    fig : matplotlib figure
+        figure containing plots
+    axes : matplotlib axes
+        axes containing plots
+    """
 
     fig, axes = plt.subplots(1,6,figsize=(12,3))
     ax = np.ravel(axes)

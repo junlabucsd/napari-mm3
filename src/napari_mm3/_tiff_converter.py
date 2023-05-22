@@ -39,6 +39,9 @@ def get_bioformats_times(data_path):
 
 
 def get_bioformats_fovs(data_path):
+    """
+    Gets the number of FOVs in a bioformats-compatible file.
+    """
 
     posix_path = data_path.as_posix()
     print("data path: " + posix_path)
@@ -131,6 +134,29 @@ def bioformats_import(
     tworow_crop=None,
     fov_list=[],
 ):
+    """ Imports a bioformats-compatible file into a tif stack.
+    Parameters
+    ----------
+    data_path : Path
+        The path to the data to import.
+    tif_dir : str
+        The directory to save the tif stack to.
+    tif_compress : int
+        The compression level to use when saving the tif stack.
+    image_start : int
+        The first image to import.
+    image_end : int
+        The last image to import.
+    vertical_crop : tuple, optional
+        The vertical crop to apply to the image. The default is None.
+    tworow_crop : tuple, optional
+        The two-row crop to apply to the image. The default is None.
+    fov_list : list, optional
+        The list of fovs to import. The default is [].
+    Returns
+    -------
+    None."""
+
     if not os.path.exists(tif_dir):
         os.makedirs(tif_dir)
 

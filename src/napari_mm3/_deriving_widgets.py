@@ -143,6 +143,23 @@ def load_time_table(ana_dir: Path):
 
 
 def get_valid_planes(TIFF_folder):
+    """Get the valid planes from a TIFF folder.
+    This is done by looking for all files with the .tif extension.
+    Then, the first file is loaded and the number of dimensions is checked.
+    If there are 2 dimensions, then there is only one plane.
+    If there are 3 dimensions, then there are multiple planes.
+    If there are more than 3 dimensions, raise an error (currently no support for z stacks)
+
+    Parameters
+    ----------
+    TIFF_folder : Path
+        The path to the TIFF folder
+    
+    Returns
+    -------
+    valid_planes : list
+        A list of strings indicating the valid imaging planes
+    """
     found_files = TIFF_folder.glob("*.tif")
     # pull out first tiff to extract dims
     filepath = [f for f in found_files][0]
@@ -208,6 +225,7 @@ def _apply_seralized_widget(widget, value):
 
 
 def range_string_to_indices(range_string):
+    """Convert a range string to a list of indices."""
     try:
         range_string = range_string.replace(" ", "")
         split = range_string.split(",")

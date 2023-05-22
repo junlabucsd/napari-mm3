@@ -54,7 +54,8 @@ def load_time_table(ana_dir):
 # weight the allowed changes by the difference in time as well
 def check_growth_by_region(params, cell, region):
     """Checks to see if it makes sense
-    to grow a cell by a particular region"""
+    to grow a cell by a particular region
+    """
     # load parameters for checking
     max_growth_length = params["track"]["max_growth_length"]
     min_growth_length = params["track"]["min_growth_length"]

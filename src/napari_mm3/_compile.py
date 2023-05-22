@@ -38,6 +38,9 @@ from ._deriving_widgets import (
 
 
 def get_plane(filepath):
+    """Extracts the plane / channel number (e.g. phase fluorescence etc.) from a tiff file name.
+    It is used to sort the tiff files into the correct order for processing.
+    """
     pattern = r"(c\d+).tif"
     res = re.search(pattern, filepath, re.IGNORECASE)
     if res != None:
@@ -47,6 +50,7 @@ def get_plane(filepath):
 
 
 def get_fov(filepath):
+    """Extracts the fov number from a tiff file name."""
     pattern = r"xy(\d+)\w*.tif"
     res = re.search(pattern, filepath, re.IGNORECASE)
     if res != None:
@@ -56,6 +60,7 @@ def get_fov(filepath):
 
 
 def get_time(filepath):
+    """Extracts the time point from a tiff file name."""
     pattern = r"t(\d+)xy\w+.tif"
     res = re.search(pattern, filepath, re.IGNORECASE)
     if res != None:

@@ -62,6 +62,7 @@ def load_channel_masks(analysis_directory):
 
 
 def load_specs(analysis_directory):
+    """Load specs dictionary. Should be .yaml but try pickle too."""
     with (analysis_directory / "specs.yaml").open("r") as specs_file:
         specs = yaml.safe_load(specs_file)
     if specs == None:
@@ -73,12 +74,25 @@ def load_specs(analysis_directory):
 
 
 def save_specs(analysis_folder, specs):
+    """Save specs dictionary to .yaml file."""
     with (analysis_folder / "specs.yaml").open("w") as specs_file:
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
     information("Saved channel classifications to specs file")
 
 
 def load_fov(image_directory, fov_id):
+    """Load image stack for a given FOV.
+    Parameters
+    ----------
+    image_directory : pathlib.Path
+        Path to the directory containing the images.
+    fov_id : int
+        The FOV to load.
+    Returns
+    -------
+    image_fov_stack : np.ndarray
+        The image stack for the given FOV.
+    """
     information("getting files")
     found_files = image_directory.glob("*.tif")
     file_string = re.compile(f"xy{fov_id:02d}.*.tif", re.IGNORECASE)
@@ -104,6 +118,19 @@ def load_fov(image_directory, fov_id):
 
 
 def load_crosscorrs(analysis_directory, fov_id=None):
+    """Load crosscorrelations dictionary. Should be .yaml but try pickle too.
+    Parameters
+    ----------
+    analysis_directory : pathlib.Path
+        Path to the directory containing the analysis files.
+    fov_id : int, optional
+        The FOV to load. If None, return the entire dictionary.
+    
+    Returns
+    -------
+    cross_corrs : dict
+        The crosscorrelations dictionary.
+    """
     information("Getting crosscorrs")
     with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
         cross_corrs = pickle.load(data)
@@ -117,6 +144,19 @@ def load_crosscorrs(analysis_directory, fov_id=None):
 
 
 def display_image_stack(viewer: Viewer, image_fov_stack, plane):
+    """Display an image stack in napari.
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        The napari viewer.
+    image_fov_stack : np.ndarray
+        The image stack to display.
+    plane : int
+        The plane to display.
+    
+    Returns
+    -------
+    None"""
     images = viewer.add_image(np.array(image_fov_stack))
     viewer.dims.current_step = (0, plane, 0, 0)
     images.reset_contrast_limits()
@@ -124,6 +164,25 @@ def display_image_stack(viewer: Viewer, image_fov_stack, plane):
 
 
 def threshold_fov(fov, threshold, specs, crosscorrs, channel_masks=None):
+    """Threshold a FOV based on crosscorrelations.
+    Parameters
+    ----------
+    fov : int
+        The FOV to threshold.
+    threshold : float
+        The threshold to use.
+    specs : dict
+        The specs dictionary.
+    crosscorrs : dict
+        The crosscorrelations dictionary.
+    channel_masks : dict, optional
+        The channel masks dictionary.
+    
+    Returns
+    -------
+    specs : dict
+        The updated specs dictionary.
+    """
     if crosscorrs:
         # update dictionary on initial guess from cross correlations
         peaks = crosscorrs[fov]
@@ -146,6 +205,25 @@ def threshold_fov(fov, threshold, specs, crosscorrs, channel_masks=None):
 def display_rectangles(
     viewer: napari.Viewer, coords, sorted_peaks, sorted_specs, crosscorrs
 ):
+    """Display rectangles on napari viewer.
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        The napari viewer.
+    coords : np.ndarray
+        The coordinates of the rectangles.
+    sorted_peaks : list
+        The sorted peaks.
+    sorted_specs : list
+        The sorted specs (which peaks are marked to analyze, discard or use for subtraction).
+    crosscorrs : dict
+        The crosscorrelations dictionary.
+    
+    Returns
+    -------
+    shapes_layer : napari.layers.Shapes
+        The shapes layer containing the peak specifications
+    """
     # Set up crosscorrelation text
     properties = {"peaks": sorted_peaks, "crosscorrs": crosscorrs.values()}
     text_parameters = {
@@ -173,6 +251,21 @@ def display_rectangles(
 
 
 def regenerate_fov_specs(analysis_folder, fov, threshold, overwrite=False):
+    """Regenerate the specs dictionary for a FOV.
+    Parameters
+    ----------
+    analysis_folder : pathlib.Path
+        The path to the analysis folder.
+    fov : int
+        The FOV to regenerate.
+    threshold : float
+        The threshold to use.
+    overwrite : bool, optional
+        Whether to overwrite the existing specs dictionary.
+    Returns
+    -------
+    specs : dict
+        The updated specs dictionary."""
     try:
         specs = load_specs(analysis_folder)
     except:

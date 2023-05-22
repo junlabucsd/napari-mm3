@@ -74,7 +74,35 @@ def foci_analysis(
     fov_id, peak_id, Cells, params, seg_method, time_table, preview=False
 ):
     """Find foci in cells using a fluorescent image channel.
-    This function works on a single peak and all the cells therein."""
+    This function works on a single peak and all the cells therein.
+    
+    Parameters
+    ----------
+    fov_id : int
+        The field of view to be analyzed.
+    peak_id : int
+        The peak to be analyzed.
+    Cells : dict
+        A dictionary of cells to be analyzed.
+    params : dict
+        A dictionary of parameters.
+    seg_method : str
+        The segmentation method used (Otsu or U-Net).
+    time_table : dict
+        A dictionary of time points.
+    preview : bool, optional
+        Set to true if we are displaying the results in the napari viewer. The default is False.
+    
+    Returns
+    -------
+    points : list
+        A list of foci locations (used only for display).
+    radii : list
+        A list of radii for foci visualization (proportional to intensity). Used for display.
+    times_p : list
+        A list of times for detected foci. Used for display.
+    
+    """
 
     # make directory for foci debug
     # foci_dir = os.path.join(params['ana_dir'], 'overlay/')
@@ -157,7 +185,24 @@ def foci_analysis(
 # foci pool (for parallel analysis)
 def foci_analysis_pool(fov_id, peak_id, Cells, params, seg_method, time_table):
     """Find foci in cells using a fluorescent image channel.
-    This function works on a single peak and all the cells therein."""
+    This function works on a single peak and all the cells therein.
+    Parameters
+    ----------
+    fov_id : int
+        Field of view ID.
+    peak_id : int
+        Peak ID.
+    Cells : dict
+        Dictionary of cell objects.
+    params : dict
+        Dictionary of parameters.
+    seg_method : str
+        Segmentation method.
+    time_table : dict
+        Dictionary of time points.
+    Returns
+    -------
+    None"""
 
     # Import segmented and fluorescenct images
     image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=seg_method)
@@ -174,7 +219,7 @@ def foci_analysis_pool(fov_id, peak_id, Cells, params, seg_method, time_table):
     pool = Pool(processes=params["num_analyzers"])
     [
         pool.apply_async(
-            foci_cell(cell_id, cell, t0, image_data_seg, image_data_FL, params)
+            foci_cell(cell, t0, image_data_seg, image_data_FL, params)
         )
         for cell_id, cell in Cells.items()
     ]
@@ -183,8 +228,21 @@ def foci_analysis_pool(fov_id, peak_id, Cells, params, seg_method, time_table):
 
 
 # parralel function for each cell
-def foci_cell(cell_id, cell, t0, image_data_seg, image_data_FL, params):
-    """find foci in a cell, single instance to be called by the foci_analysis_pool for parallel processing."""
+def foci_cell(cell, t0, image_data_seg, image_data_FL, params):
+    """find foci in a cell, single instance to be called by the foci_analysis_pool for parallel processing.
+    Parameters
+    ----------
+    cell : Cell object
+        Cell object to be analyzed.
+    t0 : int
+        First time index.
+    image_data_seg : numpy array
+        Segmented image data.
+    image_data_FL : numpy array
+        Fluorescent image data.
+    params : dict
+        Dictionary of parameters.
+    """
     disp_l = []
     disp_w = []
     foci_h = []
@@ -391,6 +449,22 @@ def update_cell_foci(cells, foci):
 
 
 def foci(params, fl_plane, seg_method, cell_file_path):
+    """
+    Main function for foci analysis. Loads cells, finds foci, and saves out the results.
+    Parameters
+    ----------
+    params : dict
+        Dictionary of parameters
+    fl_plane : str
+        Name of fluorescence plane to use for foci analysis
+    seg_method : str
+        Name of segmentation method to use for foci analysis
+    cell_file_path : str
+        Path to cell file
+    
+    Returns
+    -------
+    None"""
 
     with open(cell_file_path, "rb") as cell_file:
         Cells = pickle.load(cell_file)

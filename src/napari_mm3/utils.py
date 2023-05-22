@@ -16,6 +16,24 @@ TIFF_FILE_FORMAT_NO_PEAK = "%s_xy%03d_%s.tif"
 
 
 def load_tiff_stack_simple(dir: Path, prefix, fov, postfix, peak=None):
+    """Load a tiff stack from a directory.
+    Parameters
+    ----------
+    dir : Path
+        Directory containing the tiff stack.
+    prefix : str
+        Prefix of the tiff stack.
+    fov : int
+        FOV number.
+    postfix : str
+        Postfix of the tiff stack.
+    peak : int, optional
+        Peak number. If None, the tiff stack is assumed to be a single channel.
+    Returns
+    -------
+    np.ndarray
+        The tiff stack.
+    """
     filename = TIFF_FILE_FORMAT_NO_PEAK % (prefix, fov, postfix)
     if peak:
         filename = TIFF_FILE_FORMAT_PEAK % (prefix, fov, peak, postfix)
@@ -356,6 +374,18 @@ def feretdiameter(region):
     feretdiameter calculates the length and width of the binary region shape. The cell orientation
     from the ellipsoid is used to find the major and minor axis of the cell.
     See https://en.wikipedia.org/wiki/Feret_diameter.
+    
+    Parameters
+    ----------
+    region : skimage.measure._regionprops._RegionProperties
+        regionprops object of the binary region of the cell
+    
+    Returns
+    -------
+    length : float
+        length of the cell
+    width : float
+        width of the cell
     """
 
     # y: along vertical axis of the image; x: along horizontal axis of the image;

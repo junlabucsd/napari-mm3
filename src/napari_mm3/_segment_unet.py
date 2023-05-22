@@ -40,6 +40,18 @@ from ._deriving_widgets import (
 
 # loss functions for model
 def dice_coeff(y_true, y_pred):
+    """Dice coefficient for segmentation accuracy.
+    Parameters
+    ----------
+    y_true : Tensor
+        Stack of groundtruth segmentation masks + weight maps.
+    y_pred : Tensor
+        Predicted segmentation masks.
+    Returns
+    -------
+    Tensor
+        Dice coefficient between inputs.
+    """
     smooth = 1.0
     # Flatten
     y_true_f = tf.reshape(y_true, [-1])
@@ -183,6 +195,21 @@ def get_pad_distances(unet_shape, img_height, img_width):
 
 
 def save_out(params, segmented_imgs, fov_id, peak_id):
+    """Saves out the segmented images in the correct format.
+    Parameters
+    ----------
+    params : dict
+        Dictionary of parameters.
+    segmented_imgs : np.ndarray
+        Array of segmented images.
+    fov_id : int
+        Field of view ID.
+    peak_id : int
+        Peak ID.
+    
+    Returns
+    -------
+    None."""
     # save out the segmented stacks
     if params["output"] == "TIFF":
         seg_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
@@ -219,8 +246,17 @@ def save_out(params, segmented_imgs, fov_id, peak_id):
 
 
 def normalize_to_one(img_stack):
-    # # robust normalization of peak's image stack to 1
-
+    """Normalizes the image stack to [0, 1] by subtracting the minimum and dividing by the range.
+    Parameters
+    ----------
+    img_stack : np.ndarray
+        Image stack.
+    
+    Returns
+    -------
+    np.ndarray
+        Normalized image stack.
+    """
     # permute to take advantage of numpy slicing
     img_stack = np.transpose(
         (np.transpose(img_stack) - np.min(img_stack, axis=(1, 2)))
@@ -233,6 +269,21 @@ def normalize_to_one(img_stack):
 ## post-processing of u-net output
 # binarize, remove small objects, clear border, and label
 def binarize_and_label(predictions, cellClassThreshold, min_object_size):
+    """Binarizes the predictions, removes small objects, clears the border, and labels the objects.
+    Parameters
+    ----------
+    predictions : np.ndarray
+        Predictions from the U-net.
+    cellClassThreshold : float
+        Threshold for binarizing the predictions.
+    min_object_size : int
+        Minimum object size to keep.
+    
+    Returns
+    -------
+    np.ndarray
+        cleaned segmented images.
+    """
 
     predictions[predictions >= cellClassThreshold] = 1
     predictions[predictions < cellClassThreshold] = 0
@@ -263,7 +314,21 @@ def binarize_and_label(predictions, cellClassThreshold, min_object_size):
 
 
 def trim_and_pad(img_stack, unet_shape, pad_dict):
-    # trim and pad image to correct size
+    """trim and pad image to correct size
+    Parameters
+    ----------
+    img_stack : np.ndarray
+        Image stack.
+    unet_shape : tuple
+        Shape of the U-net.
+    pad_dict : dict
+        Dictionary of padding values.
+    
+    Returns
+    -------
+    np.ndarray
+        Trimmed and padded image stack.
+    """
     img_stack = img_stack[:, : unet_shape[0], : unet_shape[1]]
     img_stack = np.pad(
         img_stack,

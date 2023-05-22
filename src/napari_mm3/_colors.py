@@ -158,6 +158,23 @@ def find_cell_intensities_worker(
 
 # load cell file
 def colors(params, fl_channel, seg_method, cellfile_path):
+    """
+    Finds fluorescenct information for cells.
+    Parameters
+    ----------
+    params : dict
+        Dictionary of parameters
+    fl_channel : str
+        Fluorescent channel to analyze
+    seg_method : str
+        Segmentation method to use
+    cellfile_path : str
+        Path to cell file
+        
+    Returns
+    -------
+    None
+    """
     information("Loading cell data.")
     # if namespace.cellfile:
     #     cell_file_path = namespace.cellfile.name
