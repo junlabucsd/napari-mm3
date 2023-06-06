@@ -483,6 +483,8 @@ class TIFFExport(Container):
         viewer.add_image(image, channel_axis=1, colormap="gray")
         viewer.grid.shape = (-1, 3)
         viewer.dims.current_step = (0, 0)
+        viewer.layers.link_layers() ## allows user to set contrast limits for all FOVs at once
+
 
     def set_widget_bounds(self):
         if self.nd2files_found:

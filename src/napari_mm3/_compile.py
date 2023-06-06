@@ -1518,7 +1518,6 @@ class Compile(MM3Container):
         self.set_channel_separation()
 
         self.display_single_fov()
-        # self.render_images()
 
     def run(self):
         """Overriding method. Performs Mother Machine Analysis"""
@@ -1622,6 +1621,8 @@ class Compile(MM3Container):
         viewer.grid.shape = (-1, 3)
 
         viewer.dims.current_step = (0, 0)
+        viewer.layers.link_layers() ## allows user to set contrast limits for all FOVs at once
+
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value
