@@ -1,4 +1,3 @@
-from cgitb import reset
 import os
 import napari
 import copy
@@ -197,7 +196,6 @@ def bioformats_import(
             tiff.imsave(
                 tif_dir / lower_row_filename,
                 image_lower_row,
-                description=metadata_json,
                 photometric="minisblack",
             )
             continue
