@@ -112,7 +112,7 @@ def load_stack_params(params, fov_id, peak_id, postfix="c1"):
         return load_hdf5(params["hdf5_dir"] / filename, dataset_name)
 
 
-def load_specs(analysis_dir: Path):
+def load_specs(analysis_dir: Path) -> dict:
     """Load specs file which indicates which channels should be analyzed, used as empties, or ignored."""
     try:
         with (analysis_dir / "specs.yaml").open("r") as specs_file:
@@ -175,8 +175,13 @@ def get_valid_planes(TIFF_folder):
 
     return [f"c{c+1}" for c in range(num_channels)]
 
+def get_valid_fovs_specs(analysis_folder):
+    specs = load_specs(analysis_folder)
+    all_fovs = [int(key) for key in specs.keys()]
+    return list(sorted(all_fovs))
 
-def get_valid_fovs(TIFF_folder):
+
+def get_valid_fovs_folder(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
     filenames = [f.name for f in found_files]
     get_fov_regex = re.compile(r"xy(\d+)", re.IGNORECASE)
@@ -383,7 +388,10 @@ class MM3Container(Container):
 
     def _set_valid_fovs(self):
         try:
-            self.valid_fovs = get_valid_fovs(self.TIFF_folder)
+            try:
+                self.valid_fovs = get_valid_fovs_specs(self.analysis_folder)
+            except:
+                self.valid_fovs = get_valid_fovs_folder(self.TIFF_folder)
             self.found_fovs = True
         except:
             self.found_fovs = False
