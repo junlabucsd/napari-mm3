@@ -20,11 +20,20 @@ from ._deriving_widgets import (
     information,
     warning,
     load_stack_params,
+    load_seg_stack,
+    SegmentationMode,
 )
 
 
 def find_cell_intensities(
-    params, time_table, fov_id, peak_id, Cells, midline=False, channel_name="c2"
+    params,
+    time_table,
+    fov_id,
+    peak_id,
+    Cells,
+    midline=False,
+    channel_name="c2",
+    seg_mode=SegmentationMode.OTSU,
 ):
     """
     Finds fluorescenct information for cells. All the cells in Cells
@@ -41,7 +50,14 @@ def find_cell_intensities(
         warning("Could not find subtracted channel! Skipping.")
         return
 
-    seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_unet")
+    # seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_unet")
+    seg_stack = load_seg_stack(
+        ana_dir=params["ana_dir"],
+        experiment_name=params["experiment_name"],
+        fov_id=fov_id,
+        peak_id=peak_id,
+        seg_mode=seg_mode,
+    )
 
     # determine absolute time index
     times_all = []
@@ -91,7 +107,13 @@ def find_cell_intensities(
 
 
 def find_cell_intensities_worker(
-    params, fov_id, peak_id, Cells, midline=True, channel="c2"
+    params,
+    fov_id,
+    peak_id,
+    Cells,
+    midline=True,
+    channel="c2",
+    seg_mode=SegmentationMode.OTSU,
 ):
     """
     Finds fluorescenct information for cells. All the cells in Cells
@@ -103,7 +125,14 @@ def find_cell_intensities_worker(
     information("Processing peak {} in FOV {}".format(peak_id, fov_id))
     # Load fluorescent images and segmented images for this channel
     fl_stack = load_stack_params(params, fov_id, peak_id, postfix=channel)
-    seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_otsu")
+    # seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_otsu")
+    seg_stack = load_seg_stack(
+        ana_dir=params["ana_dir"],
+        experiment_name=params["experiment_name"],
+        fov_id=fov_id,
+        peak_id=peak_id,
+        seg_mode=seg_mode,
+    )
 
     # determine absolute time index
     time_table = load_time_table(params["ana_dir"])
@@ -170,7 +199,7 @@ def colors(params, fl_channel, seg_method, cellfile_path):
         Segmentation method to use
     cellfile_path : str
         Path to cell file
-        
+
     Returns
     -------
     None

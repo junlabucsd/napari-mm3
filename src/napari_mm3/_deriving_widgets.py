@@ -18,6 +18,13 @@ import re
 import time
 import sys
 import traceback
+from enum import Enum
+
+
+class SegmentationMode(Enum):
+    OTSU = 1
+    UNET = 2
+
 
 # print a warning
 def warning(*objs):
@@ -42,6 +49,24 @@ def gen_tiff_filename(prefix, fov_id: int, postfix: str, peak_id: int = None):
     if peak_id:
         return TIFF_FILE_FORMAT_PEAK % (prefix, fov_id, peak_id, postfix)
     return TIFF_FILE_FORMAT_NO_PEAK % (prefix, fov_id, postfix)
+
+
+def load_seg_stack(
+    ana_dir: Path, experiment_name: str, fov_id, peak_id, seg_mode: SegmentationMode
+):
+    img_dir = ana_dir / "segmented"
+    if seg_mode == SegmentationMode.OTSU:
+        postfix = "seg_otsu"
+    elif seg_mode == SegmentationMode.UNET:
+        postfix = "seg_unet"
+    img_filename = gen_tiff_filename(
+        prefix=experiment_name,
+        fov_id=fov_id,
+        peak_id=peak_id,
+        postfix=postfix,
+    )
+
+    return load_tiff(img_dir, img_filename)
 
 
 def load_stack_params(params, fov_id, peak_id, postfix="c1"):
@@ -154,7 +179,7 @@ def get_valid_planes(TIFF_folder):
     ----------
     TIFF_folder : Path
         The path to the TIFF folder
-    
+
     Returns
     -------
     valid_planes : list
@@ -174,6 +199,7 @@ def get_valid_planes(TIFF_folder):
         raise ValueError(f"Expected 2 or 3 dimensions but found {dim}.")
 
     return [f"c{c+1}" for c in range(num_channels)]
+
 
 def get_valid_fovs_specs(analysis_folder):
     specs = load_specs(analysis_folder)
@@ -602,7 +628,7 @@ class FOVChooser(LineEdit):
     parameter (the range of FOVs)
     """
 
-    def __init__(self, permitted_FOVs, custom_label = None):
+    def __init__(self, permitted_FOVs, custom_label=None):
         self.min_FOV = min(permitted_FOVs)
         self.max_FOV = max(permitted_FOVs)
         if custom_label:

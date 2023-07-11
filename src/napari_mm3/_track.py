@@ -22,6 +22,8 @@ from ._deriving_widgets import (
     load_specs,
     information,
     load_stack_params,
+    SegmentationMode,
+    load_seg_stack,
     warning,
 )
 from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, CheckBox, PushButton
@@ -208,12 +210,20 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
     start_time_index = min(time_table[fov_id].keys())
 
     information("Creating lineage for FOV %d, channel %d." % (fov_id, peak_id))
-
+ 
     # load segmented data
-    image_data_seg = load_stack_params(
-        params, fov_id, peak_id, postfix=params["track"]["seg_img"]
+    # image_data_seg = load_stack_params(
+    #    params, fov_id, peak_id, postfix=params["track"]["seg_img"]
+    # )
+    
+    seg_mode = SegmentationMode.UNET if params["track"]["seg_img"] == "seg_unet" else SegmentationMode.OTSU
+    image_data_seg = load_seg_stack(
+        ana_dir=params["ana_dir"],
+        experiment_name=params["experiment_name"],
+        fov_id=fov_id,
+        peak_id=peak_id,
+        seg_mode=seg_mode,
     )
-    # image_data_seg = load_stack(params, fov_id, peak_id, color='seg')
 
     # Calculate all data for all time points.
     # this list will be length of the number of time points
@@ -568,7 +578,15 @@ def plot_lineage_images(
     image_data_bg = load_stack_params(params, fov_id, peak_id, postfix=bgcolor)
 
     if fgcolor:
-        image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=fgcolor)
+        # image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=fgcolor)
+        seg_mode = SegmentationMode.OTSU if params["track"]["seg_img"] == "seg_otsu" else SegmentationMode.UNET
+        image_data_seg = load_seg_stack(
+            ana_dir=params["ana_dir"],
+            experiment_name=params["experiment_name"],
+            fov_id=fov_id,
+            peak_id=peak_id,
+            seg_mode=seg_mode,
+        )
 
     if trim_time:
         image_data_bg = image_data_bg[time_set[0] : time_set[1]]

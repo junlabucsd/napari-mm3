@@ -24,6 +24,8 @@ from ._deriving_widgets import (
     load_time_table,
     information,
     load_stack_params,
+    SegmentationMode,
+    load_seg_stack,
 )
 from magicgui.widgets import SpinBox, ComboBox, FileEdit, FloatSpinBox, PushButton
 
@@ -110,9 +112,15 @@ def foci_analysis(
     #     os.makedirs(foci_dir)
 
     # Import segmented and fluorescenct images
-    image_data_seg = load_stack_params(
-        params, fov_id, peak_id, postfix="seg_{}".format(seg_method)
+    seg_mode = SegmentationMode.OTSU if seg_method == "Otsu" else SegmentationMode.UNET
+    image_data_seg = load_seg_stack(
+        ana_dir=params["ana_dir"],
+        experiment_name=params["experiment_name"],
+        fov_id=fov_id,
+        peak_id=peak_id,
+        seg_mode=seg_mode,
     )
+
 
     image_data_FL = load_stack_params(
         params, fov_id, peak_id, postfix="sub_{}".format(params["foci_plane"])
@@ -205,7 +213,15 @@ def foci_analysis_pool(fov_id, peak_id, Cells, params, seg_method, time_table):
     None"""
 
     # Import segmented and fluorescenct images
-    image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=seg_method)
+    # image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=seg_method)
+    seg_mode = SegmentationMode.OTSU if seg_method == "Otsu" else SegmentationMode.UNET
+    image_data_seg = load_seg_stack(
+        ana_dir=params["ana_dir"],
+        experiment_name=params["experiment_name"],
+        fov_id=fov_id,
+        peak_id=peak_id,
+        seg_mode=seg_mode,
+    )
     image_data_FL = load_stack_params(
         params, fov_id, peak_id, postfix="sub_{}".format(params["foci_plane"])
     )
