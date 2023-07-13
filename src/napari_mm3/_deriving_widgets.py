@@ -66,7 +66,7 @@ def load_seg_stack(
         postfix=postfix,
     )
 
-    return load_tiff(img_dir, img_filename)
+    return load_tiff(img_dir / img_filename)
 
 
 def load_stack_params(params, fov_id, peak_id, postfix="c1"):
