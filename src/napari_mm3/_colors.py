@@ -21,6 +21,7 @@ from ._deriving_widgets import (
     warning,
     load_stack_params,
     load_seg_stack,
+    load_subtracted_stack,
     SegmentationMode,
 )
 
@@ -44,7 +45,8 @@ def find_cell_intensities(
     # Load fluorescent images and segmented images for this channel
     try:
         sub_channel = "sub_" + channel_name
-        fl_stack = load_stack_params(params, fov_id, peak_id, postfix=sub_channel)
+        # fl_stack = load_stack_params(params, fov_id, peak_id, postfix=sub_channel)
+        fl_stack = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, sub_channel)
         information("Loading subtracted channel to analyze.")
     except FileNotFoundError:
         warning("Could not find subtracted channel! Skipping.")

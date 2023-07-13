@@ -26,6 +26,7 @@ from ._deriving_widgets import (
     load_stack_params,
     SegmentationMode,
     load_seg_stack,
+    load_subtracted_stack,
 )
 from magicgui.widgets import SpinBox, ComboBox, FileEdit, FloatSpinBox, PushButton
 
@@ -122,9 +123,10 @@ def foci_analysis(
     )
 
 
-    image_data_FL = load_stack_params(
-        params, fov_id, peak_id, postfix="sub_{}".format(params["foci_plane"])
-    )
+
+    postfix=f'sub_{params["foci_plane"]}'
+    image_data_FL = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
+
 
     # determine absolute time index
     times_all = []
@@ -222,9 +224,8 @@ def foci_analysis_pool(fov_id, peak_id, Cells, params, seg_method, time_table):
         peak_id=peak_id,
         seg_mode=seg_mode,
     )
-    image_data_FL = load_stack_params(
-        params, fov_id, peak_id, postfix="sub_{}".format(params["foci_plane"])
-    )
+    postfix=f'sub_{params["foci_plane"]}'
+    image_data_FL = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
 
     # Load time table to determine first image index.
     times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
@@ -444,10 +445,12 @@ def foci_lap(img, img_foci, cell, t, params, preview=False):
 
 
 def kymograph(fov_id, peak_id, params):
-
-    sub_stack_fl = load_stack_params(
-        params, fov_id, peak_id, postfix="sub_" + params["foci_plane"]
-    )
+    # sub_stack_fl = load_stack_params(
+    #    params, fov_id, peak_id, postfix="sub_" + params["foci_plane"]
+    #)
+    postfix=f'sub_{params["foci_plane"]}'
+    sub_stack_fl = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
+    
     fl_proj = np.transpose(np.max(sub_stack_fl, axis=2))
 
     return fl_proj
