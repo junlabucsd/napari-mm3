@@ -74,6 +74,12 @@ def load_subtracted_stack(ana_dir: Path, experiment_name: str, fov_id, peak_id, 
     img_filename = gen_tiff_filename(prefix = experiment_name, fov_id=fov_id, peak_id=peak_id, postfix = postfix)
     return load_tiff(img_dir / img_filename)
 
+def load_unmodified_stack(ana_dir: Path, experiment_name: str, fov_id, peak_id, postfix):
+    img_dir = ana_dir / "channels"
+    # switch postfix to c1/c2/c3 auto??
+    img_filename = gen_tiff_filename(prefix = experiment_name, fov_id=fov_id, peak_id=peak_id, postfix = postfix)
+    return load_tiff(img_dir / img_filename)
+
 def load_stack_params(params, fov_id, peak_id, postfix="c1"):
     """
     Deprecated.

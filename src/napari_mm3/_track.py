@@ -24,6 +24,7 @@ from ._deriving_widgets import (
     load_stack_params,
     SegmentationMode,
     load_seg_stack,
+    load_unmodified_stack,
     warning,
 )
 from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, CheckBox, PushButton
@@ -575,7 +576,9 @@ def plot_lineage_images(
     Cells = find_cells_of_fov_and_peak(Cells, fov_id, peak_id)
 
     # load subtracted and segmented data
-    image_data_bg = load_stack_params(params, fov_id, peak_id, postfix=bgcolor)
+    # image_data_bg = load_stack_params(params, fov_id, peak_id, postfix=bgcolor)
+    image_data_bg = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix = bgcolor)
+
 
     if fgcolor:
         # image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=fgcolor)

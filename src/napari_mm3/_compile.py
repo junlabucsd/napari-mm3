@@ -31,6 +31,7 @@ from ._deriving_widgets import (
     information,
     warning,
     load_stack_params,
+    load_unmodified_stack,
 )
 
 
@@ -355,9 +356,10 @@ def channel_xcorr(params, fov_id, peak_id):
     number_of_images = 20
 
     # load the phase contrast images
-    image_data = load_stack_params(
-        params, fov_id, peak_id, postfix=params["phase_plane"]
-    )
+    # image_data = load_stack_params(
+    #    params, fov_id, peak_id, postfix=params["phase_plane"]
+    # )
+    image_data = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, params["phase_plane"])
 
     # if there are more images than number_of_images, use number_of_images images evenly
     # spaced across the range

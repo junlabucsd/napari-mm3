@@ -22,6 +22,7 @@ from ._deriving_widgets import (
     load_stack_params,
     load_seg_stack,
     load_subtracted_stack,
+    load_unmodified_stack,
     SegmentationMode,
 )
 
@@ -126,7 +127,8 @@ def find_cell_intensities_worker(
     """
     information("Processing peak {} in FOV {}".format(peak_id, fov_id))
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack_params(params, fov_id, peak_id, postfix=channel)
+    # fl_stack = load_stack_params(params, fov_id, peak_id, postfix=channel)
+    fl_stack  = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=channel)
     # seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_otsu")
     seg_stack = load_seg_stack(
         ana_dir=params["ana_dir"],

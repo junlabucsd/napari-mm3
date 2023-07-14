@@ -20,11 +20,10 @@ from ._deriving_widgets import (
     MM3Container,
     PlanePicker,
     FOVChooser,
+    SegmentationMode,
     load_specs,
     load_time_table,
     information,
-    load_stack_params,
-    SegmentationMode,
     load_seg_stack,
     load_subtracted_stack,
 )

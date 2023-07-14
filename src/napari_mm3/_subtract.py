@@ -18,6 +18,7 @@ from ._deriving_widgets import (
     information,
     warning,
     load_stack_params,
+    load_unmodified_stack,
 )
 
 
@@ -240,8 +241,8 @@ def subtract_fov_stack(
     for peak_id in ana_peak_ids:
         information("Subtracting peak %d." % peak_id)
 
-        image_data = load_stack_params(params, fov_id, peak_id, postfix=color)
-
+        # image_data = load_stack_params(params, fov_id, peak_id, postfix=color)
+        image_data = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix = color)
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
         subtract_pairs = zip(image_data, avg_empty_stack)
@@ -433,7 +434,8 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
         empty_stacks = []  # list which holds phase image stacks of designated empties
         for peak_id in empty_peak_ids:
             # load data and append to list
-            image_data = load_stack_params(params, fov_id, peak_id, postfix=color)
+            # image_data = load_stack_params(params, fov_id, peak_id, postfix=color)
+            image_data = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix = color)
 
             empty_stacks.append(image_data)
 

@@ -35,6 +35,7 @@ from ._deriving_widgets import (
     load_specs,
     information,
     load_stack_params,
+    load_unmodified_stack,
     warning,
 )
 
@@ -392,7 +393,8 @@ def segment_fov_unet(
         if spec == 1:
             break  # just break out with the current peak_id
 
-    img_stack = load_stack_params(params, fov_id, peak_id, postfix=color)
+    # img_stack = load_stack_params(params, fov_id, peak_id, postfix=color)
+    img_stack = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix = color)
     img_height = img_stack.shape[1]
     img_width = img_stack.shape[2]
 
@@ -435,9 +437,10 @@ def segment_cells_unet(
 
     for peak_id in ana_peak_ids:
         information("Segmenting peak {}.".format(peak_id))
-        img_stack = load_stack_params(
-            params, fov_id, peak_id, postfix=params["phase_plane"]
-        )
+        # img_stack = load_stack_params(
+        #     params, fov_id, peak_id, postfix=params["phase_plane"]
+        # )
+        img_stack = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, params["phase_planes"])
 
         # do the segmentation
         predictions = segment_peak_unet(img_stack, unet_shape, pad_dict, model, params)
@@ -727,9 +730,10 @@ class SegmentUnet(MM3Container):
             self.params["segment"]["trained_model_image_width"],
         )
 
-        img_stack = load_stack_params(
-            self.params, valid_fov, valid_peak, postfix=self.params["phase_plane"]
-        )
+        # img_stack = load_stack_params(
+        #     self.params, valid_fov, valid_peak, postfix=self.params["phase_plane"]
+        # )
+        img_stack = load_unmodified_stack(self.params["ana_dir"], self.params["experiment_name"], valid_fov, valid_peak, postfix = self.params["phase_plane"])
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
 

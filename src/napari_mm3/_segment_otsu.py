@@ -20,7 +20,6 @@ from ._deriving_widgets import (
     FOVChooser,
     load_specs,
     information,
-    load_stack_params,
     load_subtracted_stack,
     warning,
 )
