@@ -19,7 +19,6 @@ from ._deriving_widgets import (
     load_time_table,
     information,
     warning,
-    load_stack_params,
     load_seg_stack,
     load_subtracted_stack,
     load_unmodified_stack,

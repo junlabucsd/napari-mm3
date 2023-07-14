@@ -21,7 +21,6 @@ from ._deriving_widgets import (
     FOVChooser,
     load_specs,
     information,
-    load_stack_params,
     SegmentationMode,
     load_seg_stack,
     load_unmodified_stack,
