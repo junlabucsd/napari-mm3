@@ -136,10 +136,11 @@ def get_valid_planes(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
     # pull out first tiff to extract dims
     filepath = [f for f in found_files][0]
-    dim = tiff.imread(filepath).ndim
+    test_file = tiff.imread(filepath)
+    dim = test_file.ndim
     if dim == 3:
         #there are multiple planes
-        num_channels = tiff.imread(filepath).shape[0]
+        num_channels = test_file.shape[0]
     elif dim == 2:
         # only one plane (phase or fluorescence)
         num_channels = 1
