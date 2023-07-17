@@ -72,8 +72,8 @@ def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
             peak_id,
             params["seg_img"],
         )
-        tiff.imsave(
-            os.path.join(params["seg_dir"], seg_filename), segmented_imgs, compress=5
+        tiff.imwrite(
+            os.path.join(params["seg_dir"], seg_filename), segmented_imgs, compression='zlib'
         )
         if view_result:
             viewer = napari.current_viewer()
