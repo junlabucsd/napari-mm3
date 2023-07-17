@@ -183,20 +183,21 @@ def bioformats_import(
             upper_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_1.tif"
             information("Saving %s." % tif_filename)
             # TODO: Make the channel order correct, here and below.
-            tiff.imsave(
+            tiff.imwrite(
                 tif_dir / upper_row_filename,
                 image_upper_row,
-                compress=tif_compress,
+                compression='zlib',
                 photometric="minisblack",
             )
 
             # cut and save bottom row
             lower_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_2.tif"
             information("Saving %s." % lower_row_filename)
-            tiff.imsave(
+            tiff.imwrite(
                 tif_dir / lower_row_filename,
                 image_lower_row,
                 photometric="minisblack",
+                compression='zlib',
             )
             continue
         # for just a simple crop
@@ -208,10 +209,10 @@ def bioformats_import(
 
         tif_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}.tif"
         information("Saving %s." % tif_filename)
-        tiff.imsave(
+        tiff.imwrite(
             tif_dir / tif_filename,
             image_data,
-            compress=tif_compress,
+            compression='zlib',
             photometric="minisblack",
         )
 
@@ -293,22 +294,22 @@ def nd2ToTIFF(
                 upper_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_1.tif"
                 information("Saving %s." % tif_filename)
                 # TODO: Make the channel order correct, here and below.
-                tiff.imsave(
+                tiff.imwrite(
                     tif_dir / upper_row_filename,
-                    image_upper_row,
+                    data = image_upper_row,
                     description=metadata_json,
-                    compress=tif_compress,
+                    compression='zlib',
                     photometric="minisblack",
                 )
 
                 # cut and save bottom row
                 lower_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_2.tif"
                 information("Saving %s." % lower_row_filename)
-                tiff.imsave(
+                tiff.imwrite(
                     tif_dir / lower_row_filename,
-                    image_lower_row,
+                    data = image_lower_row,
                     description=metadata_json,
-                    compress=tif_compress,
+                    compression='zlib',
                     photometric="minisblack",
                 )
                 continue
@@ -321,11 +322,11 @@ def nd2ToTIFF(
 
             tif_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}.tif"
             information("Saving %s." % tif_filename)
-            tiff.imsave(
+            tiff.imwrite(
                 tif_dir / tif_filename,
-                image_data,
+                data = image_data,
                 description=metadata_json,
-                compress=tif_compress,
+                compression='zlib',
                 photometric="minisblack",
             )
 
