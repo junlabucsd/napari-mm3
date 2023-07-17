@@ -439,7 +439,7 @@ def segment_cells_unet(
         # img_stack = load_stack_params(
         #     params, fov_id, peak_id, postfix=params["phase_plane"]
         # )
-        img_stack = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, params["phase_planes"])
+        img_stack = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, params["phase_plane"])
 
         # do the segmentation
         predictions = segment_peak_unet(img_stack, unet_shape, pad_dict, model, params)
