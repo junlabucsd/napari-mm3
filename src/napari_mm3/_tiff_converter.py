@@ -311,8 +311,9 @@ def nd2ToTIFF(
             # for just a simple crop
             elif vertical_crop:
                 nc, H, W = image_data.shape
-                ylo = int(vertical_crop[0] * H)
-                yhi = int(vertical_crop[1] * H)
+                ## convert from xy to row-column coordinates for numpy slicing
+                yhi = int((1-vertical_crop[0]) * H)
+                ylo = int((1-vertical_crop[1])*H)
                 image_data = image_data[:, ylo:yhi, :]
 
             tif_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}.tif"
