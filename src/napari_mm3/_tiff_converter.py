@@ -126,7 +126,6 @@ def bioformats_iter(data_path: Path, time_range, fov_list):
 def bioformats_import(
     data_path: Path,
     tif_dir: str,
-    tif_compress: int,
     image_start: int,
     image_end: int,
     vertical_crop=None,
@@ -140,8 +139,6 @@ def bioformats_import(
         The path to the data to import.
     tif_dir : str
         The directory to save the tif stack to.
-    tif_compress : int
-        The compression level to use when saving the tif stack.
     image_start : int
         The first image to import.
     image_end : int
@@ -220,7 +217,6 @@ def bioformats_import(
 def nd2ToTIFF(
     data_path: Path,
     tif_dir: str,
-    tif_compress: int,
     image_start: int,
     image_end: int,
     vertical_crop=None,
@@ -239,7 +235,6 @@ def nd2ToTIFF(
         tworow_crop: [[y1_min, y1_max], [y2_min, y2_max]]. Used for cropping if you have multiple rows; currently only two are supported.
         FOVs: String specifying a range (or a single number) of FOVs to convert to nd2
         image_start, image_end: Image range that we want to turn into TIFFs (inclusive)
-        tif_compress: image compression level, 1-9
     """
     # set up image folders if they do not already exist
     if not os.path.exists(tif_dir):
@@ -417,7 +412,6 @@ class TIFFExport(Container):
             nd2ToTIFF(
                 self.data_path,
                 self.exp_dir / "TIFF",
-                tif_compress=5,  # TODO: assign from UI
                 image_start=self.time_range[0] - 1,
                 image_end=self.time_range[1],
                 vertical_crop=[self.lower_crop, self.upper_crop],
@@ -428,7 +422,6 @@ class TIFFExport(Container):
             bioformats_import(
                 self.data_path,
                 self.exp_dir / "TIFF",
-                tif_compress=5,  # TODO: assign from UI
                 image_start=self.time_range[0] - 1,
                 image_end=self.time_range[1],
                 vertical_crop=[self.lower_crop, self.upper_crop],
