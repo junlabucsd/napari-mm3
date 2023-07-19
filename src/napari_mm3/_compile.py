@@ -1451,7 +1451,7 @@ class Compile(MM3Container):
         # TODO: Auto-infer?
         self.image_source_widget = ComboBox(
             label="image source",
-            choices=["nd2", "BioFormats", "TIFF_from_elements"],
+            choices=["nd2", "BioFormats or other", "TIFF_from_elements"],
         )
         self.phase_plane_widget = PlanePicker(
             self.valid_planes, label="phase plane channel"
