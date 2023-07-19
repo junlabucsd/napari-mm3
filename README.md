@@ -68,8 +68,10 @@ the coverage at least stays the same before you submit a pull request.
 
 ## Usage guide
 
-**Brief video introduction:** available [here](https://youtu.be/7MCiGTg6mq4)
 
+https://github.com/junlabucsd/napari-mm3/assets/8302475/68c726be-620e-4375-b1c9-3db56ac9a82a
+
+Additional reference information is available below.
 ### a. Preprocessing
 
 * [TIFFConverter](https://github.com/junlabucsd/napari-mm3/blob/main/docs/tiffconvert-widget.md) -- Turn your nd2 microscopy data, or other format via bioformats, into TIFFs. If your data is already exported as individual TIFF files, skip to the [Compile](https://github.com/junlabucsd/napari-mm3/blob/main/docs/compile-widget.md) widget. Take note of the [input image guidelines](https://github.com/junlabucsd/napari-mm3/blob/main/docs/Input-images-guidelines.md).
