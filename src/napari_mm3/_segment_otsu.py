@@ -148,7 +148,8 @@ def segment_image(params, image):
     # if there are no cells, good to clear the border
     # because otherwise the OTSU is just for random bullshit, most
     # likely on the side of the image
-    threshholded = segmentation.clear_border(threshholded)
+    # Ryan - removing this because cropping can leave cells on the lower border
+    # threshholded = segmentation.clear_border(threshholded)
 
     # Opening = erosion then dialation.
     # opening smooths images, breaks isthmuses, and eliminates protrusions.
@@ -181,15 +182,15 @@ def segment_image(params, image):
     # remove small objects. Remove small objects wants a
     # labeled image and will fail if there is only one label. Return zero image in that case
     # could have used try/except but remove_small_objects loves to issue warnings.
-    cleared, label_num = morphology.label(cleared, connectivity=1, return_num=True)
+    labeled, label_num = morphology.label(cleared, connectivity=1, return_num=True)
     if label_num > 1:
-        cleared = morphology.remove_small_objects(cleared, min_size=min_object_size)
+        labeled = morphology.remove_small_objects(labeled, min_size=min_object_size)
     else:
         # if there are no labels, then just return the cleared image as it is zero
         return np.zeros_like(image)
 
     # relabel now that small objects and labels on edges have been cleared
-    markers = morphology.label(cleared, connectivity=1)
+    markers = morphology.label(labeled, connectivity=1)
 
     # just break if there is no label
     if np.amax(markers) == 0:
@@ -197,7 +198,7 @@ def segment_image(params, image):
 
     # the binary image for the watershed, which uses the unmodified OTSU threshold
     threshholded_watershed = threshholded
-    threshholded_watershed = segmentation.clear_border(threshholded_watershed)
+    # threshholded_watershed = segmentation.clear_border(threshholded_watershed)
 
     # label using the random walker (diffusion watershed) algorithm
     try:
