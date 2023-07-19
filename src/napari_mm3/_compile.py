@@ -103,7 +103,7 @@ def get_tif_params(params, image_filename, find_channels=True):
                 image_metadata = get_tif_metadata_elements(tif)
             elif params["TIFF_source"] == "nd2":
                 image_metadata = get_tif_metadata_nd2(tif)
-            elif params["TIFF_source"] == "BioFormats":
+            elif params["TIFF_source"] == "BioFormats / other":
                 image_metadata = get_tif_metadata_filename(tif)
 
         # look for channels if flagged
@@ -1124,7 +1124,7 @@ def compile(params):
     analyzed_imgs = {}  # for storing get_params pool results.
 
     ## need to stack phase and fl plane if not exported from .nd2
-    if p["TIFF_source"] == "BioFormats":
+    if p["TIFF_source"] == "BioFormats / other":
         information("Checking if phase & fluorescence planes are separated")
         found_files = list(p["TIFF_dir"].glob("*.tif"))
         found_files = sorted(found_files)  # sort by timepoint
@@ -1451,7 +1451,7 @@ class Compile(MM3Container):
         # TODO: Auto-infer?
         self.image_source_widget = ComboBox(
             label="image source",
-            choices=["nd2", "BioFormats or other", "TIFF_from_elements"],
+            choices=["nd2", "BioFormats / other", "TIFF_from_elements"],
         )
         self.phase_plane_widget = PlanePicker(
             self.valid_planes, label="phase plane channel"
