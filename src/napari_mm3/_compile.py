@@ -61,7 +61,7 @@ def get_fov(filepath):
 
 def get_time(filepath):
     """Extracts the time point from a tiff file name."""
-    pattern = r"t(\d+)xy\w+.tif"
+    pattern = r"t(\d+)\w*.tif"
     res = re.search(pattern, filepath, re.IGNORECASE)
     if res != None:
         return np.int_(res.group(1))
