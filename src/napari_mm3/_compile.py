@@ -1465,6 +1465,9 @@ class Compile(MM3Container):
             min=1,
             max=60 * 60 * 24,
         )
+
+        self.channel_orientation_widget = ComboBox(label='trap orientation',choices = ["auto","up","down"])
+
         self.channel_width_widget = SpinBox(
             value=10,
             label="channel width",
@@ -1500,12 +1503,14 @@ class Compile(MM3Container):
         self.channel_width_widget.changed.connect(self.set_channel_width)
         self.channel_separation_widget.changed.connect(self.set_channel_separation)
         self.inspect_widget.clicked.connect(self.display_all_fovs)
+        self.channel_orientation_widget.changed.connect(self.set_channel_orientation)
 
         self.append(self.fov_widget)
         self.append(self.image_source_widget)
         self.append(self.phase_plane_widget)
         self.append(self.time_range_widget)
         self.append(self.seconds_per_frame_widget)
+        self.append(self.channel_orientation_widget)
         self.append(self.channel_width_widget)
         self.append(self.channel_separation_widget)
         self.append(self.inspect_widget)
@@ -1517,6 +1522,7 @@ class Compile(MM3Container):
         self.set_seconds_per_frame()
         self.set_channel_width()
         self.set_channel_separation()
+        self.set_channel_orientation()
 
         self.display_single_fov()
 
@@ -1539,7 +1545,7 @@ class Compile(MM3Container):
                 "do_slicing": True,
                 "t_start": self.time_range[0],
                 "t_end": self.time_range[1] + 1,
-                "image_orientation": "auto",
+                "image_orientation": self.channel_orientation,
                 "channel_width": self.channel_width,
                 "channel_separation": self.channel_separation,
                 "channel_detection_snr": 1,
@@ -1651,3 +1657,6 @@ class Compile(MM3Container):
 
     def set_channel_separation(self):
         self.channel_separation = self.channel_separation_widget.value
+    
+    def set_channel_orientation(self):
+        self.channel_orientation = self.channel_orientation_widget.value
