@@ -434,7 +434,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
                             cell_leaves.append(cell_id)  # add to leaves
 
     ## plot kymograph with lineage overlay & save it out
-    make_lineage_plot(params, fov_id, peak_id, Cells)
+    make_lineage_plot(params, fov_id, peak_id, Cells, start_time_index)
 
     # return the dictionary with all the cells
     return Cells
@@ -492,7 +492,7 @@ def make_lineages_fov(params, fov_id, specs):
     return Cells
 
 
-def make_lineage_plot(params, fov_id, peak_id, Cells):
+def make_lineage_plot(params, fov_id, peak_id, Cells, start_time_index):
     """Produces a lineage image for the first valid FOV containing cells"""
     # plotting lineage trees for complete cells
 
@@ -501,11 +501,15 @@ def make_lineage_plot(params, fov_id, peak_id, Cells):
         os.makedirs(lin_dir)
 
     fig, ax = plot_lineage_images(
-        params, Cells, fov_id, peak_id, bgcolor=params["phase_plane"]
+        params, Cells, fov_id, peak_id, bgcolor=params["phase_plane"],t_adj = start_time_index
     )
     lin_filename = f'{params["experiment_name"]}_{fov_id}_{peak_id}.tif'
     lin_filepath = lin_dir / lin_filename
-    fig.savefig(lin_filepath, dpi=75)
+    try:
+        fig.savefig(lin_filepath, dpi=75)
+    # sometimes image size is too large for matplotlib renderer
+    except ValueError:
+        warning('Image size too large for matplotlib')
     plt.close(fig)
 
 
