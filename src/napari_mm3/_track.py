@@ -961,7 +961,7 @@ class Track(MM3Container):
             value=4,
             min=0,
             max=1000,
-            step=0.1,
+            step=1,
             tooltip="only regions with labels less than or equal to this value will "
             "be considered to start potential new cells. Does not apply to daughters",
         )
@@ -970,6 +970,7 @@ class Track(MM3Container):
             value=1.3,
             min=0,
             max=20,
+            step=0.1,
             tooltip="Maximum increase in length allowed when linked new region to "
             "existing potential cell. Unit is ratio.",
         )
@@ -978,6 +979,7 @@ class Track(MM3Container):
             value=0.8,
             min=0,
             max=20,
+            step=0.1,
             tooltip="Minimum change in length allowed when linked new region to "
             "existing potential cell. Unit is ratio.",
         )
@@ -986,6 +988,7 @@ class Track(MM3Container):
             value=1.3,
             min=0,
             max=20,
+            step=0.1,
             tooltip="Maximum change in area allowed when linked new region to "
             "existing potential cell. Unit is ratio.",
         )
@@ -994,6 +997,7 @@ class Track(MM3Container):
             value=0.8,
             min=0,
             max=20,
+            step=0.1,
             tooltip="Minimum change in area allowed when linked new region to existing potential cell. Unit is ratio.",
         )
         self.segmentation_method_widget = ComboBox(
