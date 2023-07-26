@@ -509,7 +509,7 @@ def make_lineage_plot(params, fov_id, peak_id, Cells, start_time_index):
         fig.savefig(lin_filepath, dpi=75)
     # sometimes image size is too large for matplotlib renderer
     except ValueError:
-        warning('Image size too large for matplotlib')
+        warning('Image size may be too large for matplotlib')
     plt.close(fig)
 
 
@@ -1008,7 +1008,7 @@ class Track(MM3Container):
             label="segmentation method", choices=["Otsu", "U-net"]
         )
 
-        self.run_widget = PushButton(text="Construct lineages")
+        self.run_widget.text = "Construct lineages"
         self.display_widget = PushButton(text="Display results")
         self.set_display_fovs_widget = FOVChooser(
             self.valid_fovs, custom_label="Display results from FOVs "
