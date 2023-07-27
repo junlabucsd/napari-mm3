@@ -174,7 +174,7 @@ def bioformats_import(
         if tworow_crop:
             crop1_y1, crop1_y2 = tworow_crop[0][0], tworow_crop[0][1]
             crop2_y1, crop2_y2 = tworow_crop[0][0], tworow_crop[0][1]
-            image_upper_row = image_data[:, crop1_y1:crop2_y2, :]
+            image_upper_row = image_data[:, crop1_y1:crop1_y2, :]
             image_lower_row = image_data[:, crop2_y1:crop2_y2, :]
 
             upper_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_1.tif"
