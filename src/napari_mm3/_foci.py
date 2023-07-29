@@ -12,6 +12,8 @@ import multiprocessing
 from multiprocessing import Pool
 from skimage.feature import blob_log  # used for foci finding
 from scipy.optimize import leastsq  # fitting 2d gaussian
+from napari import Viewer
+
 
 
 from .utils import organize_cells_by_channel
@@ -189,6 +191,118 @@ def foci_analysis(
         cell.foci_h = foci_h
 
     return points, radii, times_p
+
+# find foci using a difference of gaussians method.
+# the idea of this one is to be run on a single preview
+def foci_preview(
+    fov_id, peak_id, Cells, params, seg_method, time_table
+):
+    """Find foci in cells using a fluorescent image channel.
+    This function works on a single peak and all the cells therein.
+    
+    Parameters
+    ----------
+    fov_id : int
+        The field of view to be analyzed.
+    peak_id : int
+        The peak to be analyzed.
+    Cells : dict
+        A dictionary of cells to be analyzed.
+    params : dict
+        A dictionary of parameters.
+    seg_method : str
+        The segmentation method used (Otsu or U-Net).
+    time_table : dict
+        A dictionary of time points.
+    preview : bool, optional
+        Set to true if we are displaying the results in the napari viewer. The default is False.
+    
+    Returns
+    -------
+    points : list
+        A list of foci locations (used only for display).
+    radii : list
+        A list of radii for foci visualization (proportional to intensity). Used for display.
+    times_p : list
+        A list of times for detected foci. Used for display.
+    
+    """
+
+    # make directory for foci debug
+    # foci_dir = os.path.join(params['ana_dir'], 'overlay/')
+    # if not os.path.exists(foci_dir):
+    #     os.makedirs(foci_dir)
+
+    # Import segmented and fluorescenct images
+    seg_mode = SegmentationMode.OTSU if seg_method == "Otsu" else SegmentationMode.UNET
+    image_data_seg = load_seg_stack(
+        ana_dir=params["ana_dir"],
+        experiment_name=params["experiment_name"],
+        fov_id=fov_id,
+        peak_id=peak_id,
+        seg_mode=seg_mode,
+    )
+
+    postfix=f'sub_{params["foci_plane"]}'
+    image_data_FL = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
+
+
+    # determine absolute time index
+    times_all = []
+    for fov, times in time_table.items():
+        times_all = np.append(times_all, list(times.keys()))
+    times_all = np.unique(times_all)
+    times_all = np.sort(times_all)
+    times_all = np.array(times_all, np.int_)
+    t0 = times_all[0]  # first time index
+
+    x_blob = []
+    y_blob = []
+    radii = []
+    times_p = []
+
+    for cell_id, cell in progress(Cells.items()):
+
+        information("Extracting foci information for %s." % (cell_id))
+        # declare lists holding information about foci.
+        disp_l = []
+        disp_w = []
+        foci_h = []
+
+
+        # Go through each time point of this cell
+        for t in cell.times:
+            # retrieve this timepoint and images.
+            image_data_temp = image_data_FL[t - t0, :, :]
+            image_data_temp_seg = image_data_seg[t - t0, :, :]
+
+            # find foci as long as there is information in the fluorescent image
+            if np.sum(image_data_temp) != 0:
+                disp_l_tmp, disp_w_tmp, foci_h_tmp, x_blob_tmp, y_blob_tmp, r_blob_tmp = foci_lap(
+                    image_data_temp_seg, image_data_temp, cell, t, params, preview=True
+                )
+                x_blob.extend(x_blob_tmp)
+                y_blob.extend(y_blob_tmp)
+                radii.extend(r_blob_tmp)
+                times_p.extend([t] * len(x_blob_tmp))
+                disp_l.append(disp_l_tmp)
+                disp_w.append(disp_w_tmp)
+                foci_h.append(foci_h_tmp)
+
+            # if there is no information, append an empty list.
+            # Should this be NaN?
+            else:
+                disp_l.append([])
+                disp_w.append([])
+                foci_h.append([])
+                # foci_stack[i] = image_data_temp_seg
+
+        # add information to the cell (will replace old data)
+        cell.disp_l = disp_l
+        cell.disp_w = disp_w
+        cell.foci_h = foci_h
+
+    return x_blob, y_blob, radii, times_p
 
 
 # foci pool (for parallel analysis)
@@ -438,7 +552,7 @@ def foci_lap(img, img_foci, cell, t, params, preview=False):
                 foci_h = np.append(foci_h, np.sum(gfit_area_fixed))
 
     if preview:
-        return disp_l, disp_w, foci_h, y_blob, r_blob
+        return disp_l, disp_w, foci_h, x_blob, y_blob, r_blob
 
     return disp_l, disp_w, foci_h
 
@@ -454,7 +568,25 @@ def kymograph(fov_id, peak_id, params):
 
     return fl_proj
 
+def kymograph_new(fov_id, peak_id, params, start_frame = 0, n_steps=50):
+    postfix=f'sub_{params["foci_plane"]}'
+    sub_stack_fl = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
+    sub_stack_fl = sub_stack_fl[start_frame: start_frame + n_steps, :, :]
+    kymo = np.hstack(sub_stack_fl)
+    return kymo
 
+def ultra_kymograph(fov_id, peak_id, params, n_steps=50):
+    postfix=f'sub_{params["foci_plane"]}'
+    sub_stack_fl = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
+    ultra_kymo = []
+    for i in range(sub_stack_fl.shape[0] - n_steps):
+        sub_stack_fl2 = sub_stack_fl[i: i + n_steps, :, :]
+        print(sub_stack_fl.shape)
+        mini_kymo = np.hstack(sub_stack_fl2)
+        ultra_kymo.append(mini_kymo)
+    return np.array(ultra_kymo)
+
+    
 def update_cell_foci(cells, foci):
     """Updates cells' .foci attribute in-place using information
     in foci dictionary
@@ -464,6 +596,20 @@ def update_cell_foci(cells, foci):
 
             cell_id = cell.id
             cells[cell_id].foci[focus_id] = focus
+
+def draw_foci(time_range):
+
+    relevant_x = x_blob[:len(relevant_times)]
+    relevant_x_with_offset = np.array(relevant_x) + (np.array(relevant_times) - relevant_times[0]) * kymos[0].shape[1] // len(unique_times)
+    relevant_y = y_blob[:len(relevant_times)]
+    points = np.stack((relevant_y, relevant_x_with_offset)).transpose()
+
+    self.viewer.add_points(
+        data=points,
+        size=np.array(radii[:len(relevant_times)]),
+        face_color="orange",
+        edge_color="white",
+    )
 
 
 def foci(params, fl_plane, seg_method, cell_file_path):
@@ -657,6 +803,8 @@ class Foci(MM3Container):
     def set_log_thresh(self):
         self.log_thresh = self.log_thresh_widget.value
 
+
+
     def render_preview(self):
         self.viewer.layers.clear()
         self.set_params()
@@ -665,37 +813,63 @@ class Foci(MM3Container):
         specs = load_specs(self.params["ana_dir"])
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
+        n_steps = 20
+
+        # load images
+        actual_plane = self.params["foci_plane"]
+        kymos = []
         ## pull out first fov & peak id with cells
+        for plane in self.valid_planes:
+            self.params["foci_plane"] = plane
+            kymo = ultra_kymograph(valid_fov, valid_peak, self.params, n_steps=n_steps)
+            kymos.append(kymo)
+        kymos = np.array(kymos)
+        self.viewer.add_image(np.array(kymos))
+        img_width = kymos[0].shape[2] // n_steps
 
-        kymo = kymograph(valid_fov, valid_peak, self.params)
-        self.viewer.add_image(kymo)
-
+        # load foci labels
+        self.params["foci_plane"] = actual_plane
         with open(self.cellfile, "rb") as cell_file:
             Cells = pickle.load(cell_file)
-
         time_table = load_time_table(self.params["ana_dir"])
-
         Cells_by_peak = organize_cells_by_channel(Cells, specs)[valid_fov][valid_peak]
 
-        y_pos, radii, times = foci_analysis(
+        x_blob, y_blob, radii, times = foci_preview(
             valid_fov,
             valid_peak,
             Cells_by_peak,
             self.params,
             self.segmentation_method,
             time_table,
-            preview=True,
         )
+        x_blob, y_blob, radii, times = np.array(x_blob), np.array(y_blob), np.array(radii), np.array(times)
 
-        points = np.stack((y_pos, times)).transpose()
 
-        self.viewer.add_points(
-            data=points,
-            size=np.array(radii) / 5,
-            face_color="orange",
-            edge_color="white",
-        )
+        def draw_points():
+            # self.viewer.layers['Shapes'].data = []
+            cur_frame = self.viewer.dims.current_step[1]
+            times_in_range_mask = (cur_frame + 1 <= times) & (times < cur_frame + n_steps + 1)
+            times_in_range = times[times_in_range_mask]
+            relevant_x = x_blob[times_in_range_mask]
+            relevant_x_with_offset = np.array(relevant_x) + (np.array(times_in_range) - cur_frame -1) * img_width
+            relevant_y = y_blob[times_in_range_mask]
+            points = np.stack((relevant_y, relevant_x_with_offset)).transpose()
+            try:
+                self.viewer.layers.remove("points")
+            except Exception:
+                pass
 
-        # usually want to stretch the image a bit to make it more legible
-        self.viewer.layers[-1].scale = [1, 2]
-        self.viewer.layers[-2].scale = [1, 2]
+            self.viewer.add_points(
+                data=points,
+                size=np.array(radii[times_in_range_mask]),
+                face_color="orange",
+                edge_color="white",
+                name="points"
+            )
+        
+        draw_points()
+
+        self.viewer.dims.events.current_step.connect(draw_points)
+
+
+
