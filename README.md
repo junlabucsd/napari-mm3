@@ -86,7 +86,7 @@ ___With Otsu's method:___
 
 * [Subtract](https://github.com/junlabucsd/napari-mm3/blob/main/docs/subtract-widget.md) -- Remove (via subtraction) empty traps from the background of traps that contain cells; run this on the phase contrast channel.
 
-* [SegmentOtsu](https://github.com/junlabucsd/napari-mm3/blob/main/docs/segmentotsu-widget.md) -- Use Otsu segmentation to segment cells.
+* [SegmentOtsu](https://github.com/junlabucsd/napari-mm3/blob/main/docs/segmentotsu-widget.md) -- Use Otsu's method to segment cells.
 
 ___With U-Net:___
 
