@@ -597,19 +597,6 @@ def update_cell_foci(cells, foci):
             cell_id = cell.id
             cells[cell_id].foci[focus_id] = focus
 
-def draw_foci(time_range):
-
-    relevant_x = x_blob[:len(relevant_times)]
-    relevant_x_with_offset = np.array(relevant_x) + (np.array(relevant_times) - relevant_times[0]) * kymos[0].shape[1] // len(unique_times)
-    relevant_y = y_blob[:len(relevant_times)]
-    points = np.stack((relevant_y, relevant_x_with_offset)).transpose()
-
-    self.viewer.add_points(
-        data=points,
-        size=np.array(radii[:len(relevant_times)]),
-        face_color="orange",
-        edge_color="white",
-    )
 
 
 def foci(params, fl_plane, seg_method, cell_file_path):
@@ -803,19 +790,25 @@ class Foci(MM3Container):
     def set_log_thresh(self):
         self.log_thresh = self.log_thresh_widget.value
 
-
-
     def render_preview(self):
+        """Previews foci in a pseudo-kymograph.
+        TODO:
+            Add foci selection => the hell even is this?
+            Add division markers (ie, indicators for when a cell has/is-about-to divide)
+        """
         self.viewer.layers.clear()
+        self.viewer.layers.select_all()
+        self.viewer.layers.remove_selected()
         self.set_params()
         # TODO: Add ability to change these to other FOVs
         valid_fov = self.valid_fovs[0]
         specs = load_specs(self.params["ana_dir"])
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
-        n_steps = 20
+        n_steps = 40
 
         # load images
+        # TODO: remove params dependency here.
         actual_plane = self.params["foci_plane"]
         kymos = []
         ## pull out first fov & peak id with cells
@@ -826,6 +819,7 @@ class Foci(MM3Container):
         kymos = np.array(kymos)
         self.viewer.add_image(np.array(kymos))
         img_width = kymos[0].shape[2] // n_steps
+        self.img_width = img_width
 
         # load foci labels
         self.params["foci_plane"] = actual_plane
@@ -842,34 +836,36 @@ class Foci(MM3Container):
             self.segmentation_method,
             time_table,
         )
-        x_blob, y_blob, radii, times = np.array(x_blob), np.array(y_blob), np.array(radii), np.array(times)
+        self.x_blob, self.y_blob, self.radii, self.times = np.array(x_blob), np.array(y_blob), np.array(radii), np.array(times)
 
-
+        # draws foci within the current frame. doing it as a nested function is much more straightforward
+        # than passing around a bunch of parameters, so I am doing it this way.
         def draw_points():
-            # self.viewer.layers['Shapes'].data = []
             cur_frame = self.viewer.dims.current_step[1]
-            times_in_range_mask = (cur_frame + 1 <= times) & (times < cur_frame + n_steps + 1)
-            times_in_range = times[times_in_range_mask]
-            relevant_x = x_blob[times_in_range_mask]
-            relevant_x_with_offset = np.array(relevant_x) + (np.array(times_in_range) - cur_frame -1) * img_width
-            relevant_y = y_blob[times_in_range_mask]
+            times_in_range_mask = (cur_frame + 1 <= self.times) & (self.times < cur_frame + n_steps + 1)
+            times_in_range = self.times[times_in_range_mask]
+            relevant_x = self.x_blob[times_in_range_mask]
+            relevant_x_with_offset = np.array(relevant_x) + (np.array(times_in_range) - cur_frame -1) * self.img_width
+            relevant_y = self.y_blob[times_in_range_mask]
             points = np.stack((relevant_y, relevant_x_with_offset)).transpose()
-            try:
-                self.viewer.layers.remove("points")
-            except Exception:
-                pass
 
-            self.viewer.add_points(
-                data=points,
-                size=np.array(radii[times_in_range_mask]),
-                face_color="orange",
-                edge_color="white",
-                name="points"
-            )
+            try:
+                self.viewer.layers['points'].data = points
+                self.viewer.layers['points'].size = np.array(self.radii[times_in_range_mask])
+            except Exception as e:
+                print(e)
+                self.points = self.viewer.add_points(
+                    data=points,
+                    size=np.array(self.radii[times_in_range_mask]),
+                    face_color="orange",
+                    edge_color="white",
+                    name="points"
+                )
         
         draw_points()
 
         self.viewer.dims.events.current_step.connect(draw_points)
 
-
-
+        # usually want to stretch the image a bit to make it more legible
+        # self.viewer.layers[-1].scale = [1, .5]
+        # self.viewer.layers[-2].scale = [1, .5]
