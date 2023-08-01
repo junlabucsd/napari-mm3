@@ -163,7 +163,7 @@ def foci_analysis(
                 thresh = params["foci_log_thresh"]
                 peak_med_ratio = params["foci_log_peak_med_ratio"]
 
-                disp_l_tmp, disp_w_tmp, foci_h_tmp = foci_lap2_vectorized(
+                disp_l_tmp, disp_w_tmp, foci_h_tmp = foci_lap(
                     image_data_temp_seg, image_data_temp, cell, t, minsig, maxsig, thresh, peak_med_ratio, preview=False
                 )
 
@@ -277,7 +277,7 @@ def foci_preview(
                 thresh = params["foci_log_thresh"]
                 peak_med_ratio = params["foci_log_peak_med_ratio"]
 
-                disp_l_tmp, disp_w_tmp, foci_h_tmp, x_blob_tmp, y_blob_tmp, r_blob_tmp = foci_lap2_vectorized(
+                disp_l_tmp, disp_w_tmp, foci_h_tmp, x_blob_tmp, y_blob_tmp, r_blob_tmp = foci_lap(
                     image_data_temp_seg, image_data_temp, cell, t, minsig, maxsig, thresh, peak_med_ratio, preview=True
                 )
 
@@ -385,8 +385,14 @@ def foci_cell(cell, t0, image_data_seg, image_data_FL, params):
 
         # find foci as long as there is information in the fluorescent image
         if np.sum(image_data_temp) != 0:
+
+            minsig = params["foci_log_minsig"]
+            maxsig = params["foci_log_maxsig"]
+            thresh = params["foci_log_thresh"]
+            peak_med_ratio = params["foci_log_peak_med_ratio"]
+
             disp_l_tmp, disp_w_tmp, foci_h_tmp = foci_lap(
-                image_data_temp_seg, image_data_temp, cell, t, params
+                image_data_temp_seg, image_data_temp, cell, t, minsig, maxsig, thresh, peak_med_ratio
             )
 
             disp_l.append(disp_l_tmp)
@@ -405,44 +411,6 @@ def foci_cell(cell, t0, image_data_seg, image_data_FL, params):
     cell.disp_w = disp_w
     cell.foci_h = foci_h
 
-
-# actual worker function for foci detection
-def foci_lap(img, img_foci, cell, t, params, preview=False):
-    """foci_lap finds foci using a laplacian convolution then fits a 2D
-    Gaussian.
-
-    The returned information are the parameters of this Gaussian.
-    All the information is returned in the form of np.arrays which are the
-    length of the number of found foci across all cells in the image.
-
-    Parameters
-    ----------
-    img : 2D np.array
-        phase contrast or bright field image. Only used for debug
-    img_foci : 2D np.array
-        fluorescent image with foci.
-    cell : cell object
-    t : int
-        time point to which the images correspond
-
-    Returns
-    -------
-    disp_l : 1D np.array
-        displacement on long axis, in px, of a foci from the center of the cell
-    disp_w : 1D np.array
-        displacement on short axis, in px, of a foci from the center of the cell
-    foci_h : 1D np.array
-        Foci "height." Sum of the intensity of the gaussian fitting area.
-    """
-
-    minsig = params["foci_log_minsig"]
-    maxsig = params["foci_log_maxsig"]
-    thresh = params["foci_log_thresh"]
-    peak_med_ratio = params["foci_log_peak_med_ratio"]
-
-    return foci_lap2_vectorized(
-        img, img_foci, cell, t, minsig, maxsig, thresh, peak_med_ratio, preview=preview
-    )
 
 def find_blobs_in_cell(img, img_foci, cell, t, maxsig, minsig, thresh):
     # pull out useful information for just this time point
@@ -526,7 +494,7 @@ def filter_blobs(blobs, img, bbox, threshold):
 
 
 # actual worker function for foci detection
-def foci_lap2_vectorized(img, img_foci, cell, t, minsig, maxsig, thresh, peak_med_ratio, preview=False):
+def foci_lap(img, img_foci, cell, t, minsig, maxsig, thresh, peak_med_ratio, preview=False):
     """foci_lap finds foci using a laplacian convolution then fits a 2D
     Gaussian.
 
