@@ -15,8 +15,7 @@ from scipy.optimize import leastsq  # fitting 2d gaussian
 from napari import Viewer
 
 
-
-from .utils import organize_cells_by_channel
+from .utils import organize_cells_by_channel, write_cells_to_json
 
 from ._deriving_widgets import (
     MM3Container,
@@ -28,6 +27,7 @@ from ._deriving_widgets import (
     information,
     load_seg_stack,
     load_subtracted_stack,
+    InteractivePeakChooser
 )
 from magicgui.widgets import SpinBox, ComboBox, FileEdit, FloatSpinBox, PushButton
 
@@ -262,7 +262,6 @@ def foci_preview(
         disp_l = []
         disp_w = []
         foci_h = []
-
 
         # Go through each time point of this cell
         for t in cell.times:
@@ -643,12 +642,8 @@ def foci(params, fl_plane, seg_method, cell_file_path):
             )
 
     # Output data to both dictionary and the .mat format used by the GUI
-    cell_filename = os.path.basename(cell_file_path)
-    with open(
-        os.path.join(params["cell_dir"], cell_filename[:-4] + "_foci.pkl"), "wb"
-    ) as cell_file:
-        pickle.dump(Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
+    write_cells_to_json(Cells, params["cell_dir"] / "all_cells_foci.json")
     information("Finished foci analysis.")
 
 
@@ -668,7 +663,6 @@ class Foci(MM3Container):
         self.segmentation_method_widget = ComboBox(
             label="segmentation method", choices=["Otsu", "U-net"]
         )
-        self.fov_widget = FOVChooser(self.valid_fovs)
 
         # minimum and maximum sigma of laplacian to convolve in pixels.
         # Scales with minimum foci width to detect as 2*sqrt(2)*minsig
@@ -702,6 +696,10 @@ class Foci(MM3Container):
 
         self.preview_widget = PushButton(label="generate preview", value=False)
 
+        self.specs = load_specs(self.analysis_folder)
+        
+        self.n_steps = 40
+
         self.set_plane()
         self.set_segmentation_method()
         self.set_cellfile()
@@ -710,32 +708,39 @@ class Foci(MM3Container):
         self.set_log_minsig()
         self.set_log_thresh()
         self.set_log_peak_ratio()
+        self.generate_fovs_to_peaks()
+        self.peak_switch_widget = InteractivePeakChooser(self.valid_fovs, self.fov_to_peaks)
+        self.set_peak_and_fov()
 
         self.plane_widget.changed.connect(self.set_plane)
         self.segmentation_method_widget.changed.connect(self.set_segmentation_method)
         self.cellfile_widget.changed.connect(self.set_cellfile)
-        self.fov_widget.connect_callback(self.set_fovs)
         self.log_minsig_widget.changed.connect(self.set_log_minsig)
         self.log_maxsig_widget.changed.connect(self.set_log_maxsig)
         self.log_thresh_widget.changed.connect(self.set_log_thresh)
         self.log_peak_ratio_widget.changed.connect(self.set_log_peak_ratio)
-
         self.viewer.window._status_bar._toggle_activity_dock(True)
-
         self.preview_widget.clicked.connect(self.render_preview)
+        self.peak_switch_widget.connect(self.set_peak_and_fov)
 
         self.append(self.plane_widget)
         self.append(self.segmentation_method_widget)
         self.append(self.cellfile_widget)
-        self.append(self.fov_widget)
         self.append(self.log_minsig_widget)
         self.append(self.log_maxsig_widget)
         self.append(self.log_thresh_widget)
         self.append(self.log_peak_ratio_widget)
         self.append(self.preview_widget)
+        self.append(self.peak_switch_widget)
 
-        # self.render_preview()
-
+    def generate_fovs_to_peaks(self):
+        with open(self.cellfile, "rb") as cell_file:
+            Cells = pickle.load(cell_file)
+        self.fov_to_peaks = {}
+        for valid_fov in self.valid_fovs:
+            valid_peaks = organize_cells_by_channel(Cells, self.specs)[valid_fov].keys()
+            self.fov_to_peaks[valid_fov] = valid_peaks
+        
     def set_params(self):
         # These have been wittled down to bare minimum.
         self.params = {
@@ -759,6 +764,10 @@ class Foci(MM3Container):
     def run(self):
         self.set_params()
         foci(self.params, self.fl_plane, self.segmentation_method, str(self.cellfile))
+
+    def set_peak_and_fov(self):
+        self.preview_peak = self.peak_switch_widget.cur_peak
+        self.preview_fov = self.peak_switch_widget.cur_fov
 
     def set_plane(self):
         self.fl_plane = self.plane_widget.value
@@ -788,81 +797,53 @@ class Foci(MM3Container):
         """
             Previews foci in a pseudo-kymograph.
         """
+
         self.viewer.layers.clear()
         self.viewer.layers.select_all()
         self.viewer.layers.remove_selected()
         self.set_params()
         # TODO: Add ability to change these to other FOVs
-        valid_fov = self.valid_fovs[0]
-        specs = load_specs(self.params["ana_dir"])
-        # Find first cell-containing peak
-        valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         # TODO: Add a check for number of steps
-        n_steps = 50
-
+        n_steps = self.n_steps
+        
         # load images
         # TODO: remove params dependency here.
+
         actual_plane = self.params["foci_plane"]
         kymos = []
         ## pull out first fov & peak id with cells
         for plane in self.valid_planes:
             self.params["foci_plane"] = plane
-            kymo = ultra_kymograph(valid_fov, valid_peak, self.params, n_steps=n_steps)
+            kymo = ultra_kymograph(self.preview_fov, self.preview_peak, self.params, n_steps=n_steps)
             kymos.append(kymo)
+
         kymos = np.array(kymos)
+
+        print(f"before 2. FOV: {self.preview_fov}. peak: {self.preview_peak}")
         self.viewer.add_image(np.array(kymos))
+        print(f"before 3. FOV: {self.preview_fov}. peak: {self.preview_peak}")
         img_width = kymos[0].shape[2] // n_steps
         self.img_width = img_width
-
         # load foci labels
         self.params["foci_plane"] = actual_plane
         with open(self.cellfile, "rb") as cell_file:
             Cells = pickle.load(cell_file)
         time_table = load_time_table(self.params["ana_dir"])
-        Cells_by_peak = organize_cells_by_channel(Cells, specs)[valid_fov][valid_peak]
+        print("organize by channel")
+        Cells_by_peak = organize_cells_by_channel(Cells, self.specs)[self.preview_fov][self.preview_peak]
 
         x_blob, y_blob, radii, times = foci_preview(
-            valid_fov,
-            valid_peak,
+            self.preview_fov,
+            self.preview_peak,
             Cells_by_peak,
             self.params,
             self.segmentation_method,
             time_table,
         )
         self.x_blob, self.y_blob, self.radii, self.times = np.array(x_blob), np.array(y_blob), np.array(radii), np.array(times)
-
-        # draws foci within the current frame. doing it as a nested function is much more straightforward
-        # than passing around a bunch of parameters, so I am doing it this way.
-        def draw_points():
-            try:
-                self.viewer.layers["Image"].reset_contrast_limits()
-            except Exception as e:
-                pass
-            cur_frame = self.viewer.dims.current_step[1]
-            times_in_range_mask = (cur_frame + 1 <= self.times) & (self.times < cur_frame + n_steps + 1)
-            times_in_range = self.times[times_in_range_mask]
-            relevant_x = self.x_blob[times_in_range_mask]
-            relevant_x_with_offset = np.array(relevant_x) + (np.array(times_in_range) - cur_frame -1) * self.img_width
-            relevant_y = self.y_blob[times_in_range_mask]
-            points = np.stack((relevant_y, relevant_x_with_offset)).transpose()
-
-            # if the points layer exists => update it.
-            # if the points layer does not exist => create it.
-            try:
-                self.viewer.layers['points'].data = points
-                self.viewer.layers['points'].size = np.array(self.radii[times_in_range_mask])
-            except Exception as e:
-                self.points = self.viewer.add_points(
-                    data=points,
-                    size=np.array(self.radii[times_in_range_mask]),
-                    name="points",
-                    face_color = "orange",
-                    edge_color="white"
-                )
         
-        draw_points()
-
-        self.viewer.dims.events.current_step.connect(draw_points)
+        self.draw_points()
+        self.viewer.dims.events.current_step.connect(self.draw_points)
 
         # usually want to stretch the image a bit to make it more legible
         
@@ -871,3 +852,32 @@ class Foci(MM3Container):
         self.viewer.layers["Image"].reset_contrast_limits()
         self.viewer.reset_view()
         self.viewer.layers[-1].selected_data = []
+    
+    # draws foci within the current frame. doing it as a nested function is much more straightforward
+    # than passing around a bunch of parameters, so I am doing it this way.
+    def draw_points(self):
+        try:
+            self.viewer.layers["Image"].reset_contrast_limits()
+        except Exception as e:
+            pass
+        cur_frame = self.viewer.dims.current_step[1]
+        times_in_range_mask = (cur_frame + 1 <= self.times) & (self.times < cur_frame + self.n_steps + 1)
+        times_in_range = self.times[times_in_range_mask]
+        relevant_x = self.x_blob[times_in_range_mask]
+        relevant_x_with_offset = np.array(relevant_x) + (np.array(times_in_range) - cur_frame -1) * self.img_width
+        relevant_y = self.y_blob[times_in_range_mask]
+        points = np.stack((relevant_y, relevant_x_with_offset)).transpose()
+
+        # if the points layer exists => update it.
+        # if the points layer does not exist => create it.
+        try:
+            self.viewer.layers['points'].data = points
+            self.viewer.layers['points'].size = np.array(self.radii[times_in_range_mask])
+        except Exception as e:
+            self.points = self.viewer.add_points(
+                data=points,
+                size=1.5 * np.array(self.radii[times_in_range_mask]),
+                name="points",
+                face_color = "orange",
+                edge_color="white"
+            )

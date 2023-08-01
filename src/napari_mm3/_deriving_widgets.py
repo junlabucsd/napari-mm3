@@ -559,6 +559,40 @@ class FOVChooserSingle(InteractiveSpinBox):
             use_float=False,
         )
 
+class InteractivePeakChooser(Container):
+    def __init__(self, valid_fovs, fov_choices):
+        super().__init__(
+            layout="horizontal",
+            labels=True,
+            tooltip="Interactive peak picker.",
+        )
+
+        self.valid_fovs = valid_fovs
+        self.fov_choices = fov_choices
+        self.cur_fov = min(self.valid_fovs)
+        self.cur_peak = min(fov_choices[self.cur_fov])
+
+        self.fov_chooser_widget = FOVChooserSingle(valid_fovs=valid_fovs)
+        self.peak_chooser_widget = ComboBox(value = self.cur_peak, choices=fov_choices[self.cur_fov], label="peak")
+
+        self.fov_chooser_widget.changed.connect(self.set_fov)
+        self.peak_chooser_widget.changed.connect(self.set_peak)
+
+        self.append(self.fov_chooser_widget)
+        self.append(self.peak_chooser_widget) 
+
+    def set_fov(self):
+        self.cur_fov = self.fov_chooser_widget.value
+        self.peak_chooser_widget._default_choices = self.fov_choices[self.cur_fov]
+        self.peak_chooser_widget.choices = self.fov_choices[self.cur_fov]
+        self.peak_chooser_widget.value = min(self.fov_choices[self.cur_fov])
+        self.cur_peak = self.peak_chooser_widget.value
+    
+    def set_peak(self):
+        self.cur_peak = self.peak_chooser_widget.value
+
+    def connect(self, callback):
+        self.peak_chooser_widget.changed.connect(callback)
 
 class PlanePicker(ComboBox):
     def __init__(
