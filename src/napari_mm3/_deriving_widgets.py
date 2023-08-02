@@ -69,22 +69,36 @@ def load_seg_stack(
 
     return load_tiff(img_dir / img_filename)
 
-def load_subtracted_stack(ana_dir: Path, experiment_name: str, fov_id, peak_id, postfix):
+
+def load_subtracted_stack(
+    ana_dir: Path, experiment_name: str, fov_id, peak_id, postfix
+):
     img_dir = ana_dir / "subtracted"
     # switch postfix to c1/c2/c3 auto??
-    img_filename = gen_tiff_filename(prefix = experiment_name, fov_id=fov_id, peak_id=peak_id, postfix = postfix)
+    img_filename = gen_tiff_filename(
+        prefix=experiment_name, fov_id=fov_id, peak_id=peak_id, postfix=postfix
+    )
     return load_tiff(img_dir / img_filename)
 
-def load_unmodified_stack(ana_dir: Path, experiment_name: str, fov_id, peak_id, postfix):
+
+def load_unmodified_stack(
+    ana_dir: Path, experiment_name: str, fov_id, peak_id, postfix
+):
     img_dir = ana_dir / "channels"
     # switch postfix to c1/c2/c3 auto??
-    img_filename = gen_tiff_filename(prefix = experiment_name, fov_id=fov_id, peak_id=peak_id, postfix = postfix)
+    img_filename = gen_tiff_filename(
+        prefix=experiment_name, fov_id=fov_id, peak_id=peak_id, postfix=postfix
+    )
     return load_tiff(img_dir / img_filename)
+
 
 def load_empty_stack(ana_dir: Path, experiment_name: str, fov_id, postfix):
     img_dir = ana_dir / "empties"
-    img_filename = gen_tiff_filename(prefix = experiment_name, fov_id=fov_id, postfix = postfix)
+    img_filename = gen_tiff_filename(
+        prefix=experiment_name, fov_id=fov_id, postfix=postfix
+    )
     return load_tiff(img_dir / img_filename)
+
 
 def load_specs(analysis_dir: Path) -> dict:
     """Load specs file which indicates which channels should be analyzed, used as empties, or ignored."""
@@ -140,7 +154,7 @@ def get_valid_planes(TIFF_folder):
     test_file = tiff.imread(filepath)
     dim = test_file.ndim
     if dim == 3:
-        #there are multiple planes
+        # there are multiple planes
         num_channels = test_file.shape[0]
     elif dim == 2:
         # only one plane (phase or fluorescence)
@@ -560,6 +574,7 @@ class FOVChooserSingle(InteractiveSpinBox):
             use_float=False,
         )
 
+
 class InteractivePeakChooser(Container):
     def __init__(self, valid_fovs, fov_choices):
         super().__init__(
@@ -576,13 +591,15 @@ class InteractivePeakChooser(Container):
         self.cur_peak = min(fov_choices[self.cur_fov])
 
         self.fov_chooser_widget = FOVChooserSingle(valid_fovs=valid_fovs)
-        self.peak_chooser_widget = ComboBox(value = self.cur_peak, choices=fov_choices[self.cur_fov], label="peak")
+        self.peak_chooser_widget = ComboBox(
+            value=self.cur_peak, choices=fov_choices[self.cur_fov], label="peak"
+        )
 
         self.fov_chooser_widget.changed.connect(self.set_fov)
         self.peak_chooser_widget.changed.connect(self.set_peak)
 
         self.append(self.fov_chooser_widget)
-        self.append(self.peak_chooser_widget) 
+        self.append(self.peak_chooser_widget)
 
     def set_fov(self):
         self.cur_fov = self.fov_chooser_widget.value
@@ -590,12 +607,13 @@ class InteractivePeakChooser(Container):
         self.peak_chooser_widget.choices = self.fov_choices[self.cur_fov]
         self.peak_chooser_widget.value = min(self.fov_choices[self.cur_fov])
         self.cur_peak = self.peak_chooser_widget.value
-    
+
     def set_peak(self):
         self.cur_peak = self.peak_chooser_widget.value
 
     def connect(self, callback):
         self.peak_chooser_widget.changed.connect(callback)
+
 
 class PlanePicker(ComboBox):
     def __init__(
