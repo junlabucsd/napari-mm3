@@ -599,9 +599,7 @@ def foci_lap(
     return disp_y, disp_x, foci_h
 
 
-def ultra_kymograph(
-    ana_dir, experiment_name, foci_plane, fov_id, peak_id, n_steps=50
-):
+def ultra_kymograph(ana_dir, experiment_name, foci_plane, fov_id, peak_id, n_steps=50):
     postfix = f"sub_{foci_plane}"
     sub_stack_fl = load_subtracted_stack(
         ana_dir, experiment_name, fov_id, peak_id, postfix
