@@ -599,10 +599,12 @@ def foci_lap(
     return disp_y, disp_x, foci_h
 
 
-def ultra_kymograph(ana_dir, fov_id, peak_id, params, n_steps=50):
-    postfix = f'sub_{params["foci_plane"]}'
+def ultra_kymograph(
+    ana_dir, experiment_name, foci_plane, fov_id, peak_id, n_steps=50
+):
+    postfix = f"sub_{foci_plane}"
     sub_stack_fl = load_subtracted_stack(
-        ana_dir, params["experiment_name"], fov_id, peak_id, postfix
+        ana_dir, experiment_name, fov_id, peak_id, postfix
     )
     ultra_kymo = []
     for i in range(sub_stack_fl.shape[0] - n_steps):
@@ -840,33 +842,27 @@ class Foci(MM3Container):
         # load images
         # TODO: remove params dependency here.
 
-        actual_plane = self.params["foci_plane"]
         kymos = []
         ## pull out first fov & peak id with cells
         for plane in self.valid_planes:
-            self.params["foci_plane"] = plane
             kymo = ultra_kymograph(
                 self.analysis_folder,
+                self.experiment_name,
+                self.fl_plane,
                 self.preview_fov,
                 self.preview_peak,
-                self.params,
                 n_steps=n_steps,
             )
             kymos.append(kymo)
 
         kymos = np.array(kymos)
 
-        print(f"before 2. FOV: {self.preview_fov}. peak: {self.preview_peak}")
         self.viewer.add_image(np.array(kymos))
-        print(f"before 3. FOV: {self.preview_fov}. peak: {self.preview_peak}")
         img_width = kymos[0].shape[2] // n_steps
         self.img_width = img_width
-        # load foci labels
-        self.params["foci_plane"] = actual_plane
         with open(self.cellfile, "rb") as cell_file:
             Cells = pickle.load(cell_file)
         time_table = load_time_table(self.analysis_folder)
-        print("organize by channel")
         Cells_by_peak = organize_cells_by_channel(Cells, self.specs)[self.preview_fov][
             self.preview_peak
         ]
