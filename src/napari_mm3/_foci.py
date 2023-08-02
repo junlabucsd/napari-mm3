@@ -846,7 +846,7 @@ class Foci(MM3Container):
             kymo = ultra_kymograph(
                 self.analysis_folder,
                 self.experiment_name,
-                self.fl_plane,
+                plane,
                 self.preview_fov,
                 self.preview_peak,
                 n_steps=n_steps,
