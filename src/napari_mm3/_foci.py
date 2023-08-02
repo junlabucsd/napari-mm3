@@ -699,7 +699,6 @@ def foci(
     # Output data to both dictionary and the .mat format used by the GUI
 
     write_cells_to_json(Cells, cell_dir / "all_cells_foci.json")
-    # TODO readd MAT format export
     information("Finished foci analysis.")
 
 
@@ -906,6 +905,7 @@ class Foci(MM3Container):
         # Add this here because napari doesn't like it if you access this without having any images in the canvas.
         self.viewer.dims.events.current_step.connect(self.draw_points)
 
+        self.viewer.grid.enabled = False
         self.viewer.layers[-1].scale = [1, 0.5]
         self.viewer.layers[-2].scale = [1, 0.5]
         self.viewer.layers["Image"].reset_contrast_limits()
