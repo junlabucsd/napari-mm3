@@ -4,7 +4,6 @@ import six
 
 # import modules
 import os # interacting with file systems
-import json
 
 # number modules
 import numpy as np
@@ -16,30 +15,6 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 import seaborn as sns
-
-
-### Data conversion functions ######################################################################
-
-def read_cells_from_json(path_in):
-    '''
-    Read in a json file of cell data and return a dictionary of Cell objects.
-    
-    Parameters
-    ----------
-    path_in : str
-        Path to json file.
-    
-    Returns
-    -------
-    Cells_new : dict
-        Dictionary of Cell objects.
-    '''
-    with open(path_in, 'r') as fin:
-        Cells = json.load(fin)
-    Cells_new = {}
-    for cell_id, cell in Cells.items():
-        Cells_new[cell_id] = dotdict(cell)
-    return Cells_new
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
