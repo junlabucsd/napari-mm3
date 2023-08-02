@@ -11,6 +11,8 @@ from pathlib import Path
 import warnings
 import tifffile as tiff
 
+from napari_mm3.utils_plotting import dotdict
+
 TIFF_FILE_FORMAT_PEAK = "%s_xy%03d_p%04d_%s.tif"
 TIFF_FILE_FORMAT_NO_PEAK = "%s_xy%03d_%s.tif"
 
@@ -64,6 +66,27 @@ def write_cells_to_json(Cells, path_out):
             pass
     with open(path_out, 'w') as fout:
         json.dump(json_out, fout, sort_keys=True, indent=2, cls=NpEncoder)
+
+def read_cells_from_json(path_in):
+    '''
+    Read in a json file of cell data and return a dictionary of Cell objects.
+
+    Parameters
+    ----------
+    path_in : str
+        Path to json file.
+
+    Returns
+    -------
+    Cells_new : dict
+        Dictionary of Cell objects.
+    '''
+    with open(path_in, 'r') as fin:
+        Cells = json.load(fin)
+    Cells_new = {}
+    for cell_id, cell in Cells.items():
+        Cells_new[cell_id] = dotdict(cell)
+    return Cells_new
 
 ### Cell class and related functions
 
