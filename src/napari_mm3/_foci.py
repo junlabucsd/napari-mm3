@@ -75,7 +75,7 @@ def moments(data):
 
 # find foci using a difference of gaussians method
 def foci_analysis(
-    fov_id, peak_id, Cells, params, seg_method, time_table
+    fov_id, peak_id, Cells, ana_dir, params, seg_method, time_table
 ):
     """Find foci in cells using a fluorescent image channel.
     This function works on a single peak and all the cells therein.
@@ -116,7 +116,7 @@ def foci_analysis(
     # Import segmented and fluorescenct images
     seg_mode = SegmentationMode.OTSU if seg_method == "Otsu" else SegmentationMode.UNET
     image_data_seg = load_seg_stack(
-        ana_dir=params["ana_dir"],
+        ana_dir=ana_dir,
         experiment_name=params["experiment_name"],
         fov_id=fov_id,
         peak_id=peak_id,
@@ -125,7 +125,7 @@ def foci_analysis(
 
 
     postfix=f'sub_{params["foci_plane"]}'
-    image_data_FL = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
+    image_data_FL = load_subtracted_stack(ana_dir, params["experiment_name"], fov_id, peak_id, postfix)
 
 
     # determine absolute time index
@@ -189,7 +189,7 @@ def foci_analysis(
 # find foci using a difference of gaussians method.
 # the idea of this one is to be run on a single preview
 def foci_preview(
-    fov_id, peak_id, Cells, params, seg_method, time_table
+    fov_id, peak_id, Cells, ana_dir, params, seg_method, time_table
 ):
     """Find foci in cells using a fluorescent image channel.
     This function works on a single peak and all the cells therein.
@@ -230,7 +230,7 @@ def foci_preview(
     # Import segmented and fluorescent images
     seg_mode = SegmentationMode.OTSU if seg_method == "Otsu" else SegmentationMode.UNET
     image_data_seg = load_seg_stack(
-        ana_dir=params["ana_dir"],
+        ana_dir=ana_dir,
         experiment_name=params["experiment_name"],
         fov_id=fov_id,
         peak_id=peak_id,
@@ -238,7 +238,7 @@ def foci_preview(
     )
 
     postfix=f'sub_{params["foci_plane"]}'
-    image_data_FL = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
+    image_data_FL = load_subtracted_stack(ana_dir, params["experiment_name"], fov_id, peak_id, postfix)
 
 
     # determine absolute time index
@@ -305,7 +305,7 @@ def foci_preview(
 
 
 # foci pool (for parallel analysis)
-def foci_analysis_pool(fov_id, peak_id, Cells, params, seg_method, time_table):
+def foci_analysis_pool(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_table):
     """Find foci in cells using a fluorescent image channel.
     This function works on a single peak and all the cells therein.
     Parameters
@@ -330,14 +330,14 @@ def foci_analysis_pool(fov_id, peak_id, Cells, params, seg_method, time_table):
     # image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=seg_method)
     seg_mode = SegmentationMode.OTSU if seg_method == "Otsu" else SegmentationMode.UNET
     image_data_seg = load_seg_stack(
-        ana_dir=params["ana_dir"],
+        ana_dir=ana_dir,
         experiment_name=params["experiment_name"],
         fov_id=fov_id,
         peak_id=peak_id,
         seg_mode=seg_mode,
     )
     postfix=f'sub_{params["foci_plane"]}'
-    image_data_FL = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
+    image_data_FL = load_subtracted_stack(ana_dir, params["experiment_name"], fov_id, peak_id, postfix)
 
     # Load time table to determine first image index.
     times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
@@ -569,9 +569,9 @@ def foci_lap(img, img_foci, cell, t, minsig, maxsig, thresh, peak_med_ratio, pre
 
     return disp_y, disp_x, foci_h
 
-def ultra_kymograph(fov_id, peak_id, params, n_steps=50):
+def ultra_kymograph(ana_dir, fov_id, peak_id, params, n_steps=50):
     postfix=f'sub_{params["foci_plane"]}'
-    sub_stack_fl = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
+    sub_stack_fl = load_subtracted_stack(ana_dir, params["experiment_name"], fov_id, peak_id, postfix)
     ultra_kymo = []
     for i in range(sub_stack_fl.shape[0] - n_steps):
         sub_stack_fl2 = sub_stack_fl[i: i + n_steps, :, :]
@@ -592,7 +592,7 @@ def update_cell_foci(cells, foci):
 
 
 
-def foci(params, fl_plane, seg_method, cell_file_path):
+def foci(ana_dir, params, fl_plane, seg_method, cell_file_path):
     """
     Main function for foci analysis. Loads cells, finds foci, and saves out the results.
     Parameters
@@ -614,10 +614,10 @@ def foci(params, fl_plane, seg_method, cell_file_path):
         Cells = pickle.load(cell_file)
 
     # load specs file
-    specs = load_specs(params["ana_dir"])
+    specs = load_specs(ana_dir)
 
     # load time table. Puts in params dictionary
-    time_table = load_time_table(params["ana_dir"])
+    time_table = load_time_table(ana_dir)
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
@@ -638,7 +638,7 @@ def foci(params, fl_plane, seg_method, cell_file_path):
             information("running foci analysis")
 
             points, radii, times = foci_analysis(
-                fov_id, peak_id, Cells_of_peak, params, seg_method, time_table
+                fov_id, peak_id, Cells_of_peak, ana_dir, params, seg_method, time_table
             )
 
     # Output data to both dictionary and the .mat format used by the GUI
@@ -763,7 +763,7 @@ class Foci(MM3Container):
 
     def run(self):
         self.set_params()
-        foci(self.params, self.fl_plane, self.segmentation_method, str(self.cellfile))
+        foci(self.analysis_folder, self.params, self.fl_plane, self.segmentation_method, str(self.cellfile))
 
     def set_peak_and_fov(self):
         self.preview_peak = self.peak_switch_widget.cur_peak
@@ -814,7 +814,7 @@ class Foci(MM3Container):
         ## pull out first fov & peak id with cells
         for plane in self.valid_planes:
             self.params["foci_plane"] = plane
-            kymo = ultra_kymograph(self.preview_fov, self.preview_peak, self.params, n_steps=n_steps)
+            kymo = ultra_kymograph(self.analysis_folder, self.preview_fov, self.preview_peak, self.params, n_steps=n_steps)
             kymos.append(kymo)
 
         kymos = np.array(kymos)
@@ -828,7 +828,7 @@ class Foci(MM3Container):
         self.params["foci_plane"] = actual_plane
         with open(self.cellfile, "rb") as cell_file:
             Cells = pickle.load(cell_file)
-        time_table = load_time_table(self.params["ana_dir"])
+        time_table = load_time_table(self.analysis_folder)
         print("organize by channel")
         Cells_by_peak = organize_cells_by_channel(Cells, self.specs)[self.preview_fov][self.preview_peak]
 
@@ -836,6 +836,7 @@ class Foci(MM3Container):
             self.preview_fov,
             self.preview_peak,
             Cells_by_peak,
+            self.analysis_folder,
             self.params,
             self.segmentation_method,
             time_table,
