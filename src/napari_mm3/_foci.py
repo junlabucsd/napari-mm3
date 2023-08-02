@@ -1,14 +1,10 @@
 from __future__ import print_function
 
-# import modules
-import sys
-import os
 from pathlib import Path
 import numpy as np
 from napari.utils import progress
 
 import pickle
-import multiprocessing
 from multiprocessing import Pool
 from skimage.feature import blob_log  # used for foci finding
 from scipy.optimize import leastsq  # fitting 2d gaussian
@@ -21,7 +17,6 @@ from .utils import organize_cells_by_channel, write_cells_to_json
 from ._deriving_widgets import (
     MM3Container,
     PlanePicker,
-    FOVChooser,
     SegmentationMode,
     load_specs,
     load_time_table,
@@ -32,8 +27,6 @@ from ._deriving_widgets import (
 )
 from magicgui.widgets import SpinBox, ComboBox, FileEdit, FloatSpinBox, PushButton
 
-# funs:
-# foci_preview
 
 @dataclass
 class FociParams:
@@ -41,6 +34,7 @@ class FociParams:
     maxsig: int
     threshold: float
     median_ratio: float
+
 
 # returnes a 2D gaussian function
 def gaussian(height, center_x, center_y, width):
@@ -85,7 +79,17 @@ def moments(data):
 
 
 # find foci using a difference of gaussians method
-def foci_analysis(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_name, foci_params: FociParams, seg_method, time_table):
+def foci_analysis(
+    fov_id,
+    peak_id,
+    foci_plane,
+    Cells,
+    ana_dir,
+    experiment_name,
+    foci_params: FociParams,
+    seg_method,
+    time_table,
+):
     """Find foci in cells using a fluorescent image channel.
     This function works on a single peak and all the cells therein.
 
@@ -126,7 +130,7 @@ def foci_analysis(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_name, 
         seg_mode=seg_mode,
     )
 
-    postfix = f'sub_{foci_plane}'
+    postfix = f"sub_{foci_plane}"
     image_data_FL = load_subtracted_stack(
         ana_dir, experiment_name, fov_id, peak_id, postfix
     )
@@ -190,7 +194,17 @@ def foci_analysis(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_name, 
 
 # find foci using a difference of gaussians method.
 # the idea of this one is to be run on a single preview
-def foci_preview(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_name, foci_params: FociParams, seg_method, time_table):
+def foci_preview(
+    fov_id,
+    peak_id,
+    foci_plane,
+    Cells,
+    ana_dir,
+    experiment_name,
+    foci_params: FociParams,
+    seg_method,
+    time_table,
+):
     """Find foci in cells using a fluorescent image channel.
     This function works on a single peak and all the cells therein.
 
@@ -231,7 +245,7 @@ def foci_preview(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_name, f
         seg_mode=seg_mode,
     )
 
-    postfix = f'sub_{foci_plane}'
+    postfix = f"sub_{foci_plane}"
     image_data_FL = load_subtracted_stack(
         ana_dir, experiment_name, fov_id, peak_id, postfix
     )
@@ -307,7 +321,18 @@ def foci_preview(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_name, f
 
 
 # foci pool (for parallel analysis)
-def foci_analysis_pool(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_name, foci_params: FociParams, num_analyzers, seg_method, time_table):
+def foci_analysis_pool(
+    fov_id,
+    peak_id,
+    foci_plane,
+    Cells,
+    ana_dir,
+    experiment_name,
+    foci_params: FociParams,
+    num_analyzers,
+    seg_method,
+    time_table,
+):
     """Find foci in cells using a fluorescent image channel.
     This function works on a single peak and all the cells therein.
     Parameters
@@ -337,7 +362,7 @@ def foci_analysis_pool(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_n
         peak_id=peak_id,
         seg_mode=seg_mode,
     )
-    postfix = f'sub_{foci_plane}'
+    postfix = f"sub_{foci_plane}"
     image_data_FL = load_subtracted_stack(
         ana_dir, experiment_name, fov_id, peak_id, postfix
     )
@@ -350,7 +375,9 @@ def foci_analysis_pool(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_n
     # call foci_cell for each cell object
     pool = Pool(processes=num_analyzers)
     [
-        pool.apply_async(foci_cell(cell, t0, image_data_seg, image_data_FL, foci_params))
+        pool.apply_async(
+            foci_cell(cell, t0, image_data_seg, image_data_FL, foci_params)
+        )
         for cell_id, cell in Cells.items()
     ]
     pool.close()
@@ -498,9 +525,7 @@ def filter_blobs(blobs, img, bbox, threshold):
 
 
 # actual worker function for foci detection
-def foci_lap(
-    img, img_foci, cell, t, foci_params: FociParams, preview=False
-):
+def foci_lap(img, img_foci, cell, t, foci_params: FociParams, preview=False):
     """foci_lap finds foci using a laplacian convolution then fits a 2D
     Gaussian.
 
@@ -614,7 +639,15 @@ def update_cell_foci(cells, foci):
             cells[cell_id].foci[focus_id] = focus
 
 
-def foci(cell_dir, ana_dir, experiment_name, foci_params, fl_plane, seg_method, cell_file_path):
+def foci(
+    cell_dir,
+    ana_dir,
+    experiment_name,
+    foci_params,
+    fl_plane,
+    seg_method,
+    cell_file_path,
+):
     """
     Main function for foci analysis. Loads cells, finds foci, and saves out the results.
     Parameters
@@ -652,7 +685,15 @@ def foci(cell_dir, ana_dir, experiment_name, foci_params, fl_plane, seg_method, 
             information("running foci analysis")
 
             points, radii, times = foci_analysis(
-                fov_id, peak_id, fl_plane, Cells_of_peak, ana_dir, experiment_name, foci_params, seg_method, time_table
+                fov_id,
+                peak_id,
+                fl_plane,
+                Cells_of_peak,
+                ana_dir,
+                experiment_name,
+                foci_params,
+                seg_method,
+                time_table,
             )
 
     # Output data to both dictionary and the .mat format used by the GUI
@@ -759,7 +800,9 @@ class Foci(MM3Container):
             self.fov_to_peaks[valid_fov] = valid_peaks
 
     def run(self):
-        foci_params = FociParams(self.log_minsig, self.log_maxsig, self.log_thresh, self.log_peak_ratio)
+        foci_params = FociParams(
+            self.log_minsig, self.log_maxsig, self.log_thresh, self.log_peak_ratio
+        )
 
         foci(
             self.analysis_folder / "cell_data",
@@ -811,7 +854,6 @@ class Foci(MM3Container):
         n_steps = self.n_steps
 
         # load images
-        # TODO: remove params dependency here.
 
         kymos = []
         ## pull out first fov & peak id with cells
@@ -838,7 +880,9 @@ class Foci(MM3Container):
             self.preview_peak
         ]
 
-        foci_params = FociParams(self.log_minsig, self.log_maxsig, self.log_thresh, self.log_peak_ratio)
+        foci_params = FociParams(
+            self.log_minsig, self.log_maxsig, self.log_thresh, self.log_peak_ratio
+        )
 
         x_blob, y_blob, radii, times = foci_preview(
             self.preview_fov,
