@@ -12,7 +12,7 @@ from napari import Viewer
 from dataclasses import dataclass
 
 
-from .utils import organize_cells_by_channel, write_cells_to_json
+from .utils import organize_cells_by_channel, write_cells_to_json, Cells, Cell
 
 from ._deriving_widgets import (
     MM3Container,
@@ -83,7 +83,7 @@ def foci_analysis(
     fov_id,
     peak_id,
     foci_plane,
-    Cells,
+    cells: Cells,
     ana_dir,
     experiment_name,
     foci_params: FociParams,
@@ -148,7 +148,7 @@ def foci_analysis(
     radii = []
     times_p = []
 
-    for cell_id, cell in progress(Cells.items()):
+    for cell_id, cell in progress(cells.items()):
 
         information("Extracting foci information for %s." % (cell_id))
         # declare lists holding information about foci.
@@ -198,7 +198,7 @@ def foci_preview(
     fov_id,
     peak_id,
     foci_plane,
-    Cells,
+    cells: Cells,
     ana_dir,
     experiment_name,
     foci_params: FociParams,
@@ -264,7 +264,7 @@ def foci_preview(
     radii = []
     times_p = []
 
-    for cell_id, cell in progress(Cells.items()):
+    for cell_id, cell in progress(cells.items()):
 
         information("Extracting foci information for %s." % (cell_id))
         # declare lists holding information about foci.
@@ -325,7 +325,7 @@ def foci_analysis_pool(
     fov_id,
     peak_id,
     foci_plane,
-    Cells,
+    cells,
     ana_dir,
     experiment_name,
     foci_params: FociParams,
@@ -341,7 +341,7 @@ def foci_analysis_pool(
         Field of view ID.
     peak_id : int
         Peak ID.
-    Cells : dict
+    cells : dict
         Dictionary of cell objects.
     params : dict
         Dictionary of parameters.
@@ -378,14 +378,14 @@ def foci_analysis_pool(
         pool.apply_async(
             foci_cell(cell, t0, image_data_seg, image_data_FL, foci_params)
         )
-        for cell_id, cell in Cells.items()
+        for cell_id, cell in cells.items()
     ]
     pool.close()
     pool.join()
 
 
 # parralel function for each cell
-def foci_cell(cell, t0, image_data_seg, image_data_FL, foci_params):
+def foci_cell(cell: Cell, t0, image_data_seg, image_data_FL, foci_params):
     """find foci in a cell, single instance to be called by the foci_analysis_pool for parallel processing.
     Parameters
     ----------
@@ -437,7 +437,7 @@ def foci_cell(cell, t0, image_data_seg, image_data_FL, foci_params):
     cell.foci_h = foci_h
 
 
-def find_blobs_in_cell(img, img_foci, cell, t, maxsig, minsig, thresh):
+def find_blobs_in_cell(img, img_foci, cell: Cell, t, maxsig, minsig, thresh):
     # pull out useful information for just this time point
     # find position of the time point in lists (time points may be missing):
     i = cell.times.index(t)
@@ -525,7 +525,7 @@ def filter_blobs(blobs, img, bbox, threshold):
 
 
 # actual worker function for foci detection
-def foci_lap(img, img_foci, cell, t, foci_params: FociParams, preview=False):
+def foci_lap(img, img_foci, cell: Cell, t, foci_params: FociParams, preview=False):
     """foci_lap finds foci using a laplacian convolution then fits a 2D
     Gaussian.
 
@@ -628,7 +628,7 @@ def ultra_kymograph(ana_dir, experiment_name, foci_plane, fov_id, peak_id, n_ste
     return np.array(ultra_kymo)
 
 
-def update_cell_foci(cells, foci):
+def update_cell_foci(cells: Cells, foci):
     """Updates cells' .foci attribute in-place using information
     in foci dictionary
     """
@@ -666,21 +666,21 @@ def foci(
     None"""
 
     with open(cell_file_path, "rb") as cell_file:
-        Cells = pickle.load(cell_file)
+        cells = pickle.load(cell_file)
     specs = load_specs(ana_dir)
     time_table = load_time_table(ana_dir)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
     information("Starting foci analysis.")
 
     # create dictionary which organizes cells by fov and peak_id
-    Cells_by_peak = organize_cells_by_channel(Cells, specs)
+    cells_by_peak = organize_cells_by_channel(cells, specs)
     # for each set of cells in one fov/peak, find the foci
     for fov_id in fov_id_list:
-        if not fov_id in Cells_by_peak:
+        if not fov_id in cells_by_peak:
             continue
 
-        for peak_id, Cells_of_peak in Cells_by_peak[fov_id].items():
-            if len(Cells_of_peak) == 0:
+        for peak_id, cells_of_peak in cells_by_peak[fov_id].items():
+            if len(cells_of_peak) == 0:
                 continue
             information("running foci analysis")
 
@@ -688,7 +688,7 @@ def foci(
                 fov_id,
                 peak_id,
                 fl_plane,
-                Cells_of_peak,
+                cells_of_peak,
                 ana_dir,
                 experiment_name,
                 foci_params,
@@ -698,7 +698,7 @@ def foci(
 
     # Output data to both dictionary and the .mat format used by the GUI
 
-    write_cells_to_json(Cells, cell_dir / "all_cells_foci.json")
+    write_cells_to_json(cells, cell_dir / "all_cells_foci.json")
     information("Finished foci analysis.")
 
 
@@ -792,10 +792,10 @@ class Foci(MM3Container):
 
     def generate_fovs_to_peaks(self):
         with open(self.cellfile, "rb") as cell_file:
-            Cells = pickle.load(cell_file)
+            cells = pickle.load(cell_file)
         self.fov_to_peaks = {}
         for valid_fov in self.valid_fovs:
-            valid_peaks = organize_cells_by_channel(Cells, self.specs)[valid_fov].keys()
+            valid_peaks = organize_cells_by_channel(cells, self.specs)[valid_fov].keys()
             self.fov_to_peaks[valid_fov] = valid_peaks
 
     def run(self):
@@ -873,9 +873,9 @@ class Foci(MM3Container):
         img_width = kymos[0].shape[2] // n_steps
         self.img_width = img_width
         with open(self.cellfile, "rb") as cell_file:
-            Cells = pickle.load(cell_file)
+            cells = pickle.load(cell_file)
         time_table = load_time_table(self.analysis_folder)
-        Cells_by_peak = organize_cells_by_channel(Cells, self.specs)[self.preview_fov][
+        cells_by_peak = organize_cells_by_channel(cells, self.specs)[self.preview_fov][
             self.preview_peak
         ]
 
@@ -887,7 +887,7 @@ class Foci(MM3Container):
             self.preview_fov,
             self.preview_peak,
             self.fl_plane,
-            Cells_by_peak,
+            cells_by_peak,
             self.analysis_folder,
             self.experiment_name,
             foci_params,
