@@ -680,7 +680,6 @@ def find_cells_of_birth_label(cells, label_num=1) -> Cells:
 
     return fcells
 
-    return fcells
 
 @cellsmethod
 def organize_cells_by_channel(cells, specs) -> dict:
