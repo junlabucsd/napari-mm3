@@ -344,6 +344,7 @@ class MM3Container(Container):
             self.analysis_folder_widget.label,
             self.load_data_widget.label,
             self.load_recent_widget.label,
+            "Interactive Peak Picker",
         }
         return widget.label in labels
 
@@ -566,6 +567,8 @@ class InteractivePeakChooser(Container):
             labels=True,
             tooltip="Interactive peak picker.",
         )
+
+        self.label = "Interactive Peak Picker"
 
         self.valid_fovs = valid_fovs
         self.fov_choices = fov_choices
