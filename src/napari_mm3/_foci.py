@@ -13,6 +13,7 @@ from multiprocessing import Pool
 from skimage.feature import blob_log  # used for foci finding
 from scipy.optimize import leastsq  # fitting 2d gaussian
 from napari import Viewer
+from dataclasses import dataclass
 
 
 from .utils import organize_cells_by_channel, write_cells_to_json
@@ -30,6 +31,16 @@ from ._deriving_widgets import (
     InteractivePeakChooser,
 )
 from magicgui.widgets import SpinBox, ComboBox, FileEdit, FloatSpinBox, PushButton
+
+# funs:
+# foci_preview
+
+@dataclass
+class FociParams:
+    minsig: int
+    maxsig: int
+    threshold: float
+    median_ratio: float
 
 # returnes a 2D gaussian function
 def gaussian(height, center_x, center_y, width):
@@ -74,7 +85,7 @@ def moments(data):
 
 
 # find foci using a difference of gaussians method
-def foci_analysis(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_table):
+def foci_analysis(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_name, foci_params: FociParams, seg_method, time_table):
     """Find foci in cells using a fluorescent image channel.
     This function works on a single peak and all the cells therein.
 
@@ -109,15 +120,15 @@ def foci_analysis(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_tabl
     seg_mode = SegmentationMode.OTSU if seg_method == "Otsu" else SegmentationMode.UNET
     image_data_seg = load_seg_stack(
         ana_dir=ana_dir,
-        experiment_name=params["experiment_name"],
+        experiment_name=experiment_name,
         fov_id=fov_id,
         peak_id=peak_id,
         seg_mode=seg_mode,
     )
 
-    postfix = f'sub_{params["foci_plane"]}'
+    postfix = f'sub_{foci_plane}'
     image_data_FL = load_subtracted_stack(
-        ana_dir, params["experiment_name"], fov_id, peak_id, postfix
+        ana_dir, experiment_name, fov_id, peak_id, postfix
     )
 
     # determine absolute time index
@@ -148,20 +159,12 @@ def foci_analysis(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_tabl
 
             # find foci as long as there is information in the fluorescent image
             if np.sum(image_data_temp) != 0:
-                minsig = params["foci_log_minsig"]
-                maxsig = params["foci_log_maxsig"]
-                thresh = params["foci_log_thresh"]
-                peak_med_ratio = params["foci_log_peak_med_ratio"]
-
                 disp_l_tmp, disp_w_tmp, foci_h_tmp = foci_lap(
                     image_data_temp_seg,
                     image_data_temp,
                     cell,
                     t,
-                    minsig,
-                    maxsig,
-                    thresh,
-                    peak_med_ratio,
+                    foci_params,
                     preview=False,
                 )
 
@@ -187,7 +190,7 @@ def foci_analysis(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_tabl
 
 # find foci using a difference of gaussians method.
 # the idea of this one is to be run on a single preview
-def foci_preview(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_table):
+def foci_preview(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_name, foci_params: FociParams, seg_method, time_table):
     """Find foci in cells using a fluorescent image channel.
     This function works on a single peak and all the cells therein.
 
@@ -222,15 +225,15 @@ def foci_preview(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_table
     seg_mode = SegmentationMode.OTSU if seg_method == "Otsu" else SegmentationMode.UNET
     image_data_seg = load_seg_stack(
         ana_dir=ana_dir,
-        experiment_name=params["experiment_name"],
+        experiment_name=experiment_name,
         fov_id=fov_id,
         peak_id=peak_id,
         seg_mode=seg_mode,
     )
 
-    postfix = f'sub_{params["foci_plane"]}'
+    postfix = f'sub_{foci_plane}'
     image_data_FL = load_subtracted_stack(
-        ana_dir, params["experiment_name"], fov_id, peak_id, postfix
+        ana_dir, experiment_name, fov_id, peak_id, postfix
     )
 
     # determine absolute time index
@@ -263,11 +266,6 @@ def foci_preview(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_table
 
             # find foci as long as there is information in the fluorescent image
             if np.sum(image_data_temp) != 0:
-                minsig = params["foci_log_minsig"]
-                maxsig = params["foci_log_maxsig"]
-                thresh = params["foci_log_thresh"]
-                peak_med_ratio = params["foci_log_peak_med_ratio"]
-
                 (
                     disp_l_tmp,
                     disp_w_tmp,
@@ -280,10 +278,7 @@ def foci_preview(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_table
                     image_data_temp,
                     cell,
                     t,
-                    minsig,
-                    maxsig,
-                    thresh,
-                    peak_med_ratio,
+                    foci_params,
                     preview=True,
                 )
 
@@ -312,7 +307,7 @@ def foci_preview(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_table
 
 
 # foci pool (for parallel analysis)
-def foci_analysis_pool(fov_id, peak_id, Cells, ana_dir, params, seg_method, time_table):
+def foci_analysis_pool(fov_id, peak_id, foci_plane, Cells, ana_dir, experiment_name, foci_params: FociParams, num_analyzers, seg_method, time_table):
     """Find foci in cells using a fluorescent image channel.
     This function works on a single peak and all the cells therein.
     Parameters
@@ -337,14 +332,14 @@ def foci_analysis_pool(fov_id, peak_id, Cells, ana_dir, params, seg_method, time
     seg_mode = SegmentationMode.OTSU if seg_method == "Otsu" else SegmentationMode.UNET
     image_data_seg = load_seg_stack(
         ana_dir=ana_dir,
-        experiment_name=params["experiment_name"],
+        experiment_name=experiment_name,
         fov_id=fov_id,
         peak_id=peak_id,
         seg_mode=seg_mode,
     )
-    postfix = f'sub_{params["foci_plane"]}'
+    postfix = f'sub_{foci_plane}'
     image_data_FL = load_subtracted_stack(
-        ana_dir, params["experiment_name"], fov_id, peak_id, postfix
+        ana_dir, experiment_name, fov_id, peak_id, postfix
     )
 
     # Load time table to determine first image index.
@@ -353,9 +348,9 @@ def foci_analysis_pool(fov_id, peak_id, Cells, ana_dir, params, seg_method, time
     tN = times_all[-1]  # last time index
 
     # call foci_cell for each cell object
-    pool = Pool(processes=params["num_analyzers"])
+    pool = Pool(processes=num_analyzers)
     [
-        pool.apply_async(foci_cell(cell, t0, image_data_seg, image_data_FL, params))
+        pool.apply_async(foci_cell(cell, t0, image_data_seg, image_data_FL, foci_params))
         for cell_id, cell in Cells.items()
     ]
     pool.close()
@@ -363,7 +358,7 @@ def foci_analysis_pool(fov_id, peak_id, Cells, ana_dir, params, seg_method, time
 
 
 # parralel function for each cell
-def foci_cell(cell, t0, image_data_seg, image_data_FL, params):
+def foci_cell(cell, t0, image_data_seg, image_data_FL, foci_params):
     """find foci in a cell, single instance to be called by the foci_analysis_pool for parallel processing.
     Parameters
     ----------
@@ -390,21 +385,12 @@ def foci_cell(cell, t0, image_data_seg, image_data_FL, params):
 
         # find foci as long as there is information in the fluorescent image
         if np.sum(image_data_temp) != 0:
-
-            minsig = params["foci_log_minsig"]
-            maxsig = params["foci_log_maxsig"]
-            thresh = params["foci_log_thresh"]
-            peak_med_ratio = params["foci_log_peak_med_ratio"]
-
             disp_l_tmp, disp_w_tmp, foci_h_tmp = foci_lap(
                 image_data_temp_seg,
                 image_data_temp,
                 cell,
                 t,
-                minsig,
-                maxsig,
-                thresh,
-                peak_med_ratio,
+                foci_params,
             )
 
             disp_l.append(disp_l_tmp)
@@ -513,7 +499,7 @@ def filter_blobs(blobs, img, bbox, threshold):
 
 # actual worker function for foci detection
 def foci_lap(
-    img, img_foci, cell, t, minsig, maxsig, thresh, peak_med_ratio, preview=False
+    img, img_foci, cell, t, foci_params: FociParams, preview=False
 ):
     """foci_lap finds foci using a laplacian convolution then fits a 2D
     Gaussian.
@@ -541,6 +527,11 @@ def foci_lap(
     foci_h : 1D np.array
         Foci "height." Sum of the intensity of the gaussian fitting area.
     """
+
+    minsig = foci_params.minsig
+    maxsig = foci_params.maxsig
+    thresh = foci_params.threshold
+    peak_med_ratio = foci_params.median_ratio
 
     blobs, cell_fl_median = find_blobs_in_cell(
         img, img_foci, cell, t, maxsig, minsig, thresh
@@ -623,7 +614,7 @@ def update_cell_foci(cells, foci):
             cells[cell_id].foci[focus_id] = focus
 
 
-def foci(ana_dir, params, fl_plane, seg_method, cell_file_path):
+def foci(cell_dir, ana_dir, experiment_name, foci_params, fl_plane, seg_method, cell_file_path):
     """
     Main function for foci analysis. Loads cells, finds foci, and saves out the results.
     Parameters
@@ -661,12 +652,12 @@ def foci(ana_dir, params, fl_plane, seg_method, cell_file_path):
             information("running foci analysis")
 
             points, radii, times = foci_analysis(
-                fov_id, peak_id, Cells_of_peak, ana_dir, params, seg_method, time_table
+                fov_id, peak_id, fl_plane, Cells_of_peak, ana_dir, experiment_name, foci_params, seg_method, time_table
             )
 
     # Output data to both dictionary and the .mat format used by the GUI
 
-    write_cells_to_json(Cells, params["cell_dir"] / "all_cells_foci.json")
+    write_cells_to_json(Cells, cell_dir / "all_cells_foci.json")
     # TODO readd MAT format export
     information("Finished foci analysis.")
 
@@ -767,31 +758,14 @@ class Foci(MM3Container):
             valid_peaks = organize_cells_by_channel(Cells, self.specs)[valid_fov].keys()
             self.fov_to_peaks[valid_fov] = valid_peaks
 
-    def set_params(self):
-        # These have been wittled down to bare minimum.
-        self.params = {
-            "experiment_name": self.experiment_name,
-            "ana_dir": self.analysis_folder,
-            "FOV": self.fovs,
-            "foci_plane": self.fl_plane,
-            "cell_file": self.cellfile,
-            "foci_log_minsig": self.log_minsig,
-            "foci_log_maxsig": self.log_maxsig,
-            "foci_log_thresh": self.log_thresh,
-            "foci_log_peak_med_ratio": self.log_peak_ratio,
-            "num_analyzers": multiprocessing.cpu_count(),
-            "output": "TIFF",
-            "chnl_dir": self.analysis_folder / "channels",
-            "seg_dir": self.analysis_folder / "segmented",
-            "cell_dir": self.analysis_folder / "cell_data",
-            "sub_dir": self.analysis_folder / "subtracted",
-        }
-
     def run(self):
-        self.set_params()
+        foci_params = FociParams(self.log_minsig, self.log_maxsig, self.log_thresh, self.log_peak_ratio)
+
         foci(
+            self.analysis_folder / "cell_data",
             self.analysis_folder,
-            self.params,
+            self.experiment_name,
+            foci_params,
             self.fl_plane,
             self.segmentation_method,
             str(self.cellfile),
@@ -833,7 +807,6 @@ class Foci(MM3Container):
         self.viewer.layers.clear()
         self.viewer.layers.select_all()
         self.viewer.layers.remove_selected()
-        self.set_params()
         # TODO: Add a check for number of steps
         n_steps = self.n_steps
 
@@ -865,12 +838,16 @@ class Foci(MM3Container):
             self.preview_peak
         ]
 
+        foci_params = FociParams(self.log_minsig, self.log_maxsig, self.log_thresh, self.log_peak_ratio)
+
         x_blob, y_blob, radii, times = foci_preview(
             self.preview_fov,
             self.preview_peak,
+            self.fl_plane,
             Cells_by_peak,
             self.analysis_folder,
-            self.params,
+            self.experiment_name,
+            foci_params,
             self.segmentation_method,
             time_table,
         )
