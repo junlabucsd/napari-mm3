@@ -12,7 +12,7 @@ from napari import Viewer
 from dataclasses import dataclass
 
 
-from .utils import organize_cells_by_channel, write_cells_to_json, Cells, Cell
+from .utils import organize_cells_by_channel, write_cells_to_json, read_cells_from_json, Cells, Cell
 from .utils_plotting import dotdict
 
 from ._deriving_widgets import (
@@ -858,6 +858,11 @@ class Foci(MM3Container):
 
         self.preview_widget = PushButton(label="generate preview", value=False)
 
+        self.write_preview_widget = PushButton(label="write preview", 
+            value=False, 
+            tooltip = "Write the foci in the current kymograph to the cell file. "
+            "Only use this to manually update foci labels (eg, after running this in full)")
+
         self.specs = load_specs(self.analysis_folder)
 
         self.n_steps = 40
@@ -886,6 +891,7 @@ class Foci(MM3Container):
         self.viewer.window._status_bar._toggle_activity_dock(True)
         self.preview_widget.clicked.connect(self.render_preview)
         self.peak_switch_widget.connect(self.set_peak_and_fov)
+        self.write_preview_widget.clicked.connect(self.write_preview_to_cell)
 
         self.append(self.plane_widget)
         self.append(self.segmentation_method_widget)
@@ -895,6 +901,7 @@ class Foci(MM3Container):
         self.append(self.log_thresh_widget)
         self.append(self.log_peak_ratio_widget)
         self.append(self.preview_widget)
+        self.append(self.write_preview_widget)
         self.append(self.peak_switch_widget)
 
 
@@ -920,18 +927,25 @@ class Foci(MM3Container):
             str(self.cellfile),
         )
 
-        # computed_cells will have foci as predicted by the algorithm.
-        # self.cells will have foci as derived from the use of the interactive widget.
-        # we would like to update the computed_cells with the interactively acquired foci.
-        for cell_id in interactive_cell:
-            computed_cell = self.cells[cell_id]
-            interactive_cell = self.cells[cell_id]
-            if interactive_cell.disp_l != computed_cell.disp_l:
-                computed_cell.disp_l = interactive_cell.disp_l
-            
-        # TODO: A less 'fragile' way of doing this. There is currently a failure mode
-        # where the preview is run on unfinalized parameters, not subsequently updated, causing issues.
         write_cells_to_json(computed_cells, self.analysis_folder / "cell_data" / "all_cells_foci.json")
+
+
+    def write_preview_to_cell(self):
+        old_cells = read_cells_from_json(self.analysis_folder / "cell_data" / "all_cells_foci.json")
+        self.rewrite_cur_view()
+        updated_cells = 0
+        for cell_id in self.cells:
+            old_cell = old_cells[cell_id]
+            interactive_cell = self.cells[cell_id]
+            if interactive_cell.disp_l != old_cell.disp_l:
+                print(old_cell.disp_l)
+                print(interactive_cell.disp_l)
+                old_cell.disp_l = interactive_cell.disp_l
+                old_cell.disp_w = interactive_cell.disp_w
+                old_cell.foci_h = interactive_cell.foci_h
+                updated_cells += 1
+        print(f"updated_cells: {updated_cells}")
+        write_cells_to_json(old_cells, self.analysis_folder / "cell_data" / "all_cells_foci.json")
 
 
     def set_peak_and_fov(self):
@@ -1068,6 +1082,7 @@ class Foci(MM3Container):
             self.rewrite_cur_view()
 
     def rewrite_cur_view(self):
+        print("rewriting")
         cur_first_frame = self.viewer.dims.current_step[1] + 1
         time_range = range(cur_first_frame, cur_first_frame + self.n_steps)
         data_y, data_x = np.array(self.points.data).T
