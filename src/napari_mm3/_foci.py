@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 
 from .utils import organize_cells_by_channel, write_cells_to_json, Cells, Cell
+from .utils_plotting import dotdict
 
 from ._deriving_widgets import (
     MM3Container,
@@ -263,6 +264,7 @@ def foci_preview(
     y_blob = []
     radii = []
     times_p = []
+    cell_ids = []
 
     for cell_id, cell in progress(cells.items()):
 
@@ -300,6 +302,7 @@ def foci_preview(
                 y_blob.extend(y_blob_tmp)
                 radii.extend(r_blob_tmp)
                 times_p.extend([t] * len(x_blob_tmp))
+                cell_ids.extend([cell_id] * len(x_blob_tmp))
                 disp_l.append(disp_l_tmp)
                 disp_w.append(disp_w_tmp)
                 foci_h.append(foci_h_tmp)
@@ -317,7 +320,7 @@ def foci_preview(
         cell.disp_w = disp_w
         cell.foci_h = foci_h
 
-    return x_blob, y_blob, radii, times_p
+    return x_blob, y_blob, radii, times_p, cell_ids
 
 
 # foci pool (for parallel analysis)
@@ -505,23 +508,12 @@ def filter_blobs(blobs, img, bbox, threshold):
             ]
 
             # fit gaussian to proposed foci in small box
-            (peak_fit, x_fit, y_fit, w_fit) = fitgaussian(gfit_area)
+            (peak_fit, x_fit, y_fit, _) = fitgaussian(gfit_area)
 
-            if (
-                (x_fit <= 0)
-                or (x_fit >= radius * 2)
-                or (y_fit <= 0)
-                or (y_fit >= radius * 2)
-            ):
+            if peak_fit < threshold:
                 continue
-            elif peak_fit < threshold:
-                continue
-            else:
-                new_blobs.append(blob)
-                x_fits.append(x_fit)
-                y_fits.append(y_fit)
-                w_fits.append(w_fit)
-    return new_blobs, x_fits, y_fits, w_fits
+            new_blobs.append(blob)
+    return new_blobs
 
 
 # actual worker function for foci detection
@@ -567,37 +559,29 @@ def foci_lap(img, img_foci, cell: Cell, t, foci_params: FociParams, preview=Fals
     cell_orientation = cell.orientations[i]
     centroid = cell.centroids[i]
 
-    blobs, x_fits, y_fits, w_fits = filter_blobs(
+    blobs = filter_blobs(
         blobs, img_foci, bbox, threshold=cell_fl_median * peak_med_ratio
     )
     if blobs == []:
         if preview:
             return [], [], [], [], [], []
         return [], [], []
-    blobs, x_fits, y_fits, w_fits = (
-        np.array(blobs),
-        np.array(x_fits),
-        np.array(y_fits),
-        np.array(w_fits),
-    )
+    blobs = np.array(blobs)
 
     # vectorized blob stat assembly!
     y_blob = np.int16(np.around(blobs[:, 0]))
     x_blob = np.int16(np.around(blobs[:, 1]))
     r_blob = np.int16(np.ceil(np.sqrt(2) * blobs[:, 2]))
 
-    x_gaus = x_blob - r_blob + x_fits
-    y_gaus = y_blob - r_blob + y_fits
-
     # calculate distance of foci from middle of cell (scikit image)
     if cell_orientation < 0:
         cell_orientation = np.pi + cell_orientation
 
-    disp_y = (y_gaus - centroid[0]) * np.sin(cell_orientation) - (
-        x_gaus - centroid[1]
+    disp_y = (y_blob - centroid[0]) * np.sin(cell_orientation) - (
+        x_blob - centroid[1]
     ) * np.cos(cell_orientation)
-    disp_x = (y_gaus - centroid[0]) * np.cos(cell_orientation) + (
-        x_gaus - centroid[1]
+    disp_x = (y_blob - centroid[0]) * np.cos(cell_orientation) + (
+        x_blob - centroid[1]
     ) * np.sin(cell_orientation)
 
     y_lo_lim, x_lo_lim = y_blob - maxsig, x_blob - maxsig
@@ -702,6 +686,131 @@ def foci(
     information("Finished foci analysis.")
 
 
+def infer_cell_id(cell_dict: Cells, xloc, yloc, t):
+    """
+    Given screen-space coordinates and timestamp of a point, this finds the
+    cell that point belongs to.
+    Returns:
+      cell_id: id of the cell the point is inside of.
+      disp_y, disp_x: The cell-space displacement of the point.
+      cell_time: the cell-time of the point
+    """
+    cell: Cell
+    for cell_id, cell in cell_dict.items():
+        # check if our cell exists at the current timestamp.
+        if not (t in cell.times):
+            continue
+
+        cell_time = cell.times.index(t)
+        bbox = cell.bboxes[cell_time]
+        # check that the point is inside the cell's bounding box.
+        if not (
+            (bbox[0] < yloc) & (yloc < bbox[2]) & (bbox[1] < xloc) & (xloc < bbox[3])
+        ):
+            continue
+
+        centroid = cell.centroids[cell_time]
+        orientation = cell.orientations[cell_time]
+        dx = xloc - centroid[1]
+        dy = yloc - centroid[0]
+        if orientation < 0:
+            orientation = np.pi + orientation
+        disp_y = dy * np.sin(orientation) - dx * np.cos(orientation)
+        disp_x = dy * np.cos(orientation) + dx * np.sin(orientation)
+
+        return cell_id, disp_y, disp_x, cell_time
+    return None, None, None, None
+
+
+def rewrite_timestamp(cell_dict, t, foci):
+    """
+    Given a list of foci, a timestamp, and a dictionary of cells,
+    this updates the cell dictionary to contain the supplied foci.
+
+    Upon running, screenspace_foci_from_cells(cell_dict) at time t will have the same
+    contents as foci.
+
+    Parameters:
+      cell_dict {str: Cell}: A mapping from cell_id to cell dictionaries.
+      t (int): timestamp
+      foci list((x, y)): screenspace list of foci.
+    """
+    # generate mapping from cell_id to the foci that cell should contain.
+    cell_to_disp_l = {}
+    cell_to_disp_w = {}
+    cell_to_foci_h = {}
+    for pt in foci:
+        cell_id, disp_y, disp_x, _ = infer_cell_id(cell_dict, pt[1], pt[0], t)
+        if cell_id == None:
+            continue
+        if cell_id in cell_to_disp_l:
+            cell_to_disp_l[cell_id].append(disp_y)
+            cell_to_disp_w[cell_id].append(disp_x)
+            cell_to_foci_h[cell_id].append(100000)
+        else:
+            cell_to_disp_l[cell_id] = [disp_y]
+            cell_to_disp_w[cell_id] = [disp_x]
+            cell_to_foci_h[cell_id] = [100000]
+
+    # using the maps from cell_id => list of foci, clear each cell's foci, and update it with the new foci
+    for cell_id, cell in cell_dict.items():
+        if not (t in cell.times):
+            continue
+
+        cell_time = cell.times.index(t)
+        # 1. clear the cell's foci @ t
+        cell.disp_l[cell_time] = []
+        cell.disp_w[cell_time] = []
+        cell.foci_h[cell_time] = []
+        if cell_id in cell_to_disp_l:
+            # 2. assign the cell's new disp_l/etc.
+            cell.disp_l[cell_time] = cell_to_disp_l[cell_id]
+            cell.disp_w[cell_time] = cell_to_disp_w[cell_id]
+            cell.foci_h[cell_time] = cell_to_foci_h[cell_id]
+
+
+def screenspace_foci_from_cells(cells: Cells):
+    """
+    From a list of cells, gets the absolute screen-space position of all foci.
+    Returns:
+      x_pts: List of foci x-positions
+      y_pts: List of foci y-positions.
+      times (int): List of times associated with above foci.
+    """
+    x_pts = []
+    y_pts = []
+    times = []
+    cell: Cell
+    for cell_id, cell in cells.items():
+        # get conversion from cell to 'real' time
+        for i, time in enumerate(cell.times):
+            orientation = cell.orientations[i]
+            centroid = cell.centroids[i]
+            x_locs = cell.disp_w[i]
+            y_locs = cell.disp_l[i]
+
+            data_x_locs = []
+            data_y_locs = []
+            for x, y in zip(x_locs, y_locs):
+                # convert from cell to pixel space.
+                if orientation < 0:
+                    orientation = np.pi + orientation
+
+                dy = y * np.sin(orientation) + x * np.cos(orientation)
+                dx = -y * np.cos(orientation) + x * np.sin(orientation)
+
+                xloc = dx + centroid[1]
+                yloc = dy + centroid[0]
+                data_x_locs.append(xloc)
+                data_y_locs.append(yloc)
+
+            x_pts.extend(data_x_locs)
+            y_pts.extend(data_y_locs)
+            times.extend(len(data_x_locs) * [time])
+
+    return np.array(x_pts), np.array(y_pts), np.array(times)
+
+
 class Foci(MM3Container):
     def create_widgets(self):
         self.cellfile_widget = FileEdit(
@@ -790,6 +899,8 @@ class Foci(MM3Container):
         self.append(self.preview_widget)
         self.append(self.peak_switch_widget)
 
+        self.just_changed = False
+
     def generate_fovs_to_peaks(self):
         with open(self.cellfile, "rb") as cell_file:
             cells = pickle.load(cell_file)
@@ -816,6 +927,7 @@ class Foci(MM3Container):
     def set_peak_and_fov(self):
         self.preview_peak = self.peak_switch_widget.cur_peak
         self.preview_fov = self.peak_switch_widget.cur_fov
+        self.load_preview_cells()
 
     def set_plane(self):
         self.fl_plane = self.plane_widget.value
@@ -841,19 +953,39 @@ class Foci(MM3Container):
     def set_log_thresh(self):
         self.log_thresh = self.log_thresh_widget.value
 
+    def load_preview_cells(self):
+        with open(self.cellfile, "rb") as cell_file:
+            cells = pickle.load(cell_file)
+        self.cells = organize_cells_by_channel(cells, self.specs)[self.preview_fov][
+            self.preview_peak
+        ]
+        time_table = load_time_table(self.analysis_folder)
+
+        foci_params = FociParams(
+            self.log_minsig, self.log_maxsig, self.log_thresh, self.log_peak_ratio
+        )
+        x_blob, y_blob, radii, times, cell_ids = foci_preview(
+            self.preview_fov,
+            self.preview_peak,
+            self.fl_plane,
+            self.cells,
+            self.analysis_folder,
+            self.experiment_name,
+            foci_params,
+            self.segmentation_method,
+            time_table,
+        )
+        self.x_pts, self.y_pts, self.radii, self.times = (
+            np.array(x_blob),
+            np.array(y_blob),
+            np.array(radii),
+            np.array(times),
+        )
+
     def render_preview(self):
         """
-        Previews foci in a pseudo-kymograph.
+        Previews foci in something resembling a kymograph.
         """
-
-        self.viewer.layers.clear()
-        self.viewer.layers.select_all()
-        self.viewer.layers.remove_selected()
-        # TODO: Add a check for number of steps
-        n_steps = self.n_steps
-
-        # load images
-
         kymos = []
         ## pull out first fov & peak id with cells
         for plane in self.valid_planes:
@@ -863,57 +995,30 @@ class Foci(MM3Container):
                 plane,
                 self.preview_fov,
                 self.preview_peak,
-                n_steps=n_steps,
+                n_steps=self.n_steps,
             )
             kymos.append(kymo)
 
         kymos = np.array(kymos)
+        self.img_width = kymos[0].shape[2] // self.n_steps
 
-        self.viewer.add_image(np.array(kymos))
-        img_width = kymos[0].shape[2] // n_steps
-        self.img_width = img_width
-        with open(self.cellfile, "rb") as cell_file:
-            cells = pickle.load(cell_file)
-        time_table = load_time_table(self.analysis_folder)
-        cells_by_peak = organize_cells_by_channel(cells, self.specs)[self.preview_fov][
-            self.preview_peak
-        ]
-
-        foci_params = FociParams(
-            self.log_minsig, self.log_maxsig, self.log_thresh, self.log_peak_ratio
-        )
-
-        x_blob, y_blob, radii, times = foci_preview(
-            self.preview_fov,
-            self.preview_peak,
-            self.fl_plane,
-            cells_by_peak,
-            self.analysis_folder,
-            self.experiment_name,
-            foci_params,
-            self.segmentation_method,
-            time_table,
-        )
-        self.x_blob, self.y_blob, self.radii, self.times = (
-            np.array(x_blob),
-            np.array(y_blob),
-            np.array(radii),
-            np.array(times),
-        )
-
-        self.draw_points()
-        # Add this here because napari doesn't like it if you access this without having any images in the canvas.
-        self.viewer.dims.events.current_step.connect(self.draw_points)
-
+        self.viewer.layers.clear()
+        self.viewer.layers.select_all()
+        self.viewer.layers.remove_selected()
         self.viewer.grid.enabled = False
-        self.viewer.layers[-1].scale = [1, 0.5]
-        self.viewer.layers[-2].scale = [1, 0.5]
+        self.viewer.add_image(np.array(kymos))
         self.viewer.layers["Image"].reset_contrast_limits()
         self.viewer.reset_view()
+
+        self.draw_points()
+        self.rewrite_cur_view()
+
+        # Add these here because napari doesn't like it if you try to access these events
+        # without first creating the relevant layers.
+        self.points.events.data.connect(self.rewrite_cur_view)
+        self.viewer.dims.events.current_step.connect(self.draw_points)
         self.viewer.layers[-1].selected_data = []
 
-    # draws foci within the current frame. doing it as a nested function is much more straightforward
-    # than passing around a bunch of parameters, so I am doing it this way.
     def draw_points(self):
         try:
             self.viewer.layers["Image"].reset_contrast_limits()
@@ -924,21 +1029,18 @@ class Foci(MM3Container):
             self.times < cur_frame + self.n_steps + 1
         )
         times_in_range = self.times[times_in_range_mask]
-        relevant_x = self.x_blob[times_in_range_mask]
+        relevant_x = self.x_pts[times_in_range_mask]
         relevant_x_with_offset = (
             np.array(relevant_x)
             + (np.array(times_in_range) - cur_frame - 1) * self.img_width
         )
-        relevant_y = self.y_blob[times_in_range_mask]
-        points = np.stack((relevant_y, relevant_x_with_offset)).transpose()
+        relevant_y = self.y_pts[times_in_range_mask]
+        points = np.stack((relevant_y, relevant_x_with_offset)).T
 
         # if the points layer exists => update it.
         # if the points layer does not exist => create it.
         try:
             self.viewer.layers["points"].data = points
-            self.viewer.layers["points"].size = np.array(
-                self.radii[times_in_range_mask]
-            )
         except Exception as e:
             self.points = self.viewer.add_points(
                 data=points,
@@ -947,3 +1049,19 @@ class Foci(MM3Container):
                 face_color="orange",
                 edge_color="white",
             )
+            self.rewrite_cur_view()
+
+    def rewrite_cur_view(self):
+        cur_first_frame = self.viewer.dims.current_step[1] + 1
+        time_range = range(cur_first_frame, cur_first_frame + self.n_steps)
+        data_y, data_x = np.array(self.points.data).T
+        data_times = np.int16(data_x) // self.img_width + cur_first_frame
+
+        for time in time_range:
+            # need to crop out to only keep the points located at the current time.
+            data_mask = data_times == time
+            pts = np.stack((data_y[data_mask], data_x[data_mask])).T
+            pts[:, 1] = pts[:, 1] % self.img_width
+            rewrite_timestamp(cell_dict=self.cells, t=time, foci=pts)
+
+        self.x_pts, self.y_pts, self.times = screenspace_foci_from_cells(self.cells)
