@@ -624,7 +624,6 @@ def update_cell_foci(cells: Cells, foci):
 
 
 def foci(
-    cell_dir,
     ana_dir,
     experiment_name,
     foci_params,
@@ -668,7 +667,7 @@ def foci(
                 continue
             information("running foci analysis")
 
-            points, radii, times = foci_analysis(
+            foci_analysis(
                 fov_id,
                 peak_id,
                 fl_plane,
@@ -680,12 +679,11 @@ def foci(
                 time_table,
             )
 
-    # Output data to both dictionary and the .mat format used by the GUI
 
-    write_cells_to_json(cells, cell_dir / "all_cells_foci.json")
     information("Finished foci analysis.")
+    return cells
 
-
+    
 def infer_cell_id(cell_dict: Cells, xloc, yloc, t):
     """
     Given screen-space coordinates and timestamp of a point, this finds the
@@ -899,7 +897,6 @@ class Foci(MM3Container):
         self.append(self.preview_widget)
         self.append(self.peak_switch_widget)
 
-        self.just_changed = False
 
     def generate_fovs_to_peaks(self):
         with open(self.cellfile, "rb") as cell_file:
@@ -914,8 +911,7 @@ class Foci(MM3Container):
             self.log_minsig, self.log_maxsig, self.log_thresh, self.log_peak_ratio
         )
 
-        foci(
-            self.analysis_folder / "cell_data",
+        computed_cells = foci(
             self.analysis_folder,
             self.experiment_name,
             foci_params,
@@ -924,6 +920,20 @@ class Foci(MM3Container):
             str(self.cellfile),
         )
 
+        # computed_cells will have foci as predicted by the algorithm.
+        # self.cells will have foci as derived from the use of the interactive widget.
+        # we would like to update the computed_cells with the interactively acquired foci.
+        for cell_id in interactive_cell:
+            computed_cell = self.cells[cell_id]
+            interactive_cell = self.cells[cell_id]
+            if interactive_cell.disp_l != computed_cell.disp_l:
+                computed_cell.disp_l = interactive_cell.disp_l
+            
+        # TODO: A less 'fragile' way of doing this. There is currently a failure mode
+        # where the preview is run on unfinalized parameters, not subsequently updated, causing issues.
+        write_cells_to_json(computed_cells, self.analysis_folder / "cell_data" / "all_cells_foci.json")
+
+
     def set_peak_and_fov(self):
         self.preview_peak = self.peak_switch_widget.cur_peak
         self.preview_fov = self.peak_switch_widget.cur_fov
@@ -931,9 +941,14 @@ class Foci(MM3Container):
 
     def set_plane(self):
         self.fl_plane = self.plane_widget.value
+        if hasattr(self, "cellfile"):
+            self.load_preview_cells()
 
     def set_segmentation_method(self):
+        # eror prone?
         self.segmentation_method = self.segmentation_method_widget.value
+        if hasattr(self, "cellfile"):
+            self.load_preview_cells()
 
     def set_cellfile(self):
         self.cellfile = self.cellfile_widget.value
@@ -964,6 +979,7 @@ class Foci(MM3Container):
         foci_params = FociParams(
             self.log_minsig, self.log_maxsig, self.log_thresh, self.log_peak_ratio
         )
+        print(self.fl_plane)
         x_blob, y_blob, radii, times, cell_ids = foci_preview(
             self.preview_fov,
             self.preview_peak,
