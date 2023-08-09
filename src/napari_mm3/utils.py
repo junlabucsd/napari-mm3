@@ -723,8 +723,8 @@ def organize_cells_by_channel(cells, specs) -> dict:
                 cells_by_peak[fov_id][peak_id] = {}
 
     # organize the cells
-    for cell_id, Cell in cells.items():
-        cells_by_peak[Cell.fov][Cell.peak][cell_id] = Cell
+    for cell_id, cell in cells.items():
+        cells_by_peak[cell.fov][cell.peak][cell_id] = cell
 
     # remove peaks and that do not contain cells
     remove_fovs = []
