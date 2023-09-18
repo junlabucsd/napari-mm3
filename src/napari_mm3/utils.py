@@ -59,7 +59,7 @@ class NpEncoder(json.JSONEncoder):
 def write_cells_to_json(Cells, path_out):
     json_out = {}
     for cell_id, cell in Cells.items():
-        json_out[cell_id] = vars(cell)
+        json_out[cell_id] = dict(cell)
         try:
             json_out[cell_id].pop('time_table')
         except:
