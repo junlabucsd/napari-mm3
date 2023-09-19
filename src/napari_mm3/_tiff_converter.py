@@ -129,10 +129,11 @@ def bioformats_import(
     image_start: int,
     image_end: int,
     vertical_crop=None,
+    horizontal_crop=None,
     tworow_crop=None,
     fov_list=[],
 ):
-    """ Imports a bioformats-compatible file into a tif stack.
+    """Imports a bioformats-compatible file into a tif stack.
     Parameters
     ----------
     data_path : Path
@@ -146,7 +147,9 @@ def bioformats_import(
     vertical_crop : tuple, optional
         The vertical crop to apply to the image. The default is None.
     tworow_crop : tuple, optional
-        The two-row crop to apply to the image. The default is None.
+        The two-row (vertical) crop to apply to the image. The default is None.
+    horizontal_crop: tuple, optional
+        The horizontal crop to apply to the image. The default is None.
     fov_list : list, optional
         The list of fovs to import. The default is [].
     Returns
@@ -183,7 +186,7 @@ def bioformats_import(
             tiff.imwrite(
                 tif_dir / upper_row_filename,
                 image_upper_row,
-                compression='zlib',
+                compression="zlib",
                 photometric="minisblack",
             )
 
@@ -194,7 +197,7 @@ def bioformats_import(
                 tif_dir / lower_row_filename,
                 image_lower_row,
                 photometric="minisblack",
-                compression='zlib',
+                compression="zlib",
             )
             continue
         # for just a simple crop
@@ -204,12 +207,18 @@ def bioformats_import(
             yhi = int(vertical_crop[1] * H)
             image_data = image_data[:, ylo:yhi, :]
 
+        if horizontal_crop:
+            nc, H, W = image_data.shape
+            xlo = int(horizontal_crop[0] * W)
+            xhi = int(horizontal_crop[1] * W)
+            image_data = image_data[:, :, xlo:xhi]
+
         tif_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}.tif"
         information("Saving %s." % tif_filename)
         tiff.imwrite(
             tif_dir / tif_filename,
             image_data,
-            compression='zlib',
+            compression="zlib",
             photometric="minisblack",
         )
 
@@ -220,6 +229,7 @@ def nd2ToTIFF(
     image_start: int,
     image_end: int,
     vertical_crop=None,
+    horizontal_crop=None,
     tworow_crop=None,
     fov_list=[],
 ):
@@ -291,9 +301,9 @@ def nd2ToTIFF(
                 # TODO: Make the channel order correct, here and below.
                 tiff.imwrite(
                     tif_dir / upper_row_filename,
-                    data = image_upper_row,
+                    data=image_upper_row,
                     description=metadata_json,
-                    compression='zlib',
+                    compression="zlib",
                     photometric="minisblack",
                 )
 
@@ -302,9 +312,9 @@ def nd2ToTIFF(
                 information("Saving %s." % lower_row_filename)
                 tiff.imwrite(
                     tif_dir / lower_row_filename,
-                    data = image_lower_row,
+                    data=image_lower_row,
                     description=metadata_json,
-                    compression='zlib',
+                    compression="zlib",
                     photometric="minisblack",
                 )
                 continue
@@ -312,17 +322,23 @@ def nd2ToTIFF(
             elif vertical_crop:
                 nc, H, W = image_data.shape
                 ## convert from xy to row-column coordinates for numpy slicing
-                yhi = int((1-vertical_crop[0]) * H)
-                ylo = int((1-vertical_crop[1])*H)
+                yhi = int((1 - vertical_crop[0]) * H)
+                ylo = int((1 - vertical_crop[1]) * H)
                 image_data = image_data[:, ylo:yhi, :]
+
+            if horizontal_crop:
+                nc, H, W = image_data.shape
+                xlo = int(horizontal_crop[0] * W)
+                xhi = int(horizontal_crop[1] * W)
+                image_data = image_data[:, :, xlo:xhi]
 
             tif_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}.tif"
             information("Saving %s." % tif_filename)
             tiff.imwrite(
                 tif_dir / tif_filename,
-                data = image_data,
+                data=image_data,
                 description=metadata_json,
-                compression='zlib',
+                compression="zlib",
                 photometric="minisblack",
             )
 
@@ -374,7 +390,14 @@ class TIFFExport(Container):
             label="Crop y max", value=1, min=0, max=1, step=0.01
         )
         self.lower_crop_widget = FloatSpinBox(
-            label="Crop y min", value=0, min=0, max=0.5, step=0.01
+            label="Crop y min", value=0, min=0, max=1, step=0.01
+        )
+
+        self.left_crop_widget = FloatSpinBox(
+            label="Crop x min", value=0, min=0, max=1, step=0.01
+        )
+        self.right_crop_widget = FloatSpinBox(
+            label="Crop x max", value=1, min=0, max=1, step=0.01
         )
 
         self.display_nd2_widget = PushButton(text="visualize all FOVs (.nd2 only)")
@@ -387,6 +410,8 @@ class TIFFExport(Container):
         self.time_range_widget.changed.connect(self.set_time_range)
         self.upper_crop_widget.changed.connect(self.set_upper_crop)
         self.lower_crop_widget.changed.connect(self.set_lower_crop)
+        self.left_crop_widget.changed.connect(self.set_left_crop)
+        self.right_crop_widget.changed.connect(self.set_right_crop)
         self.run_widget.clicked.connect(self.run)
         self.display_nd2_widget.clicked.connect(self.render_nd2)
 
@@ -394,8 +419,10 @@ class TIFFExport(Container):
         self.append(self.exp_dir_widget)
         self.append(self.FOVs_range_widget)
         self.append(self.time_range_widget)
-        self.append(self.upper_crop_widget)
         self.append(self.lower_crop_widget)
+        self.append(self.upper_crop_widget)
+        self.append(self.left_crop_widget)
+        self.append(self.right_crop_widget)
         self.append(self.display_nd2_widget)
         self.append(self.run_widget)
 
@@ -405,6 +432,8 @@ class TIFFExport(Container):
         self.set_exp_dir()
         self.set_upper_crop()
         self.set_lower_crop()
+        self.set_left_crop()
+        self.set_right_crop()
 
         napari.current_viewer().window._status_bar._toggle_activity_dock(True)
 
@@ -416,6 +445,7 @@ class TIFFExport(Container):
                 image_start=self.time_range[0] - 1,
                 image_end=self.time_range[1],
                 vertical_crop=[self.lower_crop, self.upper_crop],
+                horizontal_crop=[self.left_crop, self.right_crop],
                 fov_list=self.fovs,
                 tworow_crop=None,
             )
@@ -426,7 +456,9 @@ class TIFFExport(Container):
                 image_start=self.time_range[0] - 1,
                 image_end=self.time_range[1],
                 vertical_crop=[self.lower_crop, self.upper_crop],
+                horizontal_crop=[self.left_crop, self.right_crop],
                 fov_list=self.fovs,
+                tworow_crop=None,
             )
 
         information("Finished TIFF export")
@@ -476,8 +508,7 @@ class TIFFExport(Container):
         viewer.add_image(image, channel_axis=1, colormap="gray")
         viewer.grid.shape = (-1, 3)
         viewer.dims.current_step = (0, 0)
-        viewer.layers.link_layers() ## allows user to set contrast limits for all FOVs at once
-
+        viewer.layers.link_layers()  ## allows user to set contrast limits for all FOVs at once
 
     def set_widget_bounds(self):
         if self.nd2files_found:
@@ -522,3 +553,9 @@ class TIFFExport(Container):
 
     def set_lower_crop(self):
         self.lower_crop = self.lower_crop_widget.value
+
+    def set_left_crop(self):
+        self.left_crop = self.left_crop_widget.value
+
+    def set_right_crop(self):
+        self.right_crop = self.right_crop_widget.value
