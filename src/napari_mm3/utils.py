@@ -42,7 +42,8 @@ def load_tiff_stack_simple(dir: Path, prefix, fov, postfix, peak=None):
 
     with tiff.TiffFile(dir / filename) as tif:
         return tif.asarray()
-    
+
+
 ### functions and classes for reading / writing .json files
 
 # numpy dtypes are not json serializable - need to convert
@@ -56,16 +57,18 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
+
 def write_cells_to_json(Cells, path_out):
     json_out = {}
     for cell_id, cell in Cells.items():
         json_out[cell_id] = vars(cell)
         try:
-            json_out[cell_id].pop('time_table')
+            json_out[cell_id].pop("time_table")
         except:
             pass
-    with open(path_out, 'w') as fout:
+    with open(path_out, "w") as fout:
         json.dump(json_out, fout, sort_keys=True, indent=2, cls=NpEncoder)
+
 
 def cell_from_dict(in_dict):
     """Helper function for json deserialization.
@@ -73,13 +76,16 @@ def cell_from_dict(in_dict):
     """
     # initializing pxl2um to None disables the Cell constructor.
     # Then we manually override each field with json-derived cell parameters
-    cell = Cell(pxl2um=None, time_table=None, cell_id=None, region=None, t=None, parent_id=None)
+    cell = Cell(
+        pxl2um=None, time_table=None, cell_id=None, region=None, t=None, parent_id=None
+    )
     for key, val in in_dict.items():
         vars(cell)[key] = val
     return cell
 
+
 def read_cells_from_json(path_in):
-    '''
+    """
     Read in a json file of cell data and return a dictionary of Cell objects.
 
     Parameters
@@ -91,13 +97,14 @@ def read_cells_from_json(path_in):
     -------
     Cells_new : dict
         Dictionary of Cell objects.
-    '''
-    with open(path_in, 'r') as fin:
+    """
+    with open(path_in, "r") as fin:
         json_loaded = json.load(fin)
     cells_new = {}
     for cell_id, cell in json_loaded.items():
         cells_new[cell_id] = cell_from_dict(cell)
     return Cells(cells_new)
+
 
 ### Cell class and related functions
 
@@ -114,7 +121,7 @@ class Cell:
     of these cell objecs, where the keys are each cell id and the values are the object
     itself. Below is a description of the information contained in a Cell object and how
     to export it to other formats.
-    
+
     For an overview on classes in Python see [here](https://learnpythonthehardway.org/book/ex40.html).
 
     ## Cell object attributes
@@ -329,9 +336,7 @@ class Cell:
         self.tau = np.float64((self.abs_times[-1] - self.abs_times[0]) / 60.0)
 
         # include the data points from the daughters
-        self.lengths_w_div = [l * self.pxl2um for l in self.lengths] + [
-            self.sd
-        ]
+        self.lengths_w_div = [l * self.pxl2um for l in self.lengths] + [self.sd]
         self.widths_w_div = [w * self.pxl2um for w in self.widths] + [
             ((daughter1.widths[0] + daughter2.widths[0]) / 2) * self.pxl2um
         ]
@@ -397,7 +402,7 @@ class Cell:
         ]
 
     def place_in_cell(self, x, y, t):
-        '''Translates from screen-space to in-cell coordinates.'''
+        """Translates from screen-space to in-cell coordinates."""
         # check if our cell exists at the current timestamp.
         if not (t in self.times):
             return None, None, None
@@ -405,9 +410,7 @@ class Cell:
         cell_time = self.times.index(t)
         bbox = self.bboxes[cell_time]
         # check that the point is inside the cell's bounding box.
-        if not (
-            (bbox[0] < y) & (y < bbox[2]) & (bbox[1] < x) & (x < bbox[3])
-        ):
+        if not ((bbox[0] < y) & (y < bbox[2]) & (bbox[1] < x) & (x < bbox[3])):
             return None, None, None
 
         centroid = self.centroids[cell_time]
@@ -420,7 +423,6 @@ class Cell:
         disp_x = dy * np.cos(orientation) + dx * np.sin(orientation)
 
         return disp_y, disp_x, cell_time
-
 
     def print_info(self):
         """prints information about the cell"""
@@ -437,12 +439,12 @@ def feretdiameter(region):
     feretdiameter calculates the length and width of the binary region shape. The cell orientation
     from the ellipsoid is used to find the major and minor axis of the cell.
     See https://en.wikipedia.org/wiki/Feret_diameter.
-    
+
     Parameters
     ----------
     region : skimage.measure._regionprops._RegionProperties
         regionprops object of the binary region of the cell
-    
+
     Returns
     -------
     length : float
@@ -785,6 +787,7 @@ def organize_cells_by_channel(cells, specs) -> dict:
 
     return cells_by_peak
 
+
 @cellsmethod
 def infer_cell_id(cells: Cells, xloc, yloc, t):
     """
@@ -802,6 +805,7 @@ def infer_cell_id(cells: Cells, xloc, yloc, t):
             continue
         return cell_id, disp_y, disp_x, cell_time
     return None, None, None, None
+
 
 @cellsmethod
 def find_screenspace_foci(cells: Cells):
@@ -876,7 +880,9 @@ def find_all_cell_intensities(
                 )
             )
             # Load fluorescent images and segmented images for this channel
-            fl_stack = load_tiff_stack_simple(intensity_directory, fov=fov_id, peak=peak_id, postfix=channel_name)
+            fl_stack = load_tiff_stack_simple(
+                intensity_directory, fov=fov_id, peak=peak_id, postfix=channel_name
+            )
             corrected_stack = np.zeros(fl_stack.shape)
 
             for frame in range(fl_stack.shape[0]):
@@ -897,7 +903,9 @@ def find_all_cell_intensities(
                 else:
                     corrected_stack[frame, :, :] = median_filtered
 
-            seg_stack = load_tiff_stack_simple(seg_directory, fov=fov_id, peak=peak_id, postfix=channel_name)
+            seg_stack = load_tiff_stack_simple(
+                seg_directory, fov=fov_id, peak=peak_id, postfix=channel_name
+            )
 
             # evaluate whether each cell is in this fov/peak combination
             for _, cell in cells.items():
@@ -957,7 +965,9 @@ def find_cells_of_fov_and_peak(cells, fov_id, peak_id) -> Cells:
 
 # TODO: List of ALL cell properties
 @cellsmethod
-def cells2df(cells, columns = [
+def cells2df(
+    cells,
+    columns=[
         "fov",
         "peak",
         "birth_label",
@@ -970,7 +980,7 @@ def cells2df(cells, columns = [
         "tau",
         "elong_rate",
         "septum_position",
-    ]
+    ],
 ) -> pd.DataFrame:
     """
     Take cell data (a dicionary of Cell objects) and return a dataframe.
@@ -989,8 +999,8 @@ def cells2df(cells, columns = [
 
 
 def find_last_daughter(cell, Cells):
-    '''Finds the last daughter in a lineage starting with a earlier cell.
-    Helper function for find_continuous_lineages'''
+    """Finds the last daughter in a lineage starting with a earlier cell.
+    Helper function for find_continuous_lineages"""
 
     # go into the daugther cell if the daughter exists
     if cell.daughters[0] in Cells:
@@ -1005,20 +1015,24 @@ def find_last_daughter(cell, Cells):
 
 
 def find_cells_born_after(cells, born_after=None):
-    '''
+    """
     Returns Cells dictionary of cells with a birth_time after the value specified
-    '''
+    """
 
     if born_after == None:
         return cells
 
-    return {cell_id : cell for cell_id, cell in six.iteritems(cells) if cell.birth_time >= born_after}
+    return {
+        cell_id: cell
+        for cell_id, cell in six.iteritems(cells)
+        if cell.birth_time >= born_after
+    }
 
 
 def lineages_to_dict(lineages):
-    '''Converts the lineage structure of cells organized by peak back
+    """Converts the lineage structure of cells organized by peak back
     to a dictionary of cells. Useful for filtering but then using the
-    dictionary based plotting functions'''
+    dictionary based plotting functions"""
 
     Cells = {}
 
@@ -1030,7 +1044,7 @@ def lineages_to_dict(lineages):
 
 
 def find_continuous_lineages(cells, specs, t1=0, t2=1000):
-    '''
+    """
     Uses a recursive function to only return cells that have continuous
     lineages between two time points. Takes a "lineage" form of Cells and
     returns a dictionary of the same format. Good for plotting
@@ -1039,7 +1053,7 @@ def find_continuous_lineages(cells, specs, t1=0, t2=1000):
         First cell in lineage must be born before this time point
     t2 : int
         Last cell in lineage must be born after this time point
-    '''
+    """
 
     Lineages = organize_cells_by_channel(cells, specs)
 
@@ -1047,12 +1061,12 @@ def find_continuous_lineages(cells, specs, t1=0, t2=1000):
     Continuous_Lineages = {}
 
     for fov, peaks in six.iteritems(Lineages):
-       # print("fov = {:d}".format(fov))
+        # print("fov = {:d}".format(fov))
         # Create a dictionary to hold this FOV
         Continuous_Lineages[fov] = {}
 
         for peak, cells in six.iteritems(peaks):
-           # print("{:<4s}peak = {:d}".format("",peak))
+            # print("{:<4s}peak = {:d}".format("",peak))
             # sort the cells by time in a list for this peak
             cells_sorted = [(cell_id, cell) for cell_id, cell in six.iteritems(cells)]
             cells_sorted = sorted(cells_sorted, key=lambda x: x[1].birth_time)
@@ -1098,6 +1112,6 @@ def find_continuous_lineages(cells, specs, t1=0, t2=1000):
         if not Continuous_Lineages[fov]:
             Continuous_Lineages.pop(fov)
 
-    cells = lineages_to_dict(Continuous_Lineages) # revert back to return
+    cells = lineages_to_dict(Continuous_Lineages)  # revert back to return
 
     return cells
