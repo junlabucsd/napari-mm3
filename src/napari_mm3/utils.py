@@ -59,13 +59,24 @@ class NpEncoder(json.JSONEncoder):
 def write_cells_to_json(Cells, path_out):
     json_out = {}
     for cell_id, cell in Cells.items():
-        json_out[cell_id] = dict(cell)
+        json_out[cell_id] = vars(cell)
         try:
             json_out[cell_id].pop('time_table')
         except:
             pass
     with open(path_out, 'w') as fout:
         json.dump(json_out, fout, sort_keys=True, indent=2, cls=NpEncoder)
+
+def cell_from_dict(in_dict):
+    """Helper function for json deserialization.
+    Turns a dictionary from a serialized cell object to a 'cell' object.
+    """
+    # initializing pxl2um to None disables the Cell constructor.
+    # Then we manually override each field with json-derived cell parameters
+    cell = Cell(pxl2um=None, time_table=None, cell_id=None, region=None, t=None, parent_id=None)
+    for key, val in in_dict.items():
+        vars(cell)[key] = val
+    return cell
 
 def read_cells_from_json(path_in):
     '''
@@ -82,11 +93,11 @@ def read_cells_from_json(path_in):
         Dictionary of Cell objects.
     '''
     with open(path_in, 'r') as fin:
-        Cells = json.load(fin)
-    Cells_new = {}
-    for cell_id, cell in Cells.items():
-        Cells_new[cell_id] = dotdict(cell)
-    return Cells_new
+        json_loaded = json.load(fin)
+    cells_new = {}
+    for cell_id, cell in json_loaded.items():
+        cells_new[cell_id] = cell_from_dict(cell)
+    return Cells(cells_new)
 
 ### Cell class and related functions
 
@@ -187,6 +198,9 @@ class Cell:
         parent_id : str
             id of the parent if there is one.
         """
+        # Hack for json deserialization -- there's probably a better way to do this.
+        if pxl2um == None:
+            return
 
         # create all the attributes
         # id
