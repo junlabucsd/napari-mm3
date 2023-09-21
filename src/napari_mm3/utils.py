@@ -396,6 +396,32 @@ class Cell:
             (y.astype(convert_to), x.astype(convert_to)) for y, x in self.centroids
         ]
 
+    def place_in_cell(self, x, y, t):
+        '''Translates from screen-space to in-cell coordinates.'''
+        # check if our cell exists at the current timestamp.
+        if not (t in self.times):
+            return None, None, None
+
+        cell_time = self.times.index(t)
+        bbox = self.bboxes[cell_time]
+        # check that the point is inside the cell's bounding box.
+        if not (
+            (bbox[0] < y) & (y < bbox[2]) & (bbox[1] < x) & (x < bbox[3])
+        ):
+            return None, None, None
+
+        centroid = self.centroids[cell_time]
+        orientation = self.orientations[cell_time]
+        dx = x - centroid[1]
+        dy = y - centroid[0]
+        if orientation < 0:
+            orientation = np.pi + orientation
+        disp_y = dy * np.sin(orientation) - dx * np.cos(orientation)
+        disp_x = dy * np.cos(orientation) + dx * np.sin(orientation)
+
+        return disp_y, disp_x, cell_time
+
+
     def print_info(self):
         """prints information about the cell"""
         print("id = %s" % self.id)
@@ -758,6 +784,66 @@ def organize_cells_by_channel(cells, specs) -> dict:
         cells_by_peak.pop(fov_id)
 
     return cells_by_peak
+
+@cellsmethod
+def infer_cell_id(cells: Cells, xloc, yloc, t):
+    """
+    Given screen-space coordinates and timestamp of a point, this finds the
+    cell that point belongs to.
+    Returns:
+      cell_id: id of the cell the point is inside of.
+      disp_y, disp_x: The cell-space displacement of the point.
+      cell_time: the cell-time of the point
+    """
+    cell: Cell
+    for cell_id, cell in cells.items():
+        disp_y, disp_x, cell_time = cell.place_in_cell(xloc, yloc, t)
+        if disp_y == None:
+            continue
+        return cell_id, disp_y, disp_x, cell_time
+    return None, None, None, None
+
+@cellsmethod
+def find_screenspace_foci(cells: Cells):
+    """
+    From a list of cells, gets the absolute screen-space position of all foci.
+    Returns:
+      x_pts: List of foci x-positions
+      y_pts: List of foci y-positions.
+      times (int): List of times associated with above foci.
+    """
+    x_pts = []
+    y_pts = []
+    times = []
+    cell: Cell
+    for cell_id, cell in cells.items():
+        # get conversion from cell to 'real' time
+        for i, time in enumerate(cell.times):
+            orientation = cell.orientations[i]
+            centroid = cell.centroids[i]
+            x_locs = cell.disp_w[i]
+            y_locs = cell.disp_l[i]
+
+            data_x_locs = []
+            data_y_locs = []
+            for x, y in zip(x_locs, y_locs):
+                # convert from cell to pixel space.
+                if orientation < 0:
+                    orientation = np.pi + orientation
+
+                dy = y * np.sin(orientation) + x * np.cos(orientation)
+                dx = -y * np.cos(orientation) + x * np.sin(orientation)
+
+                xloc = dx + centroid[1]
+                yloc = dy + centroid[0]
+                data_x_locs.append(xloc)
+                data_y_locs.append(yloc)
+
+            x_pts.extend(data_x_locs)
+            y_pts.extend(data_y_locs)
+            times.extend(len(data_x_locs) * [time])
+
+    return np.array(x_pts), np.array(y_pts), np.array(times)
 
 
 @cellsmethod
