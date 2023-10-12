@@ -10,7 +10,8 @@
 A plugin for mother machine image analysis by the [Jun Lab](https://jun.ucsd.edu/).
 
 Reference:
-[Tools and methods for high-throughput single-cell imaging with the mother machine. Ryan Thiermann, Michael Sandler, Gursharan Ahir, John T. Sauls, Jeremy W. Schroeder, Steven D. Brown, Guillaume Le Treut, Fangwei Si, Dongyang Li, Jue D. Wang, Suckjoon Jun. bioRxiv 2023.03.27.534286](https://www.biorxiv.org/content/10.1101/2023.03.27.534286v2)
+[Tools and methods for high-throughput single-cell imaging with the mother machine. Ryan Thiermann, Michael Sandler, Gursharan Ahir, John T. Sauls, Jeremy W. Schroeder, Steven D. Brown, Guillaume Le Treut, Fangwei Si, Dongyang Li, Jue D. Wang, Suckjoon Jun. eLife12:RP88463
+https://doi.org/10.7554/eLife.88463.1](https://elifesciences.org/reviewed-preprints/88463)
 
 ----------------------------------
 
