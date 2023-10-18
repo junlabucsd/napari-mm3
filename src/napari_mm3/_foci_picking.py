@@ -1,7 +1,7 @@
 import numpy as np
 
 from napari import Viewer
-from .utils import Cells, read_cells_from_json, write_cells_to_json
+from .utils import Cells, read_cells_from_json, write_cells_to_json, write_cells_to_matlab
 from magicgui.widgets import SpinBox
 from ._deriving_widgets import (
     MM3Container,
@@ -242,12 +242,14 @@ class FociPicking(MM3Container):
 
     def next_cell(self, viewer: Viewer):
         write_cells_to_json(self.all_cells, self.cell_file_loc)
+        write_cells_to_matlab(self.all_cells, self.analysis_folder / "cell_data" / "cell_data_foci.mat")
         self.cell_idx = min(self.cell_idx + 1, len(self.cell_lineages) - 1)
         self.update_cell_info()
         self.update_preview()
 
     def prev_cell(self, viewer: Viewer):
         write_cells_to_json(self.all_cells, self.cell_file_loc)
+        write_cells_to_matlab(self.all_cells, self.analysis_folder / "cell_data" / "cell_data_foci.mat")
         self.cell_idx = max(0, self.cell_idx - 1)
         self.update_cell_info()
         self.update_preview()

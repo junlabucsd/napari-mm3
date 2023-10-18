@@ -9,9 +9,8 @@ from skimage import filters, morphology
 from skimage.filters import median
 from pathlib import Path
 import warnings
+import scipy.io as sio
 import tifffile as tiff
-
-from napari_mm3.utils_plotting import dotdict
 
 TIFF_FILE_FORMAT_PEAK = "%s_xy%03d_p%04d_%s.tif"
 TIFF_FILE_FORMAT_NO_PEAK = "%s_xy%03d_%s.tif"
@@ -44,7 +43,7 @@ def load_tiff_stack_simple(dir: Path, prefix, fov, postfix, peak=None):
         return tif.asarray()
 
 
-### functions and classes for reading / writing .json files
+# functions and classes for reading / writing .json files
 
 # numpy dtypes are not json serializable - need to convert
 class NpEncoder(json.JSONEncoder):
@@ -68,6 +67,11 @@ def write_cells_to_json(Cells, path_out):
             pass
     with open(path_out, "w") as fout:
         json.dump(json_out, fout, sort_keys=True, indent=2, cls=NpEncoder)
+
+
+def write_cells_to_matlab(cells, path_out):
+    with open(path_out) as f:
+        sio.savemat(f, cells)
 
 
 def cell_from_dict(in_dict):
@@ -206,7 +210,7 @@ class Cell:
             id of the parent if there is one.
         """
         # Hack for json deserialization -- there's probably a better way to do this.
-        if pxl2um == None:
+        if pxl2um is None:
             return
 
         # create all the attributes
@@ -241,7 +245,7 @@ class Cell:
 
         # calculating cell length and width by using Feret Diamter. These values are in pixels
         length_tmp, width_tmp = feretdiameter(region)
-        if length_tmp == None:
+        if length_tmp is None:
             print("feretdiameter() failed for " + self.id + " at t=" + str(t) + ".")
         self.lengths = [length_tmp]
         self.widths = [width_tmp]
@@ -290,7 +294,7 @@ class Cell:
 
         # calculating cell length and width by using Feret Diamter
         length_tmp, width_tmp = feretdiameter(region)
-        if length_tmp == None:
+        if length_tmp is None:
             print("feretdiameter() failed for " + self.id + " at t=" + str(t) + ".")
         self.lengths.append(length_tmp)
         self.widths.append(width_tmp)
@@ -460,8 +464,8 @@ def feretdiameter(region):
     y0 = y0 - np.int16(region.bbox[0]) + 1
     x0 = x0 - np.int16(region.bbox[1]) + 1
 
-    ## orientation is now measured in RC coordinates - quick fix to convert
-    ## back to xy
+    # orientation is now measured in RC coordinates - quick fix to convert
+    # back to xy
     if region.orientation > 0:
         ori1 = -np.pi / 2 + region.orientation
     else:
@@ -549,9 +553,9 @@ def feretdiameter(region):
         W_coords.append(
             r_coords[: int(np.round(len(r_coords) / 2))]
         )  # note the /2 here instead of /4
-        W_coords.append(r_coords[int(np.round(len(r_coords) / 2)) :])
+        W_coords.append(r_coords[int(np.round(len(r_coords) / 2)):])
     else:
-        W_coords.append(r_coords[int(np.round(len(r_coords) / 2)) :])
+        W_coords.append(r_coords[int(np.round(len(r_coords) / 2)):])
         W_coords.append(r_coords[: int(np.round(len(r_coords) / 2))])
 
     # starting points
@@ -645,7 +649,8 @@ def cell_growth_func(t, sb, elong_rate):
     return sb + elong_rate * t
 
 
-### functions for pruning a dictionary of cells
+# functions for pruning a dictionary of cells
+
 class Cells(dict):
     def __init__(self, dict_):
         super().__init__(dict_)
@@ -789,6 +794,26 @@ def organize_cells_by_channel(cells, specs) -> dict:
 
 
 @cellsmethod
+def gen_label_to_cell_mapping(cells, specs) -> dict:
+    """
+    Generates a map from (fov, peak, time, label) -> cell_id
+    """
+    fov_cells = organize_cells_by_channel(cells, specs)
+    cell_map = {}
+    for fov_id, peaks in fov_cells.items():
+        cell_map[fov_id] = {}
+        for peak_id, peak in peaks.items():
+            new_peak = {}
+            for cell_id, cell in peak.items():
+                for time_idx, time in enumerate(cell.times):
+                    if time not in new_peak:
+                        new_peak[time] = {}
+                    new_peak[time][cell.labels[time_idx]] = cell.id
+            cell_map[fov_id][peak_id] = new_peak
+    return cell_map
+
+
+@cellsmethod
 def infer_cell_id(cells: Cells, xloc, yloc, t):
     """
     Given screen-space coordinates and timestamp of a point, this finds the
@@ -801,7 +826,7 @@ def infer_cell_id(cells: Cells, xloc, yloc, t):
     cell: Cell
     for cell_id, cell in cells.items():
         disp_y, disp_x, cell_time = cell.place_in_cell(xloc, yloc, t)
-        if disp_y == None:
+        if disp_y is None:
             continue
         return cell_id, disp_y, disp_x, cell_time
     return None, None, None, None
@@ -1019,7 +1044,7 @@ def find_cells_born_after(cells, born_after=None):
     Returns Cells dictionary of cells with a birth_time after the value specified
     """
 
-    if born_after == None:
+    if born_after is None:
         return cells
 
     return {
