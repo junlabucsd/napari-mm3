@@ -184,13 +184,18 @@ def get_valid_fovs_folder(TIFF_folder):
 
 
 def get_valid_times(TIFF_folder):
-    found_files = TIFF_folder.glob("*.tif")
+    found_files = list(TIFF_folder.glob("*.tif"))
     filenames = [f.name for f in found_files]
     if len(filenames) == 0:
         raise ValueError(f"No files found in '{TIFF_folder}'")
     get_time_regex = re.compile(r"t(\d+)", re.IGNORECASE)
-    time_strings = set(get_time_regex.findall(filename)[0] for filename in filenames)
-    times = list(map(int, sorted(time_strings)))
+
+    try:
+        time_strings = set(get_time_regex.findall(filename)[0] for filename in filenames)
+        times = list(map(int, sorted(time_strings)))
+    except IndexError:
+        img = load_tiff(found_files[0])
+        return (1, img.shape[0])
     return (min(times), max(times))
 
 
@@ -417,7 +422,7 @@ class MM3Container(Container):
                 self.found_planes = False
 
     def _validate_folders(self):
-        return self.TIFF_folder.exists() and self.analysis_folder.exists()
+        return self.TIFF_folder.exists() or self.analysis_folder.exists()
 
     def _get_most_recent_run(self):
         """
