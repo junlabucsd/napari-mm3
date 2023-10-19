@@ -70,7 +70,13 @@ def write_cells_to_json(Cells, path_out):
 
 
 def write_cells_to_matlab(cells, path_out):
-    with open(path_out) as f:
+    # TODO: make this run when we want.
+    for cell_id in cells:
+        cell = cells[cell_id]
+        new_cell = {k: v for k, v in vars(cell).items() if v is not None}
+        new_cell = cell_from_dict(new_cell)
+        cells[cell_id] = new_cell
+    with open(path_out, "wb") as f:
         sio.savemat(f, cells)
 
 
