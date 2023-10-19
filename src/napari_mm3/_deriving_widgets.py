@@ -340,7 +340,7 @@ class MM3Container(Container):
             self.create_widgets()
             self.append(self.run_widget)
             return
-        print(f"Failed to find a key piece of info:")
+        print("Failed to find a key piece of info:")
         print(f"planes found: {self.found_planes}")
         print(f"fovs found: {self.found_fovs}")
         print(f"times found: {self.found_times}")
@@ -391,15 +391,25 @@ class MM3Container(Container):
         try:
             self.valid_times = get_valid_times(self.TIFF_folder)
             self.found_times = True
-        except:
-            self.found_times = False
+        except FileNotFoundError:
+            try:
+                self.valid_times = get_valid_times(self.analysis_folder / "subtracted")
+                self.found_times = True
+            except FileNotFoundError:
+                self.found_times = False
+
+
 
     def _set_valid_planes(self):
         try:
             self.valid_planes = get_valid_planes(self.TIFF_folder)
             self.found_planes = True
         except FileNotFoundError:
-            self.found_planes = False
+            try:
+                self.valid_planes = get_valid_planes(self.analysis_folder / "subtracted")
+                self.found_planes = True
+            except FileNotFoundError:
+                self.found_planes = False
 
     def _validate_folders(self):
         return self.TIFF_folder.exists() and self.analysis_folder.exists()
