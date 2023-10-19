@@ -149,8 +149,11 @@ def get_valid_planes(TIFF_folder):
         A list of strings indicating the valid imaging planes
     """
     found_files = TIFF_folder.glob("*.tif")
+    filepaths = [f for f in found_files]
+    if len(filepaths) == 0:
+        raise ValueError(f"No TIFF files found in '{TIFF_folder}'.")
     # pull out first tiff to extract dims
-    filepath = [f for f in found_files][0]
+    filepath = filepaths[0]
     test_file = tiff.imread(filepath)
     dim = test_file.ndim
     if dim == 3:
@@ -183,6 +186,8 @@ def get_valid_fovs_folder(TIFF_folder):
 def get_valid_times(TIFF_folder):
     found_files = TIFF_folder.glob("*.tif")
     filenames = [f.name for f in found_files]
+    if len(filenames) == 0:
+        raise ValueError(f"No files found in '{TIFF_folder}'")
     get_time_regex = re.compile(r"t(\d+)", re.IGNORECASE)
     time_strings = set(get_time_regex.findall(filename)[0] for filename in filenames)
     times = list(map(int, sorted(time_strings)))
@@ -391,11 +396,11 @@ class MM3Container(Container):
         try:
             self.valid_times = get_valid_times(self.TIFF_folder)
             self.found_times = True
-        except FileNotFoundError:
+        except ValueError:
             try:
                 self.valid_times = get_valid_times(self.analysis_folder / "subtracted")
                 self.found_times = True
-            except FileNotFoundError:
+            except ValueError:
                 self.found_times = False
 
 
@@ -404,11 +409,11 @@ class MM3Container(Container):
         try:
             self.valid_planes = get_valid_planes(self.TIFF_folder)
             self.found_planes = True
-        except FileNotFoundError:
+        except ValueError:
             try:
                 self.valid_planes = get_valid_planes(self.analysis_folder / "subtracted")
                 self.found_planes = True
-            except FileNotFoundError:
+            except ValueError:
                 self.found_planes = False
 
     def _validate_folders(self):

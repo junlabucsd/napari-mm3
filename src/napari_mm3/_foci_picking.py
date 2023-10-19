@@ -1,7 +1,7 @@
 import numpy as np
 
 from napari import Viewer
-from .utils import Cells, read_cells_from_json, write_cells_to_json, write_cells_to_matlab
+from .utils import Cells, read_cells_from_json, write_cells_to_json
 from magicgui.widgets import SpinBox
 from ._deriving_widgets import (
     MM3Container,
@@ -74,7 +74,7 @@ class FociPicking(MM3Container):
         self.viewer.grid.enabled = False
 
         # load a list of all complete cells.
-        self.cell_file_loc = self.analysis_folder / "cell_data" / "all_cells_foci.json"
+        self.cell_file_loc = self.analysis_folder / "cell_data" / "all_cells.json"
 
         self.all_cells = Cells(read_cells_from_json(self.cell_file_loc))
         complete_cells = self.all_cells.find_complete_cells()
@@ -128,7 +128,7 @@ class FociPicking(MM3Container):
         self.cell_generations_widget.changed.connect(self.set_cell_generations)
 
         self.viewer.text_overlay.text = f"Cell idx: {self.cell_idx} / {len(self.cell_lineages)}\n"\
-            "Cell ID: {self.cur_cell_id}"
+            f"Cell ID: {self.cur_cell_id}"
         self.viewer.text_overlay.visible = True
         self.viewer.text_overlay.color = "white"
 
@@ -145,7 +145,7 @@ class FociPicking(MM3Container):
         self.cur_cell = self.all_cells[self.cur_cell_id]
         cur_time_range = calc_cell_list_times(self.all_cells, self.cur_lineage)
         self.start = min(cur_time_range)
-        self.stop = max(cur_time_range) + 1
+        self.stop = max(cur_time_range)
         self.fov_id = self.cur_cell.fov
         self.peak_id = self.cur_cell.peak
         if not hasattr(self.cur_cell, "initiation"):
@@ -218,8 +218,8 @@ class FociPicking(MM3Container):
         ):
             vis_time = round(init_time) - self.start
             init_cell = self.all_cells[init_cell_id]
-            in_cell_time_idx = init_cell.times.index(init_time)
-            cell_label = init_cell.labels[in_cell_time_idx]
+            cell_time_idx = init_cell.times.index(init_time)
+            cell_label = init_cell.labels[cell_time_idx]
             init_shift_stack[vis_time, :, :] += seg_stack[vis_time] == cell_label
 
         term_shift_stack = np.zeros(seg_stack.shape, dtype=np.int64)
@@ -242,14 +242,14 @@ class FociPicking(MM3Container):
 
     def next_cell(self, viewer: Viewer):
         write_cells_to_json(self.all_cells, self.cell_file_loc)
-        write_cells_to_matlab(self.all_cells, self.analysis_folder / "cell_data" / "cell_data_foci.mat")
+        # write_cells_to_matlab(self.all_cells, self.analysis_folder / "cell_data" / "cell_data_foci.mat")
         self.cell_idx = min(self.cell_idx + 1, len(self.cell_lineages) - 1)
         self.update_cell_info()
         self.update_preview()
 
     def prev_cell(self, viewer: Viewer):
         write_cells_to_json(self.all_cells, self.cell_file_loc)
-        write_cells_to_matlab(self.all_cells, self.analysis_folder / "cell_data" / "cell_data_foci.mat")
+        # write_cells_to_matlab(self.all_cells, self.analysis_folder / "cell_data" / "cell_data_foci.mat")
         self.cell_idx = max(0, self.cell_idx - 1)
         self.update_cell_info()
         self.update_preview()
