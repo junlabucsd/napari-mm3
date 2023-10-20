@@ -301,28 +301,21 @@ class FociPicking(MM3Container):
             )
 
     def mark_initiation(self, viewer: Viewer):
-        clicked_cell_id = self.locate_cell_at_cursor()
-        if clicked_cell_id is None:
-            print(
-                "WARNING: tried to add an initiation with a cell that does not exist."
-            )
-            return
         t, x, y = self.cursor_coords()
         self.cur_cell.initiation.append(t)
-        self.cur_cell.initiation_cells.append(clicked_cell_id)
-        self.replication_cells[self.cur_cell_id] = self.cur_cell
-        self.vis_initiations()
-        self.vis_seg_stack()
+        init_cell = self.first_lineage_cell(t)
+        if init_cell:
+            self.cur_cell.initiation_cells.append(init_cell)
+            self.replication_cells[self.cur_cell_id] = self.cur_cell
+            self.vis_initiations()
+            self.vis_seg_stack()
 
     def remove_initiation(self, viewer: Viewer):
-        clicked_cell_id = self.locate_cell_at_cursor()
-        if clicked_cell_id is None:
-            print("WARNING: tried to remove an initiation that does not exist.")
-            return
         t, x, y = self.cursor_coords()
         try:
+            idx = self.cur_cell.initiation.index(t)
             self.cur_cell.initiation.remove(t)
-            self.cur_cell.initiation_cells.remove(clicked_cell_id)
+            self.cur_cell.initiation_cells.remove(idx)
         except ValueError:
             print("WARNING: tried to remove an initiation that does not exist.")
         self.replication_cells[self.cur_cell_id] = self.cur_cell
@@ -330,18 +323,16 @@ class FociPicking(MM3Container):
         self.vis_seg_stack()
 
     def mark_termination(self, viewer: Viewer):
-        clicked_cell_id = self.locate_cell_at_cursor()
-        if clicked_cell_id is None:
-            print(
-                "WARNING: tried to add a termination with a cell that does not exist."
-            )
-            return
         t, x, y = self.cursor_coords()
-        self.cur_cell.termination = t
-        self.cur_cell.termination_cell = clicked_cell_id
-        self.replication_cells[self.cur_cell_id] = self.cur_cell
-        self.vis_terminal()
-        self.vis_seg_stack()
+        term_cell = self.first_lineage_cell(t)
+        if term_cell:
+            self.cur_cell.termination = t
+            self.cur_cell.termination_cell = term_cell
+            self.replication_cells[self.cur_cell_id] = self.cur_cell
+            self.vis_initiations()
+            self.vis_seg_stack()
+            self.vis_terminal()
+            self.vis_seg_stack()
 
     def locate_cell_at_cursor(self):
         t, x, y = self.cursor_coords()
@@ -393,20 +384,34 @@ class FociPicking(MM3Container):
         timestamp = (
             round(coords[2] // (self.crop_right + 1 - self.crop_left)) + self.start
         )
+        timestamp_clamped = min(max(self.start, timestamp), self.stop)
         x_coord = round(coords[2]) % (self.crop_right + 1 - self.crop_left)
         y_coord = round(coords[1])
-        return timestamp, x_coord, y_coord
+        return timestamp_clamped, x_coord, y_coord
 
     def save_to_matlab(self):
         # This prevents fun side effects with editing the various cell dictionaries.
         old_cells = read_cells_from_json(self.replication_cell_loc)
         write_cells_to_matlab(old_cells, self.cell_file_loc / "replication_cells.mat")
 
-    def skip(self):
-        delattr(self.cur_cell, "initiation")
-        delattr(self.cur_cell, "initiation_cells")
-        delattr(self.cur_cell, "termination")
-        delattr(self.cur_cell, "termination_cells")
+    def skip(self, viewer: Viewer):
+        if hasattr(self.cur_cell, "initiation"):
+            delattr(self.cur_cell, "initiation")
+        if hasattr(self.cur_cell, "initiation_cells"):
+            delattr(self.cur_cell, "initiation_cells")
+        if hasattr(self.cur_cell, "termination"):
+            delattr(self.cur_cell, "termination")
+        if hasattr(self.cur_cell, "termination_cell"):
+            delattr(self.cur_cell, "termination_cell")
         self.cell_idx = min(self.cell_idx + 1, len(self.cell_lineages) - 1)
         self.update_cell_info()
         self.update_preview()
+
+    def first_lineage_cell(self, t):
+        """Given a time, gets the first cell from the lineage that is visible at
+        that time"""
+        available_labels = self.mapping[self.fov_id][self.peak_id][t]
+        for label, labelled_cell_id in available_labels.items():
+            if labelled_cell_id in self.cur_lineage:
+                return labelled_cell_id
+        return None
