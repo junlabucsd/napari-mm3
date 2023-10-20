@@ -12,6 +12,8 @@ from ._deriving_widgets import (
 )
 
 TRANSLUCENT_BLUE = np.array([0.0, 0.0, 1.0, 1.0])
+VERY_TRANSLUCENT_BLUE = np.array([0.0, 0.0, 1.0, .3])
+TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, 1.0])
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 1.0])
 TRANSPARENT = np.array([0, 0, 0, 0])
 
@@ -289,10 +291,27 @@ class FociPicking(MM3Container):
         if "initiation" in self.viewer.layers:
             self.viewer.layers.remove("initiation")
         shapes = self.viewer.add_shapes(name="initiation")
-        for initiation in self.cur_cell.initiation:
+        initiation_times = self.cur_cell.initiation
+        for initiation in set(initiation_times):
             rel_init = initiation - self.start
             left_bdry = rel_init * (self.crop_right + 1 - self.crop_left)
             right_bdry = (rel_init + 1) * (self.crop_right + 1 - self.crop_left)
+            if initiation_times.count(initiation) == 2:
+                shapes.add_rectangles(
+                    [[0, left_bdry], [self.im_height, right_bdry]],
+                    edge_color=TRANSLUCENT_BLUE,
+                    face_color=VERY_TRANSLUCENT_BLUE,
+                    edge_width=3,
+                )
+                continue
+            if initiation_times.count(initiation) > 2:
+                shapes.add_rectangles(
+                    [[0, left_bdry], [self.im_height, right_bdry]],
+                    edge_color=TRANSLUCENT_GREEN,
+                    face_color=VERY_TRANSLUCENT_BLUE,
+                    edge_width=3 * initiation_times.count(initiation),
+                )
+                continue
             shapes.add_rectangles(
                 [[0, left_bdry], [self.im_height, right_bdry]],
                 edge_color=TRANSLUCENT_BLUE,
