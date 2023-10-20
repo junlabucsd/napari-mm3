@@ -342,7 +342,7 @@ class MM3Container(Container):
 
     def _load_from_data_conditional(self):
         if self.validate_folders and not self._validate_folders():
-            print(f"A folder validation was requested but not successful.\n")
+            print("A folder validation was requested but not successful.\n")
             print("Limited traceback:")
             traceback.print_stack(limit=1)
             return

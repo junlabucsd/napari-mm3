@@ -1,8 +1,8 @@
 import numpy as np
 
 from napari import Viewer
-from .utils import Cells, read_cells_from_json, write_cells_to_json
-from magicgui.widgets import SpinBox
+from .utils import Cells, read_cells_from_json, write_cells_to_json, write_cells_to_matlab
+from magicgui.widgets import SpinBox, PushButton
 from ._deriving_widgets import (
     MM3Container,
     load_subtracted_stack,
@@ -16,8 +16,6 @@ TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 1.0])
 TRANSPARENT = np.array([0, 0, 0, 0])
 
 
-# TODO:
-# 10. Validate export
 def calc_cell_list_times(cells: Cells, cell_list):
     times = set()
     for cell in cell_list:
@@ -68,6 +66,7 @@ class FociPicking(MM3Container):
         # TODO: Cleanup pass... maybe.
 
         self.experiment_name_widget.hide()
+        self.experiment_name = "20220331_ALO7931_ALO7918_ABT"
         self.load_recent_widget.hide()
         self.run_widget.hide()
 
@@ -118,14 +117,17 @@ class FociPicking(MM3Container):
         self.cell_generations_widget = SpinBox(
             label="generations", min=1, max=5, value=self.num_generations
         )
+        self.save_to_matlab_widget = PushButton(label="save_to_matlab")
 
         self.append(self.crop_left_widget)
         self.append(self.crop_right_widget)
         self.append(self.cell_generations_widget)
+        self.append(self.save_to_matlab_widget)
 
         self.crop_left_widget.changed.connect(self.set_crop_left)
         self.crop_right_widget.changed.connect(self.set_crop_right)
         self.cell_generations_widget.changed.connect(self.set_cell_generations)
+        self.save_to_matlab_widget.changed.connect(self.save_to_matlab)
 
         self.viewer.text_overlay.text = f"Cell idx: {self.cell_idx} / {len(self.cell_lineages)}\n"\
             f"Cell ID: {self.cur_cell_id}"
@@ -200,7 +202,7 @@ class FociPicking(MM3Container):
             experiment_name=self.experiment_name,
             fov_id=self.fov_id,
             peak_id=self.peak_id,
-            seg_mode=SegmentationMode.OTSU,
+            seg_mode=SegmentationMode.UNET,
         )
         seg_stack = seg_stack[
             self.start - 1:self.stop, :, self.crop_left:self.crop_right + 1
@@ -331,7 +333,7 @@ class FociPicking(MM3Container):
             experiment_name=self.experiment_name,
             fov_id=self.fov_id,
             peak_id=self.peak_id,
-            seg_mode=SegmentationMode.OTSU,
+            seg_mode=SegmentationMode.UNET,
         )
         cur_seg_stack = seg_stack[t, :, self.crop_left:self.crop_right + 1]
         # TODO: Proper rounding.
@@ -379,3 +381,7 @@ class FociPicking(MM3Container):
         x_coord = round(coords[2]) % (self.crop_right + 1 - self.crop_left)
         y_coord = round(coords[1])
         return timestamp, x_coord, y_coord
+ 
+    def save_to_matlab(self):
+        old_cells = read_cells_from_json(self.cell_file_loc)
+        write_cells_to_matlab(old_cells, self.cell_file_loc / "all_cells.mat")
