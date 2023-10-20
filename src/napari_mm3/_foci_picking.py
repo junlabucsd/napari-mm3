@@ -55,7 +55,6 @@ def cell_lineage_filter(complete_cell_ids: list, all_cells: Cells, generations):
 class FociPicking(MM3Container):
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
-
         # tweakables:
         # x-crop-left (1)
         # x-crop-right (1)
@@ -75,6 +74,7 @@ class FociPicking(MM3Container):
         self.replication_cell_loc = self.analysis_folder / "cell_data" / "replication_cells.json"
         self.cell_file_loc = self.analysis_folder / "cell_data" / "all_cells.json"
 
+        self.seg_visible = True
         self.replication_cells = {}
         # pull in all cells
         self.all_cells = Cells(read_cells_from_json(self.cell_file_loc))
@@ -168,6 +168,9 @@ class FociPicking(MM3Container):
             self.cur_cell.termination_cell = None
 
     def update_preview(self):
+        self.seg_visible = True
+        if "segmentation" in self.viewer.layers:
+            self.seg_visible = self.viewer.layers["segmentation"].visible
         self.viewer.layers.clear()
         print("showing cell" + str(self.cur_cell_id))
 
@@ -249,8 +252,10 @@ class FociPicking(MM3Container):
         )
         new_seg_stack = np.concatenate(new_seg_stack, axis=1)
         if "segmentation" in self.viewer.layers:
+            self.seg_visible = self.viewer.layers["segmentation"].visible
             self.viewer.layers.remove("segmentation")
         self.viewer.add_labels(new_seg_stack, name="segmentation")
+        self.viewer.layers["segmentation"].visible = self.seg_visible
 
     def next_cell(self, viewer: Viewer):
         write_cells_to_json(self.replication_cells, self.replication_cell_loc)
