@@ -148,7 +148,8 @@ class FociPicking(MM3Container):
         self.viewer.bind_key("w", self.mark_termination)
         self.viewer.bind_key("e", self.next_cell)
         self.viewer.bind_key("r", self.prev_cell)
-        self.viewer.bind_key("s", self.remove_initiation)
+        self.viewer.bind_key("d", self.remove_initiation)
+        self.viewer.bind_key("s", self.skip)
         self.update_preview()
 
     def update_cell_info(self):
@@ -395,8 +396,17 @@ class FociPicking(MM3Container):
         x_coord = round(coords[2]) % (self.crop_right + 1 - self.crop_left)
         y_coord = round(coords[1])
         return timestamp, x_coord, y_coord
- 
+
     def save_to_matlab(self):
         # This prevents fun side effects with editing the various cell dictionaries.
         old_cells = read_cells_from_json(self.replication_cell_loc)
         write_cells_to_matlab(old_cells, self.cell_file_loc / "replication_cells.mat")
+
+    def skip(self):
+        delattr(self.cur_cell, "initiation")
+        delattr(self.cur_cell, "initiation_cells")
+        delattr(self.cur_cell, "termination")
+        delattr(self.cur_cell, "termination_cells")
+        self.cell_idx = min(self.cell_idx + 1, len(self.cell_lineages) - 1)
+        self.update_cell_info()
+        self.update_preview()
