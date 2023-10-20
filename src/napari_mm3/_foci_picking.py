@@ -69,14 +69,24 @@ class FociPicking(MM3Container):
         self.experiment_name = "20220331_ALO7931_ALO7918_ABT"
         self.load_recent_widget.hide()
         self.run_widget.hide()
-
         self.viewer.grid.enabled = False
 
         # load a list of all complete cells.
+        self.replication_cell_loc = self.analysis_folder / "cell_data" / "replication_cells.json"
         self.cell_file_loc = self.analysis_folder / "cell_data" / "all_cells.json"
 
+        self.replication_cells = {}
+        # pull in all cells
         self.all_cells = Cells(read_cells_from_json(self.cell_file_loc))
+        if self.replication_cell_loc.exists():
+            # pull in all cells with initiations
+            self.replication_cells = Cells(read_cells_from_json(self.replication_cell_loc))
+            for cell_id, cell in self.replication_cells.items():
+                self.all_cells[cell_id] = cell
+
         complete_cells = self.all_cells.find_complete_cells()
+        specs = load_specs(self.analysis_folder)
+        self.mapping = self.all_cells.gen_label_to_cell_mapping(specs)
         minimal_timestamp = 10
         self.mother_cells = {}
         for cell_id in complete_cells:
@@ -134,11 +144,11 @@ class FociPicking(MM3Container):
         self.viewer.text_overlay.visible = True
         self.viewer.text_overlay.color = "white"
 
-        self.viewer.bind_key("z", self.mark_initiation)
-        self.viewer.bind_key("x", self.mark_termination)
+        self.viewer.bind_key("q", self.mark_initiation)
+        self.viewer.bind_key("w", self.mark_termination)
+        self.viewer.bind_key("e", self.next_cell)
+        self.viewer.bind_key("r", self.prev_cell)
         self.viewer.bind_key("s", self.remove_initiation)
-        self.viewer.bind_key("c", self.prev_cell)
-        self.viewer.bind_key("v", self.next_cell)
         self.update_preview()
 
     def update_cell_info(self):
@@ -243,15 +253,13 @@ class FociPicking(MM3Container):
         self.viewer.add_labels(new_seg_stack, name="segmentation")
 
     def next_cell(self, viewer: Viewer):
-        write_cells_to_json(self.all_cells, self.cell_file_loc)
-        # write_cells_to_matlab(self.all_cells, self.analysis_folder / "cell_data" / "cell_data_foci.mat")
+        write_cells_to_json(self.replication_cells, self.replication_cell_loc)
         self.cell_idx = min(self.cell_idx + 1, len(self.cell_lineages) - 1)
         self.update_cell_info()
         self.update_preview()
 
     def prev_cell(self, viewer: Viewer):
-        write_cells_to_json(self.all_cells, self.cell_file_loc)
-        # write_cells_to_matlab(self.all_cells, self.analysis_folder / "cell_data" / "cell_data_foci.mat")
+        write_cells_to_json(self.replication_cells, self.replication_cell_loc)
         self.cell_idx = max(0, self.cell_idx - 1)
         self.update_cell_info()
         self.update_preview()
@@ -296,6 +304,7 @@ class FociPicking(MM3Container):
         t, x, y = self.cursor_coords()
         self.cur_cell.initiation.append(t)
         self.cur_cell.initiation_cells.append(clicked_cell_id)
+        self.replication_cells[self.cur_cell_id] = self.cur_cell
         self.vis_initiations()
         self.vis_seg_stack()
 
@@ -310,6 +319,7 @@ class FociPicking(MM3Container):
             self.cur_cell.initiation_cells.remove(clicked_cell_id)
         except ValueError:
             print("WARNING: tried to remove an initiation that does not exist.")
+        self.replication_cells[self.cur_cell_id] = self.cur_cell
         self.vis_initiations()
         self.vis_seg_stack()
 
@@ -323,6 +333,7 @@ class FociPicking(MM3Container):
         t, x, y = self.cursor_coords()
         self.cur_cell.termination = t
         self.cur_cell.termination_cell = clicked_cell_id
+        self.replication_cells[self.cur_cell_id] = self.cur_cell
         self.vis_terminal()
         self.vis_seg_stack()
 
@@ -338,13 +349,11 @@ class FociPicking(MM3Container):
         cur_seg_stack = seg_stack[t, :, self.crop_left:self.crop_right + 1]
         # TODO: Proper rounding.
         cur_label = cur_seg_stack[y, x]
-        specs = load_specs(self.analysis_folder)
         # need to cache this later!
-        mapping = self.all_cells.gen_label_to_cell_mapping(specs)
         if cur_label == 0:
             return None
         try:
-            return mapping[self.fov_id][self.peak_id][t][cur_label]
+            return self.mapping[self.fov_id][self.peak_id][t][cur_label]
         except KeyError:
             return None
 
@@ -383,5 +392,6 @@ class FociPicking(MM3Container):
         return timestamp, x_coord, y_coord
  
     def save_to_matlab(self):
-        old_cells = read_cells_from_json(self.cell_file_loc)
-        write_cells_to_matlab(old_cells, self.cell_file_loc / "all_cells.mat")
+        # This prevents fun side effects with editing the various cell dictionaries.
+        old_cells = read_cells_from_json(self.replication_cell_loc)
+        write_cells_to_matlab(old_cells, self.cell_file_loc / "replication_cells.mat")
