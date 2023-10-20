@@ -86,20 +86,15 @@ class FociPicking(MM3Container):
             for cell_id, cell in self.replication_cells.items():
                 self.all_cells[cell_id] = cell
 
+        self.num_generations = 2
         complete_cells = self.all_cells.find_complete_cells()
         specs = load_specs(self.analysis_folder)
         self.mapping = self.all_cells.gen_label_to_cell_mapping(specs)
-        minimal_timestamp = 10
         self.mother_cells = {}
         for cell_id in complete_cells:
             if complete_cells[cell_id].birth_label == 1:
                 self.mother_cells[cell_id] = complete_cells[cell_id]
-            minimal_timestamp = min(
-                minimal_timestamp, min(complete_cells[cell_id].times)
-            )
-        print("min timestamp " + str(minimal_timestamp))
 
-        self.num_generations = 2
         cell_lineage_iter = cell_lineage_filter(
             complete_cell_ids=self.mother_cells.keys(),
             all_cells=self.all_cells,
@@ -108,7 +103,6 @@ class FociPicking(MM3Container):
         self.cell_lineages = list(cell_lineage_iter)
         self.cell_idx = 0
         self.update_cell_info()
-
         stack = load_subtracted_stack(
             self.analysis_folder,
             self.experiment_name,
@@ -129,16 +123,21 @@ class FociPicking(MM3Container):
         self.cell_generations_widget = SpinBox(
             label="generations", min=1, max=5, value=self.num_generations
         )
+        self.cell_label_widget = SpinBox(
+            label="cell_label", min=1, max=5, value=1
+        )
         self.save_to_matlab_widget = PushButton(label="save_to_matlab")
 
         self.append(self.crop_left_widget)
         self.append(self.crop_right_widget)
         self.append(self.cell_generations_widget)
+        self.append(self.cell_label_widget)
         self.append(self.save_to_matlab_widget)
 
         self.crop_left_widget.changed.connect(self.set_crop_left)
         self.crop_right_widget.changed.connect(self.set_crop_right)
         self.cell_generations_widget.changed.connect(self.set_cell_generations)
+        self.cell_label_widget.changed.connect(self.cell_label_changed)
         self.save_to_matlab_widget.changed.connect(self.save_to_matlab)
 
         self.viewer.text_overlay.text = f"Cell idx: {self.cell_idx} / {len(self.cell_lineages)}\n"\
@@ -334,7 +333,7 @@ class FociPicking(MM3Container):
         try:
             idx = self.cur_cell.initiation.index(t)
             self.cur_cell.initiation.remove(t)
-            self.cur_cell.initiation_cells.remove(idx)
+            self.cur_cell.initiation_cells.pop(idx)
         except ValueError:
             print("WARNING: tried to remove an initiation that does not exist.")
         self.replication_cells[self.cur_cell_id] = self.cur_cell
@@ -411,7 +410,8 @@ class FociPicking(MM3Container):
     def save_to_matlab(self):
         # This prevents fun side effects with editing the various cell dictionaries.
         old_cells = read_cells_from_json(self.replication_cell_loc)
-        write_cells_to_matlab(old_cells, self.cell_file_loc / "replication_cells.mat")
+        write_cells_to_matlab(old_cells, self.analysis_folder / "cell_data" / "replication_cells.mat")
+        print("save to matlab")
 
     def skip(self, viewer: Viewer):
         if hasattr(self.cur_cell, "initiation"):
@@ -434,3 +434,21 @@ class FociPicking(MM3Container):
             if labelled_cell_id in self.cur_lineage:
                 return labelled_cell_id
         return None
+
+    def cell_label_changed(self):
+        self.cell_label = self.cell_label_widget.value
+        complete_cells = self.all_cells.find_complete_cells()
+        self.mother_cells = {}
+        for cell_id in complete_cells:
+            if complete_cells[cell_id].birth_label == self.cell_label:
+                self.mother_cells[cell_id] = complete_cells[cell_id]
+
+        cell_lineage_iter = cell_lineage_filter(
+            complete_cell_ids=self.mother_cells.keys(),
+            all_cells=self.all_cells,
+            generations=self.num_generations,
+        )
+        self.cell_lineages = list(cell_lineage_iter)
+        self.cell_idx = 0
+        self.update_cell_info()
+        self.update_preview()
