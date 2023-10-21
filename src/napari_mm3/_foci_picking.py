@@ -2,7 +2,7 @@ import numpy as np
 
 from napari import Viewer
 from .utils import Cells, read_cells_from_json, write_cells_to_json, write_cells_to_matlab
-from magicgui.widgets import SpinBox, PushButton
+from magicgui.widgets import SpinBox, PushButton, FileEdit
 from ._deriving_widgets import (
     MM3Container,
     load_subtracted_stack,
@@ -13,7 +13,7 @@ from ._deriving_widgets import (
 
 TRANSLUCENT_BLUE = np.array([0.0, 0.0, 1.0, 1.0])
 VERY_TRANSLUCENT_BLUE = np.array([0.0, 0.0, 1.0, .3])
-TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, 1.0])
+TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, .3])
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 1.0])
 TRANSPARENT = np.array([0, 0, 0, 0])
 
@@ -57,15 +57,6 @@ def cell_lineage_filter(complete_cell_ids: list, all_cells: Cells, generations):
 class FociPicking(MM3Container):
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
-        # tweakables:
-        # x-crop-left (1)
-        # x-crop-right (1)
-        # # of gens visible
-        # which cell u see trace for.
-        # need to think about how to best encode the STATE of this widget -- this might generalize good.
-        # maybe use magic widgets better??
-        # TODO: Cleanup pass... maybe.
-
         self.experiment_name_widget.hide()
         self.experiment_name = "20220331_ALO7931_ALO7918_ABT"
         self.load_recent_widget.hide()
@@ -102,6 +93,7 @@ class FociPicking(MM3Container):
         )
         self.cell_lineages = list(cell_lineage_iter)
         self.cell_idx = 0
+        self.cell_label = 1
         self.update_cell_info()
         stack = load_subtracted_stack(
             self.analysis_folder,
@@ -113,7 +105,8 @@ class FociPicking(MM3Container):
         self.im_height = stack.shape[1]
         self.crop_left = 0
         self.crop_right = stack.shape[2] - 1
-
+        self.cell_json_loc = self.analysis_folder / "cell_data" / "all_cells.json"
+        self.set_cell_json_widget = FileEdit(label="cell json", value=self.cell_json_loc)
         self.crop_left_widget = SpinBox(
             label="left_crop", min=0, max=self.crop_right, value=self.crop_left
         )
@@ -128,12 +121,14 @@ class FociPicking(MM3Container):
         )
         self.save_to_matlab_widget = PushButton(label="save_to_matlab")
 
+        self.append(self.set_cell_json_widget)
         self.append(self.crop_left_widget)
         self.append(self.crop_right_widget)
         self.append(self.cell_generations_widget)
         self.append(self.cell_label_widget)
         self.append(self.save_to_matlab_widget)
 
+        self.set_cell_json_widget.changed.connect(self.set_cell_json)
         self.crop_left_widget.changed.connect(self.set_crop_left)
         self.crop_right_widget.changed.connect(self.set_crop_right)
         self.cell_generations_widget.changed.connect(self.set_cell_generations)
@@ -170,11 +165,14 @@ class FociPicking(MM3Container):
             self.cur_cell.termination_cell = None
 
     def update_preview(self):
+        self.viewer.text_overlay.text = f"Cell idx: {self.cell_idx + 1} / {len(self.cell_lineages)}\n"\
+            f"Cell ID: {self.cur_cell_id}"
+ 
         self.seg_visible = True
         if "segmentation" in self.viewer.layers:
             self.seg_visible = self.viewer.layers["segmentation"].visible
         self.viewer.layers.clear()
-        print("showing cell" + str(self.cur_cell_id))
+        print(f"showing cell {self.cur_cell_id}")
 
         # To do this properly, load all possible stacks.
         stack = load_subtracted_stack(
@@ -201,15 +199,26 @@ class FociPicking(MM3Container):
         stack_fl_filtered = np.concatenate(stack_fl_filtered, axis=1)
 
         final_image = np.stack((stack_filtered, stack_fl_filtered))
-        images = self.viewer.add_image(final_image)
+        images = self.viewer.add_image(final_image, name="image")
         self.vis_seg_stack()
         images.reset_contrast_limits()
+
+        if "time_labels" in self.viewer.layers:
+            self.viewer.layers.remove("time_labels")
+        visible_times = np.arange(self.start, self.stop + 1)
+        features = {"time_label": visible_times}
+        pt_xs = (np.arange(len(visible_times)) + .5) * (self.crop_right - self.crop_left + 1)
+        pt_ys = np.zeros(visible_times.shape)
+        pts = np.stack((pt_ys, pt_xs), axis=1)
+        text = {"string": "{time_label}", "color": "white", "size": 8}
+        self.viewer.add_points(pts, text=text, features=features, face_color=TRANSPARENT, edge_color=TRANSPARENT, name="time_labels")
 
         if self.cur_cell.initiation != []:
             self.vis_initiations()
 
         if self.cur_cell.termination is not None:
             self.vis_terminal()
+        self.viewer.layers.selection.clear()
 
     def vis_seg_stack(self):
         seg_stack = load_seg_stack(
@@ -299,7 +308,7 @@ class FociPicking(MM3Container):
                 shapes.add_rectangles(
                     [[0, left_bdry], [self.im_height, right_bdry]],
                     edge_color=TRANSLUCENT_BLUE,
-                    face_color=VERY_TRANSLUCENT_BLUE,
+                    face_color=TRANSLUCENT_GREEN,
                     edge_width=3,
                 )
                 continue
@@ -435,13 +444,11 @@ class FociPicking(MM3Container):
                 return labelled_cell_id
         return None
 
-    def cell_label_changed(self):
-        self.cell_label = self.cell_label_widget.value
-        complete_cells = self.all_cells.find_complete_cells()
+    def update_lineages(self, cells):
         self.mother_cells = {}
-        for cell_id in complete_cells:
-            if complete_cells[cell_id].birth_label == self.cell_label:
-                self.mother_cells[cell_id] = complete_cells[cell_id]
+        for cell_id in cells:
+            if cells[cell_id].birth_label == self.cell_label:
+                self.mother_cells[cell_id] = cells[cell_id]
 
         cell_lineage_iter = cell_lineage_filter(
             complete_cell_ids=self.mother_cells.keys(),
@@ -452,3 +459,11 @@ class FociPicking(MM3Container):
         self.cell_idx = 0
         self.update_cell_info()
         self.update_preview()
+
+    def cell_label_changed(self):
+        self.cell_label = self.cell_label_widget.value
+        self.update_lineages(Cells(read_cells_from_json(self.cell_json_loc)))
+
+    def set_cell_json(self):
+        self.cell_json_loc = self.set_cell_json_widget.value
+        self.update_lineages(Cells(read_cells_from_json(self.cell_json_loc)))
