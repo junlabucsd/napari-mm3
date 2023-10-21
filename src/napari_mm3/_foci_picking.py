@@ -1,7 +1,12 @@
 import numpy as np
 
 from napari import Viewer
-from .utils import Cells, read_cells_from_json, write_cells_to_json, write_cells_to_matlab
+from .utils import (
+    Cells,
+    read_cells_from_json,
+    write_cells_to_json,
+    write_cells_to_matlab,
+)
 from magicgui.widgets import SpinBox, PushButton, FileEdit
 from ._deriving_widgets import (
     MM3Container,
@@ -12,9 +17,10 @@ from ._deriving_widgets import (
 )
 
 TRANSLUCENT_BLUE = np.array([0.0, 0.0, 1.0, 1.0])
-VERY_TRANSLUCENT_BLUE = np.array([0.0, 0.0, 1.0, .3])
-TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, .3])
+VERY_TRANSLUCENT_BLUE = np.array([0.0, 0.0, 1.0, 0.3])
+TRANSLUCENT_GREEN = np.array([0.0, 1.0, 0.0, 0.3])
 TRANSLUCENT_RED = np.array([1.0, 0.0, 0.0, 1.0])
+VERY_TRANSLUCENT_RED = np.array([1.0, 0.5, 0.0, 0.3])
 TRANSPARENT = np.array([0, 0, 0, 0])
 
 
@@ -55,6 +61,10 @@ def cell_lineage_filter(complete_cell_ids: list, all_cells: Cells, generations):
 
 
 class FociPicking(MM3Container):
+    """
+    Note to reader:
+    This is just *barely* illegible. If you find yourself here, please do a bit of cleanup work!
+    """
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
         self.experiment_name_widget.hide()
@@ -64,7 +74,9 @@ class FociPicking(MM3Container):
         self.viewer.grid.enabled = False
 
         # load a list of all complete cells.
-        self.replication_cell_loc = self.analysis_folder / "cell_data" / "replication_cells.json"
+        self.replication_cell_loc = (
+            self.analysis_folder / "cell_data" / "replication_cells.json"
+        )
         self.cell_file_loc = self.analysis_folder / "cell_data" / "all_cells.json"
 
         self.seg_visible = True
@@ -73,7 +85,9 @@ class FociPicking(MM3Container):
         self.all_cells = Cells(read_cells_from_json(self.cell_file_loc))
         if self.replication_cell_loc.exists():
             # pull in all cells with initiations
-            self.replication_cells = Cells(read_cells_from_json(self.replication_cell_loc))
+            self.replication_cells = Cells(
+                read_cells_from_json(self.replication_cell_loc)
+            )
             for cell_id, cell in self.replication_cells.items():
                 self.all_cells[cell_id] = cell
 
@@ -106,7 +120,9 @@ class FociPicking(MM3Container):
         self.crop_left = 0
         self.crop_right = stack.shape[2] - 1
         self.cell_json_loc = self.analysis_folder / "cell_data" / "all_cells.json"
-        self.set_cell_json_widget = FileEdit(label="cell json", value=self.cell_json_loc)
+        self.set_cell_json_widget = FileEdit(
+            label="cell json", value=self.cell_json_loc
+        )
         self.crop_left_widget = SpinBox(
             label="left_crop", min=0, max=self.crop_right, value=self.crop_left
         )
@@ -116,9 +132,7 @@ class FociPicking(MM3Container):
         self.cell_generations_widget = SpinBox(
             label="generations", min=1, max=5, value=self.num_generations
         )
-        self.cell_label_widget = SpinBox(
-            label="cell_label", min=1, max=5, value=1
-        )
+        self.cell_label_widget = SpinBox(label="cell_label", min=1, max=5, value=1)
         self.save_to_matlab_widget = PushButton(label="save_to_matlab")
 
         self.append(self.set_cell_json_widget)
@@ -135,8 +149,10 @@ class FociPicking(MM3Container):
         self.cell_label_widget.changed.connect(self.cell_label_changed)
         self.save_to_matlab_widget.changed.connect(self.save_to_matlab)
 
-        self.viewer.text_overlay.text = f"Cell idx: {self.cell_idx} / {len(self.cell_lineages)}\n"\
+        self.viewer.text_overlay.text = (
+            f"Cell idx: {self.cell_idx} / {len(self.cell_lineages)}\n"
             f"Cell ID: {self.cur_cell_id}"
+        )
         self.viewer.text_overlay.visible = True
         self.viewer.text_overlay.color = "white"
 
@@ -144,8 +160,9 @@ class FociPicking(MM3Container):
         self.viewer.bind_key("w", self.mark_termination)
         self.viewer.bind_key("e", self.next_cell)
         self.viewer.bind_key("r", self.prev_cell)
-        self.viewer.bind_key("d", self.remove_initiation)
+        self.viewer.bind_key("a", self.remove_termination)
         self.viewer.bind_key("s", self.skip)
+        self.viewer.bind_key("d", self.remove_initiation)
         self.update_preview()
 
     def update_cell_info(self):
@@ -158,16 +175,18 @@ class FociPicking(MM3Container):
         self.fov_id = self.cur_cell.fov
         self.peak_id = self.cur_cell.peak
         if not hasattr(self.cur_cell, "initiation"):
-            self.cur_cell.initiation = []
+            self.cur_cell.initiations = []
             self.cur_cell.initiation_cells = []
         if not hasattr(self.cur_cell, "termination"):
-            self.cur_cell.termination = None
-            self.cur_cell.termination_cell = None
+            self.cur_cell.terminations = []
+            self.cur_cell.termination_cells = []
 
     def update_preview(self):
-        self.viewer.text_overlay.text = f"Cell idx: {self.cell_idx + 1} / {len(self.cell_lineages)}\n"\
+        self.viewer.text_overlay.text = (
+            f"Cell idx: {self.cell_idx + 1} / {len(self.cell_lineages)}\n"
             f"Cell ID: {self.cur_cell_id}"
- 
+        )
+
         self.seg_visible = True
         if "segmentation" in self.viewer.layers:
             self.seg_visible = self.viewer.layers["segmentation"].visible
@@ -207,17 +226,26 @@ class FociPicking(MM3Container):
             self.viewer.layers.remove("time_labels")
         visible_times = np.arange(self.start, self.stop + 1)
         features = {"time_label": visible_times}
-        pt_xs = (np.arange(len(visible_times)) + .5) * (self.crop_right - self.crop_left + 1)
+        pt_xs = (np.arange(len(visible_times)) + 0.5) * (
+            self.crop_right - self.crop_left + 1
+        )
         pt_ys = np.zeros(visible_times.shape)
         pts = np.stack((pt_ys, pt_xs), axis=1)
         text = {"string": "{time_label}", "color": "white", "size": 8}
-        self.viewer.add_points(pts, text=text, features=features, face_color=TRANSPARENT, edge_color=TRANSPARENT, name="time_labels")
+        self.viewer.add_points(
+            pts,
+            text=text,
+            features=features,
+            face_color=TRANSPARENT,
+            edge_color=TRANSPARENT,
+            name="time_labels",
+        )
 
-        if self.cur_cell.initiation != []:
+        if self.cur_cell.initiations != []:
             self.vis_initiations()
 
-        if self.cur_cell.termination is not None:
-            self.vis_terminal()
+        if self.cur_cell.terminations != []:
+            self.vis_terminations()
         self.viewer.layers.selection.clear()
 
     def vis_seg_stack(self):
@@ -240,7 +268,7 @@ class FociPicking(MM3Container):
 
         init_shift_stack = np.zeros(seg_stack.shape, dtype=np.int64)
         for init_cell_id, init_time in zip(
-            self.cur_cell.initiation_cells, self.cur_cell.initiation
+            self.cur_cell.initiation_cells, self.cur_cell.initiations
         ):
             vis_time = round(init_time) - self.start
             init_cell = self.all_cells[init_cell_id]
@@ -249,14 +277,14 @@ class FociPicking(MM3Container):
             init_shift_stack[vis_time, :, :] += seg_stack[vis_time] == cell_label
 
         term_shift_stack = np.zeros(seg_stack.shape, dtype=np.int64)
-        if self.cur_cell.termination is not None:
-            vis_term_time = round(self.cur_cell.termination) - self.start
-            term_cell = self.all_cells[self.cur_cell.termination_cell]
-            actual_term_time_idx = term_cell.times.index(self.cur_cell.termination)
-            cell_region = term_cell.labels[actual_term_time_idx]
-            term_shift_stack[vis_term_time, :, :] += 9 * (
-                seg_stack[vis_term_time] == cell_region
-            )
+        for term_cell_id, term_time in zip(
+            self.cur_cell.termination_cells, self.cur_cell.terminations
+        ):
+            vis_time = round(term_time) - self.start
+            term_cell = self.all_cells[term_cell_id]
+            cell_time_idx = term_cell.times.index(term_time)
+            cell_label = term_cell.labels[cell_time_idx]
+            term_shift_stack[vis_time, :, :] += 9 * (seg_stack[vis_time] == cell_label)
 
         new_seg_stack = (
             new_seg_stack.astype(np.int64) + init_shift_stack + term_shift_stack
@@ -280,26 +308,43 @@ class FociPicking(MM3Container):
         self.update_cell_info()
         self.update_preview()
 
-    def vis_terminal(self):
+    def vis_terminations(self):
         if "termination" in self.viewer.layers:
             self.viewer.layers.remove("termination")
         shapes = self.viewer.add_shapes(name="termination")
-        terminal_idx = self.cur_cell.termination - self.start
-        left_bdry = terminal_idx * (self.crop_right + 1 - self.crop_left)
-        right_bdry = (terminal_idx + 1) * (self.crop_right + 1 - self.crop_left)
-        shapes.add_rectangles(
-            [[0, left_bdry], [self.im_height, right_bdry]],
-            edge_color=TRANSLUCENT_RED,
-            face_color=TRANSPARENT,
-            edge_width=3,
-        )
-        self.vis_seg_stack()
+        termination_times = self.cur_cell.terminations
+        for termination in set(termination_times):
+            rel_init = termination - self.start
+            left_bdry = rel_init * (self.crop_right + 1 - self.crop_left)
+            right_bdry = (rel_init + 1) * (self.crop_right + 1 - self.crop_left)
+            if termination_times.count(termination) == 2:
+                shapes.add_rectangles(
+                    [[0, left_bdry], [self.im_height, right_bdry]],
+                    edge_color=TRANSLUCENT_RED,
+                    face_color=VERY_TRANSLUCENT_RED,
+                    edge_width=3,
+                )
+                continue
+            if termination_times.count(termination) > 2:
+                shapes.add_rectangles(
+                    [[0, left_bdry], [self.im_height, right_bdry]],
+                    edge_color=TRANSLUCENT_RED,
+                    face_color=VERY_TRANSLUCENT_RED,
+                    edge_width=3 * termination_times.count(termination),
+                )
+                continue
+            shapes.add_rectangles(
+                [[0, left_bdry], [self.im_height, right_bdry]],
+                edge_color=TRANSLUCENT_RED,
+                face_color=TRANSPARENT,
+                edge_width=3,
+            )
 
     def vis_initiations(self):
         if "initiation" in self.viewer.layers:
             self.viewer.layers.remove("initiation")
         shapes = self.viewer.add_shapes(name="initiation")
-        initiation_times = self.cur_cell.initiation
+        initiation_times = self.cur_cell.initiations
         for initiation in set(initiation_times):
             rel_init = initiation - self.start
             left_bdry = rel_init * (self.crop_right + 1 - self.crop_left)
@@ -329,19 +374,31 @@ class FociPicking(MM3Container):
 
     def mark_initiation(self, viewer: Viewer):
         t, x, y = self.cursor_coords()
-        self.cur_cell.initiation.append(t)
         init_cell = self.first_lineage_cell(t)
         if init_cell:
+            self.cur_cell.initiations.append(t)
             self.cur_cell.initiation_cells.append(init_cell)
             self.replication_cells[self.cur_cell_id] = self.cur_cell
             self.vis_initiations()
             self.vis_seg_stack()
 
+    def remove_termination(self, viewer: Viewer):
+        t, x, y = self.cursor_coords()
+        try:
+            idx = self.cur_cell.terminations.index(t)
+            self.cur_cell.terminations.remove(t)
+            self.cur_cell.termination_cells.pop(idx)
+        except ValueError:
+            print("WARNING: tried to remove an initiation that does not exist.")
+        self.replication_cells[self.cur_cell_id] = self.cur_cell
+        self.vis_terminations()
+        self.vis_seg_stack()
+
     def remove_initiation(self, viewer: Viewer):
         t, x, y = self.cursor_coords()
         try:
-            idx = self.cur_cell.initiation.index(t)
-            self.cur_cell.initiation.remove(t)
+            idx = self.cur_cell.initiations.index(t)
+            self.cur_cell.initiations.remove(t)
             self.cur_cell.initiation_cells.pop(idx)
         except ValueError:
             print("WARNING: tried to remove an initiation that does not exist.")
@@ -353,12 +410,10 @@ class FociPicking(MM3Container):
         t, x, y = self.cursor_coords()
         term_cell = self.first_lineage_cell(t)
         if term_cell:
-            self.cur_cell.termination = t
-            self.cur_cell.termination_cell = term_cell
+            self.cur_cell.terminations.append(t)
+            self.cur_cell.termination_cells.append(term_cell)
             self.replication_cells[self.cur_cell_id] = self.cur_cell
-            self.vis_initiations()
-            self.vis_seg_stack()
-            self.vis_terminal()
+            self.vis_terminations()
             self.vis_seg_stack()
 
     def locate_cell_at_cursor(self):
@@ -419,7 +474,9 @@ class FociPicking(MM3Container):
     def save_to_matlab(self):
         # This prevents fun side effects with editing the various cell dictionaries.
         old_cells = read_cells_from_json(self.replication_cell_loc)
-        write_cells_to_matlab(old_cells, self.analysis_folder / "cell_data" / "replication_cells.mat")
+        write_cells_to_matlab(
+            old_cells, self.analysis_folder / "cell_data" / "replication_cells.mat"
+        )
         print("save to matlab")
 
     def skip(self, viewer: Viewer):
@@ -429,8 +486,8 @@ class FociPicking(MM3Container):
             delattr(self.cur_cell, "initiation_cells")
         if hasattr(self.cur_cell, "termination"):
             delattr(self.cur_cell, "termination")
-        if hasattr(self.cur_cell, "termination_cell"):
-            delattr(self.cur_cell, "termination_cell")
+        if hasattr(self.cur_cell, "termination_cells"):
+            delattr(self.cur_cell, "termination_cells")
         self.cell_idx = min(self.cell_idx + 1, len(self.cell_lineages) - 1)
         self.update_cell_info()
         self.update_preview()
