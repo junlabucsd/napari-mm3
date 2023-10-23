@@ -174,10 +174,10 @@ class FociPicking(MM3Container):
         self.stop = max(cur_time_range)
         self.fov_id = self.cur_cell.fov
         self.peak_id = self.cur_cell.peak
-        if not hasattr(self.cur_cell, "initiation"):
+        if not hasattr(self.cur_cell, "initiations"):
             self.cur_cell.initiations = []
             self.cur_cell.initiation_cells = []
-        if not hasattr(self.cur_cell, "termination"):
+        if not hasattr(self.cur_cell, "terminations"):
             self.cur_cell.terminations = []
             self.cur_cell.termination_cells = []
 
@@ -241,11 +241,12 @@ class FociPicking(MM3Container):
             name="time_labels",
         )
 
-        if self.cur_cell.initiations != []:
+        if hasattr(self.cur_cell, "initiations"):
             self.vis_initiations()
 
-        if self.cur_cell.terminations != []:
+        if hasattr(self.cur_cell, "terminations"):
             self.vis_terminations()
+
         self.viewer.layers.selection.clear()
 
     def vis_seg_stack(self):
@@ -312,9 +313,9 @@ class FociPicking(MM3Container):
         self.update_preview()
 
     def vis_terminations(self):
-        if "termination" in self.viewer.layers:
-            self.viewer.layers.remove("termination")
-        shapes = self.viewer.add_shapes(name="termination")
+        if "terminations" in self.viewer.layers:
+            self.viewer.layers.remove("terminations")
+        shapes = self.viewer.add_shapes(name="terminations")
         termination_times = self.cur_cell.terminations
         for termination in set(termination_times):
             rel_init = termination - self.start
@@ -344,9 +345,9 @@ class FociPicking(MM3Container):
             )
 
     def vis_initiations(self):
-        if "initiation" in self.viewer.layers:
-            self.viewer.layers.remove("initiation")
-        shapes = self.viewer.add_shapes(name="initiation")
+        if "initiations" in self.viewer.layers:
+            self.viewer.layers.remove("initiations")
+        shapes = self.viewer.add_shapes(name="initiations")
         initiation_times = self.cur_cell.initiations
         for initiation in set(initiation_times):
             rel_init = initiation - self.start
@@ -483,12 +484,12 @@ class FociPicking(MM3Container):
         print("save to matlab")
 
     def skip(self, viewer: Viewer):
-        if hasattr(self.cur_cell, "initiation"):
-            delattr(self.cur_cell, "initiation")
+        if hasattr(self.cur_cell, "initiations"):
+            delattr(self.cur_cell, "initiations")
         if hasattr(self.cur_cell, "initiation_cells"):
             delattr(self.cur_cell, "initiation_cells")
-        if hasattr(self.cur_cell, "termination"):
-            delattr(self.cur_cell, "termination")
+        if hasattr(self.cur_cell, "terminations"):
+            delattr(self.cur_cell, "terminations")
         if hasattr(self.cur_cell, "termination_cells"):
             delattr(self.cur_cell, "termination_cells")
         self.cell_idx = min(self.cell_idx + 1, len(self.cell_lineages) - 1)
