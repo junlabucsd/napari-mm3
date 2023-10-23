@@ -267,28 +267,31 @@ class FociPicking(MM3Container):
                 new_seg_stack[t_] = new_seg_stack[t_] | (seg_stack[t_] == label)
 
         init_shift_stack = np.zeros(seg_stack.shape, dtype=np.int64)
-        for init_cell_id, init_time in zip(
-            self.cur_cell.initiation_cells, self.cur_cell.initiations
-        ):
-            vis_time = round(init_time) - self.start
-            init_cell = self.all_cells[init_cell_id]
-            cell_time_idx = init_cell.times.index(init_time)
-            cell_label = init_cell.labels[cell_time_idx]
-            init_shift_stack[vis_time, :, :] += seg_stack[vis_time] == cell_label
+        if hasattr(self.cur_cell, "initiations"):
+            for init_cell_id, init_time in zip(
+                self.cur_cell.initiation_cells, self.cur_cell.initiations
+            ):
+                vis_time = round(init_time) - self.start
+                init_cell = self.all_cells[init_cell_id]
+                cell_time_idx = init_cell.times.index(init_time)
+                cell_label = init_cell.labels[cell_time_idx]
+                init_shift_stack[vis_time, :, :] += seg_stack[vis_time] == cell_label
 
-        term_shift_stack = np.zeros(seg_stack.shape, dtype=np.int64)
-        for term_cell_id, term_time in zip(
-            self.cur_cell.termination_cells, self.cur_cell.terminations
-        ):
-            vis_time = round(term_time) - self.start
-            term_cell = self.all_cells[term_cell_id]
-            cell_time_idx = term_cell.times.index(term_time)
-            cell_label = term_cell.labels[cell_time_idx]
-            term_shift_stack[vis_time, :, :] += 9 * (seg_stack[vis_time] == cell_label)
+        if hasattr(self.cur_cell, "terminations"):
+            term_shift_stack = np.zeros(seg_stack.shape, dtype=np.int64)
+            for term_cell_id, term_time in zip(
+                self.cur_cell.termination_cells, self.cur_cell.terminations
+            ):
+                vis_time = round(term_time) - self.start
+                term_cell = self.all_cells[term_cell_id]
+                cell_time_idx = term_cell.times.index(term_time)
+                cell_label = term_cell.labels[cell_time_idx]
+                term_shift_stack[vis_time, :, :] += 9 * (seg_stack[vis_time] == cell_label)
 
-        new_seg_stack = (
-            new_seg_stack.astype(np.int64) + init_shift_stack + term_shift_stack
-        )
+            new_seg_stack = (
+                new_seg_stack.astype(np.int64) + init_shift_stack + term_shift_stack
+            )
+
         new_seg_stack = np.concatenate(new_seg_stack, axis=1)
         if "segmentation" in self.viewer.layers:
             self.seg_visible = self.viewer.layers["segmentation"].visible
