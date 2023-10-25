@@ -247,6 +247,9 @@ class FociPicking(MM3Container):
         if hasattr(self.cur_cell, "terminations"):
             self.vis_terminations()
 
+        cur_step = list(self.viewer.dims.current_step)
+        cur_step[0] = 1
+        self.viewer.dims.current_step = tuple(cur_step)
         self.viewer.layers.selection.clear()
 
     def vis_seg_stack(self):
