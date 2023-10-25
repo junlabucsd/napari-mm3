@@ -7,7 +7,7 @@ from .utils import (
     write_cells_to_json,
     write_cells_to_matlab,
 )
-from magicgui.widgets import SpinBox, PushButton, FileEdit
+from magicgui.widgets import SpinBox, PushButton, FileEdit, LineEdit
 from ._deriving_widgets import (
     MM3Container,
     load_subtracted_stack,
@@ -132,8 +132,8 @@ class FociPicking(MM3Container):
         self.cell_generations_widget = SpinBox(
             label="generations", min=1, max=5, value=self.num_generations
         )
-        self.cell_idx_widget = SpinBox(
-            label="skip_to_cell_idx", min=1, max=len(self.cell_lineages), value=1
+        self.jump_to_cell_id_widget = LineEdit(
+            label="skip_to_cell_id"
         )
         self.cell_label_widget = SpinBox(label="cell_label", min=1, max=5, value=1)
         self.save_to_matlab_widget = PushButton(label="save_to_matlab")
@@ -143,7 +143,7 @@ class FociPicking(MM3Container):
         self.append(self.crop_right_widget)
         self.append(self.cell_generations_widget)
         self.append(self.cell_label_widget)
-        self.append(self.cell_idx_widget)
+        self.append(self.jump_to_cell_id_widget)
         self.append(self.save_to_matlab_widget)
 
         self.set_cell_json_widget.changed.connect(self.set_cell_json)
@@ -152,7 +152,7 @@ class FociPicking(MM3Container):
         self.cell_generations_widget.changed.connect(self.set_cell_generations)
         self.cell_label_widget.changed.connect(self.cell_label_changed)
         self.save_to_matlab_widget.changed.connect(self.save_to_matlab)
-        self.cell_idx_widget.changed.connect(self.set_cell_idx)
+        self.jump_to_cell_id_widget.changed.connect(self.jump_to_cell_id)
 
         self.viewer.text_overlay.text = (
             f"Cell idx: {self.cell_idx} / {len(self.cell_lineages)}\n"
@@ -556,8 +556,13 @@ class FociPicking(MM3Container):
         if event.button == 2:
             self.mark_termination(self.viewer)
 
-    def set_cell_idx(self):
+    def jump_to_cell_id(self):
+        cell_id = self.jump_to_cell_id_widget.value
         write_cells_to_json(self.replication_cells, self.replication_cell_loc)
-        self.cell_idx = self.cell_idx_widget.value - 1
+        cell_ids = [cell_id for cell_id, _ in self.cell_lineages]
+        cell_idx = cell_ids.index(cell_id)
+
+        self.cell_idx = cell_idx
         self.update_cell_info()
         self.update_preview()
+
