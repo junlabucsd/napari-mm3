@@ -132,6 +132,9 @@ class FociPicking(MM3Container):
         self.cell_generations_widget = SpinBox(
             label="generations", min=1, max=5, value=self.num_generations
         )
+        self.cell_idx_widget = SpinBox(
+            label="skip_to_cell_idx", min=1, max=len(self.cell_lineages), value=1
+        )
         self.cell_label_widget = SpinBox(label="cell_label", min=1, max=5, value=1)
         self.save_to_matlab_widget = PushButton(label="save_to_matlab")
 
@@ -140,6 +143,7 @@ class FociPicking(MM3Container):
         self.append(self.crop_right_widget)
         self.append(self.cell_generations_widget)
         self.append(self.cell_label_widget)
+        self.append(self.cell_idx_widget)
         self.append(self.save_to_matlab_widget)
 
         self.set_cell_json_widget.changed.connect(self.set_cell_json)
@@ -148,6 +152,7 @@ class FociPicking(MM3Container):
         self.cell_generations_widget.changed.connect(self.set_cell_generations)
         self.cell_label_widget.changed.connect(self.cell_label_changed)
         self.save_to_matlab_widget.changed.connect(self.save_to_matlab)
+        self.cell_idx_widget.changed.connect(self.set_cell_idx)
 
         self.viewer.text_overlay.text = (
             f"Cell idx: {self.cell_idx} / {len(self.cell_lineages)}\n"
@@ -253,6 +258,9 @@ class FociPicking(MM3Container):
         self.viewer.layers.selection.clear()
         self.viewer.layers["image"].reset_contrast_limits()
 
+        self.viewer.layers.selection.update({self.viewer.layers["image"]})
+        self.viewer.layers["image"].mouse_drag_callbacks.append(self.click_callback)
+
     def vis_seg_stack(self):
         seg_stack = load_seg_stack(
             ana_dir=self.analysis_folder,
@@ -304,6 +312,9 @@ class FociPicking(MM3Container):
         self.viewer.add_labels(new_seg_stack, name="segmentation")
         self.viewer.layers["segmentation"].visible = self.seg_visible
 
+        self.viewer.layers.selection.update({self.viewer.layers[-1]})
+        self.viewer.layers[-1].mouse_drag_callbacks.append(self.click_callback)
+
     def next_cell(self, viewer: Viewer):
         write_cells_to_json(self.replication_cells, self.replication_cell_loc)
         self.cell_idx = min(self.cell_idx + 1, len(self.cell_lineages) - 1)
@@ -347,7 +358,7 @@ class FociPicking(MM3Container):
                 face_color=TRANSPARENT,
                 edge_width=3,
             )
-
+        
     def vis_initiations(self):
         if "initiations" in self.viewer.layers:
             self.viewer.layers.remove("initiations")
@@ -532,3 +543,21 @@ class FociPicking(MM3Container):
     def set_cell_json(self):
         self.cell_json_loc = self.set_cell_json_widget.value
         self.update_lineages(Cells(read_cells_from_json(self.cell_json_loc)))
+
+    def click_callback(self, layer, event):
+        # left click => initiation
+        if event.button == 1:
+            self.mark_initiation(self.viewer)
+        # middle click => delete current
+        if event.button == 3:
+            self.remove_initiation(self.viewer)
+            self.remove_termination(self.viewer)
+        # right click => termination
+        if event.button == 2:
+            self.mark_termination(self.viewer)
+
+    def set_cell_idx(self):
+        write_cells_to_json(self.replication_cells, self.replication_cell_loc)
+        self.cell_idx = self.cell_idx_widget.value - 1
+        self.update_cell_info()
+        self.update_preview()
