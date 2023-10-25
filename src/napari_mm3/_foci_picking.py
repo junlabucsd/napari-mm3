@@ -314,6 +314,7 @@ class FociPicking(MM3Container):
 
         self.viewer.layers.selection.update({self.viewer.layers[-1]})
         self.viewer.layers[-1].mouse_drag_callbacks.append(self.click_callback)
+        self.viewer.layers[-1].mouse_double_click_callbacks.append(self.click_callback)
 
     def next_cell(self, viewer: Viewer):
         write_cells_to_json(self.replication_cells, self.replication_cell_loc)
@@ -545,6 +546,16 @@ class FociPicking(MM3Container):
         self.update_lineages(Cells(read_cells_from_json(self.cell_json_loc)))
 
     def click_callback(self, layer, event):
+        coords = self.viewer.cursor.position
+        y_coord = round(coords[1])
+        timestamp = (
+            round(coords[2] // (self.crop_right + 1 - self.crop_left)) + self.start
+        )
+        if (timestamp < 0) or (y_coord < 0):
+            return
+        if (timestamp > self.stop) or (y_coord > self.im_height):
+            return
+
         # left click => initiation
         if event.button == 1:
             self.mark_initiation(self.viewer)
