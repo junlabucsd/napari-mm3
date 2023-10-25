@@ -251,6 +251,7 @@ class FociPicking(MM3Container):
         cur_step[0] = 1
         self.viewer.dims.current_step = tuple(cur_step)
         self.viewer.layers.selection.clear()
+        self.viewer.layers["image"].reset_contrast_limits()
 
     def vis_seg_stack(self):
         seg_stack = load_seg_stack(
