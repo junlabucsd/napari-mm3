@@ -161,13 +161,12 @@ class FociPicking(MM3Container):
         self.viewer.text_overlay.visible = True
         self.viewer.text_overlay.color = "white"
 
-        self.viewer.bind_key("q", self.mark_initiation)
-        self.viewer.bind_key("w", self.mark_termination)
         self.viewer.bind_key("e", self.next_cell)
         self.viewer.bind_key("r", self.prev_cell)
         self.viewer.bind_key("a", self.remove_termination)
         self.viewer.bind_key("s", self.skip)
         self.viewer.bind_key("d", self.remove_initiation)
+        self.viewer.bind_key("q", self.toggle_seg_visibility)
         self.update_preview()
 
     def update_cell_info(self):
@@ -577,3 +576,7 @@ class FociPicking(MM3Container):
         self.update_cell_info()
         self.update_preview()
 
+    def toggle_seg_visibility(self, viewer):
+        if "segmentation" in self.viewer.layers:
+            self.viewer.layers["segmentation"].visible = not self.viewer.layers["segmentation"].visible
+ 
