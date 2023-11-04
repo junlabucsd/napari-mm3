@@ -119,7 +119,7 @@ class FociPicking(MM3Container):
         self.im_height = stack.shape[1]
         self.crop_left = 0
         self.crop_right = stack.shape[2] - 1
-        self.cell_json_loc = self.analysis_folder / "cell_data" / "all_cells.json"
+        self.cell_json_loc = self.analysis_folder / "cell_data" / "complete_cells_filtered.json"
         self.set_cell_json_widget = FileEdit(
             label="cell json", value=self.cell_json_loc
         )
