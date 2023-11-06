@@ -64,110 +64,38 @@ class FociPicking(MM3Container):
     """
     Note to reader:
     This is just *barely* illegible. If you find yourself here, please do a bit of cleanup work!
+
+    Ok, goal here is to make this load only AFTER a cells file is specified. 
+    This implies two states:
+    1. Before specified
+    2. After specified.
     """
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
-        self.experiment_name_widget.hide()
-        self.experiment_name = "20220331_ALO7931_ALO7918_ABT"
+        self.experiment_name_widget.value = "20220331_ALO7931_ALO7918_ABT"
         self.load_recent_widget.hide()
         self.run_widget.hide()
-        self.viewer.grid.enabled = False
 
-        # load a list of all complete cells.
-        self.replication_cell_loc = (
-            self.analysis_folder / "cell_data" / "replication_cells.json"
-        )
         self.cell_file_loc = self.analysis_folder / "cell_data" / "all_cells.json"
-
-        self.seg_visible = True
-        self.replication_cells = {}
-        # pull in all cells
-        self.all_cells = Cells(read_cells_from_json(self.cell_file_loc))
-        if self.replication_cell_loc.exists():
-            # pull in all cells with initiations
-            self.replication_cells = Cells(
-                read_cells_from_json(self.replication_cell_loc)
-            )
-            for cell_id, cell in self.replication_cells.items():
-                self.all_cells[cell_id] = cell
-
-        self.num_generations = 2
-        complete_cells = self.all_cells.find_complete_cells()
-        specs = load_specs(self.analysis_folder)
-        self.mapping = self.all_cells.gen_label_to_cell_mapping(specs)
-        self.mother_cells = {}
-        for cell_id in complete_cells:
-            if complete_cells[cell_id].birth_label == 1:
-                self.mother_cells[cell_id] = complete_cells[cell_id]
-
-        cell_lineage_iter = cell_lineage_filter(
-            complete_cell_ids=self.mother_cells.keys(),
-            all_cells=self.all_cells,
-            generations=self.num_generations,
+        self.set_cell_file_widget = FileEdit(
+            label="all cells (json)", value=self.cell_file_loc
         )
-        self.cell_lineages = list(cell_lineage_iter)
-        self.cell_idx = 0
-        self.cell_label = 1
-        self.update_cell_info()
-        stack = load_subtracted_stack(
-            self.analysis_folder,
-            self.experiment_name,
-            self.fov_id,
-            self.peak_id,
-            "sub_c1",
-        )
-        self.im_height = stack.shape[1]
-        self.crop_left = 0
-        self.crop_right = stack.shape[2] - 1
-        self.cell_json_loc = self.analysis_folder / "cell_data" / "complete_cells_filtered.json"
+        self.append(self.set_cell_file_widget)
+        self.set_cell_file_widget.changed.connect(self.set_cell_file)
+        self.set_cell_file()
+
+        self.cell_json_loc = self.analysis_folder / "cell_data" / "complete_cells.json"
         self.set_cell_json_widget = FileEdit(
-            label="cell json", value=self.cell_json_loc
+            label="cells to analyze (json)", value=self.cell_json_loc
         )
-        self.crop_left_widget = SpinBox(
-            label="left_crop", min=0, max=self.crop_right, value=self.crop_left
-        )
-        self.crop_right_widget = SpinBox(
-            label="right_crop", min=0, max=self.crop_right, value=self.crop_right
-        )
-        self.cell_generations_widget = SpinBox(
-            label="generations", min=1, max=5, value=self.num_generations
-        )
-        self.jump_to_cell_id_widget = LineEdit(
-            label="skip_to_cell_id"
-        )
-        self.cell_label_widget = SpinBox(label="cell_label", min=1, max=5, value=1)
-        self.save_to_matlab_widget = PushButton(label="save_to_matlab")
-
         self.append(self.set_cell_json_widget)
-        self.append(self.crop_left_widget)
-        self.append(self.crop_right_widget)
-        self.append(self.cell_generations_widget)
-        self.append(self.cell_label_widget)
-        self.append(self.jump_to_cell_id_widget)
-        self.append(self.save_to_matlab_widget)
-
         self.set_cell_json_widget.changed.connect(self.set_cell_json)
-        self.crop_left_widget.changed.connect(self.set_crop_left)
-        self.crop_right_widget.changed.connect(self.set_crop_right)
-        self.cell_generations_widget.changed.connect(self.set_cell_generations)
-        self.cell_label_widget.changed.connect(self.cell_label_changed)
-        self.save_to_matlab_widget.changed.connect(self.save_to_matlab)
-        self.jump_to_cell_id_widget.changed.connect(self.jump_to_cell_id)
+        self.set_cell_json()
 
-        self.viewer.text_overlay.text = (
-            f"Cell idx: {self.cell_idx} / {len(self.cell_lineages)}\n"
-            f"Cell ID: {self.cur_cell_id}"
-        )
-        self.viewer.text_overlay.visible = True
-        self.viewer.text_overlay.color = "white"
-
-        self.viewer.bind_key("e", self.next_cell)
-        self.viewer.bind_key("r", self.prev_cell)
-        self.viewer.bind_key("a", self.remove_termination)
-        self.viewer.bind_key("s", self.skip)
-        self.viewer.bind_key("d", self.remove_initiation)
-        self.viewer.bind_key("q", self.toggle_seg_visibility)
-        self.update_preview()
+        self.loaded_preview = False
+        self.load_preview_widget = PushButton(label="load interactive")
+        self.append(self.load_preview_widget)
+        self.load_preview_widget.changed.connect(self.load_preview)
 
     def update_cell_info(self):
         """Relies on: self.cell_lineages, self.cell_idx, self.all_cells"""
@@ -540,10 +468,6 @@ class FociPicking(MM3Container):
         self.cell_label = self.cell_label_widget.value
         self.update_lineages(Cells(read_cells_from_json(self.cell_json_loc)))
 
-    def set_cell_json(self):
-        self.cell_json_loc = self.set_cell_json_widget.value
-        self.update_lineages(Cells(read_cells_from_json(self.cell_json_loc)))
-
     def click_callback(self, layer, event):
         coords = self.viewer.cursor.position
         y_coord = round(coords[1])
@@ -576,7 +500,112 @@ class FociPicking(MM3Container):
         self.update_cell_info()
         self.update_preview()
 
+    def load_preview(self):
+        if self.loaded_preview:
+            for i in range(6):
+                self.pop()
+        else:
+            self.viewer.bind_key("e", self.next_cell)
+            self.viewer.bind_key("r", self.prev_cell)
+            self.viewer.bind_key("a", self.remove_termination)
+            self.viewer.bind_key("s", self.skip)
+            self.viewer.bind_key("d", self.remove_initiation)
+            self.viewer.bind_key("q", self.toggle_seg_visibility)
+
+        self.loaded_preview = True
+        self.viewer.grid.enabled = False
+        self.all_cells = Cells(read_cells_from_json(self.cell_file_loc))
+        # load a list of all complete cells.
+        self.replication_cell_loc = (
+            self.analysis_folder / "cell_data" / "replication_cells.json"
+        )
+
+        self.seg_visible = True
+        self.replication_cells = {}
+        # pull in all cells
+        if self.replication_cell_loc.exists():
+            # pull in all cells with initiations
+            self.replication_cells = Cells(
+                read_cells_from_json(self.replication_cell_loc)
+            )
+            for cell_id, cell in self.replication_cells.items():
+                self.all_cells[cell_id] = cell
+
+        self.num_generations = 2
+        json_cells = Cells(read_cells_from_json(self.cell_json_loc))
+        specs = load_specs(self.analysis_folder)
+        self.mapping = self.all_cells.gen_label_to_cell_mapping(specs)
+
+        self.mother_cells = {}
+        for cell_id in json_cells:
+            if json_cells[cell_id].birth_label == 1:
+                self.mother_cells[cell_id] = json_cells[cell_id]
+
+        cell_lineage_iter = cell_lineage_filter(
+            complete_cell_ids=self.mother_cells.keys(),
+            all_cells=self.all_cells,
+            generations=self.num_generations,
+        )
+        self.cell_lineages = list(cell_lineage_iter)
+
+        self.cell_idx = 0
+        self.cell_label = 1
+        self.update_cell_info()
+        stack = load_subtracted_stack(
+            self.analysis_folder,
+            self.experiment_name,
+            self.fov_id,
+            self.peak_id,
+            "sub_c1",
+        )
+        self.im_height = stack.shape[1]
+        self.crop_left = 0
+        self.crop_right = stack.shape[2] - 1
+
+        self.crop_left_widget = SpinBox(
+            label="left_crop", min=0, max=self.crop_right, value=self.crop_left
+        )
+        self.crop_right_widget = SpinBox(
+            label="right_crop", min=0, max=self.crop_right, value=self.crop_right
+        )
+        self.cell_generations_widget = SpinBox(
+            label="generations", min=1, max=5, value=self.num_generations
+        )
+        self.jump_to_cell_id_widget = LineEdit(
+            label="skip_to_cell_id"
+        )
+        self.cell_label_widget = SpinBox(label="cell_label", min=1, max=5, value=1)
+        self.save_to_matlab_widget = PushButton(label="save_to_matlab")
+
+        self.append(self.crop_left_widget)
+        self.append(self.crop_right_widget)
+        self.append(self.cell_generations_widget)
+        self.append(self.cell_label_widget)
+        self.append(self.jump_to_cell_id_widget)
+        self.append(self.save_to_matlab_widget)
+
+        self.crop_left_widget.changed.connect(self.set_crop_left)
+        self.crop_right_widget.changed.connect(self.set_crop_right)
+        self.cell_generations_widget.changed.connect(self.set_cell_generations)
+        self.cell_label_widget.changed.connect(self.cell_label_changed)
+        self.save_to_matlab_widget.changed.connect(self.save_to_matlab)
+        self.jump_to_cell_id_widget.changed.connect(self.jump_to_cell_id)
+
+        self.viewer.text_overlay.text = (
+            f"Cell idx: {self.cell_idx} / {len(self.cell_lineages)}\n"
+            f"Cell ID: {self.cur_cell_id}"
+        )
+        self.viewer.text_overlay.visible = True
+        self.viewer.text_overlay.color = "white"
+
+        self.update_preview()
+
     def toggle_seg_visibility(self, viewer):
         if "segmentation" in self.viewer.layers:
             self.viewer.layers["segmentation"].visible = not self.viewer.layers["segmentation"].visible
  
+    def set_cell_file(self):
+        self.cell_file_loc = self.set_cell_file_widget.value
+
+    def set_cell_json(self):
+        self.cell_json_loc = self.set_cell_json_widget.value
