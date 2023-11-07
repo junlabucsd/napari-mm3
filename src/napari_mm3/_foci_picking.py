@@ -10,7 +10,7 @@ from .utils import (
 from magicgui.widgets import SpinBox, PushButton, FileEdit, LineEdit
 from ._deriving_widgets import (
     MM3Container,
-    load_subtracted_stack,
+    load_unmodified_stack,
     load_seg_stack,
     load_specs,
     SegmentationMode,
@@ -126,19 +126,19 @@ class FociPicking(MM3Container):
         print(f"showing cell {self.cur_cell_id}")
 
         # To do this properly, load all possible stacks.
-        stack = load_subtracted_stack(
+        stack = load_unmodified_stack(
             self.analysis_folder,
             self.experiment_name,
             self.fov_id,
             self.peak_id,
-            "sub_c1",
+            "c1",
         )
-        stack_fl = load_subtracted_stack(
+        stack_fl = load_unmodified_stack(
             self.analysis_folder,
             self.experiment_name,
             self.fov_id,
             self.peak_id,
-            "sub_c2",
+            "c2",
         )
         stack_filtered = stack[
             self.start - 1:self.stop, :, self.crop_left:self.crop_right + 1
@@ -551,12 +551,12 @@ class FociPicking(MM3Container):
         self.cell_idx = 0
         self.cell_label = 1
         self.update_cell_info()
-        stack = load_subtracted_stack(
+        stack = load_unmodified_stack(
             self.analysis_folder,
             self.experiment_name,
             self.fov_id,
             self.peak_id,
-            "sub_c1",
+            "c1",
         )
         self.im_height = stack.shape[1]
         self.crop_left = 0
