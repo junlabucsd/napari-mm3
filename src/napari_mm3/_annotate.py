@@ -165,6 +165,10 @@ class Annotate(MM3Container):
 
         self.mask_src = self.mask_source_widget.value
         self.phase_plane = self.plane_picker_widget.value
+
+        # set keyboard shortcuts
+        self.viewer.bind_key("s", self.save_out)
+
         self.set_data_source()
         self.load_data()
 
@@ -204,7 +208,7 @@ class Annotate(MM3Container):
         self.mask_src = self.mask_source_widget.value
         self.load_data()
 
-    def save_out(self):
+    def save_out(self, viewer):
         # save mask and raw image
         self.save_out_mask()
         self.save_out_image()
