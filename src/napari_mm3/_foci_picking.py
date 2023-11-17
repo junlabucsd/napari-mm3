@@ -47,15 +47,15 @@ def get_cell_lineage(cell_id: str, cells: Cells, cell_gens):
         last_cell_info = cells[last_cell_id]
         parent_id = last_cell_info.parent
         if parent_id is None:
-            return None
+            return cell_lineage
         cell_lineage.append(parent_id)
     return cell_lineage
 
 
-def cell_lineage_filter(complete_cell_ids: list, all_cells: Cells, generations):
+def cell_lineage_filter(complete_cell_ids: list, all_cells: Cells, generations, min_gens):
     for cell_id in complete_cell_ids:
         lineage = get_cell_lineage(cell_id, all_cells, cell_gens=generations)
-        if lineage is None:
+        if len(set(lineage)) < min_gens:
             continue
         yield cell_id, lineage
 
@@ -393,10 +393,12 @@ class FociPicking(MM3Container):
 
     def set_cell_generations(self):
         self.num_generations = self.cell_generations_widget.value
+        self.min_generations = self.cell_min_generations_widget.value
         cell_lineage_iter = cell_lineage_filter(
             complete_cell_ids=self.mother_cells.keys(),
             all_cells=self.all_cells,
             generations=self.num_generations,
+            min_gens=self.min_generations
         )
         self.cell_lineages = list(cell_lineage_iter)
         self.cell_idx = 0
@@ -458,6 +460,7 @@ class FociPicking(MM3Container):
             complete_cell_ids=self.mother_cells.keys(),
             all_cells=self.all_cells,
             generations=self.num_generations,
+            min_gens=self.min_generations,
         )
         self.cell_lineages = list(cell_lineage_iter)
         self.cell_idx = 0
@@ -532,6 +535,7 @@ class FociPicking(MM3Container):
                 self.all_cells[cell_id] = cell
 
         self.num_generations = 2
+        self.min_generations = self.num_generations
         json_cells = Cells(read_cells_from_json(self.cell_json_loc))
         specs = load_specs(self.analysis_folder)
         self.mapping = self.all_cells.gen_label_to_cell_mapping(specs)
@@ -545,6 +549,7 @@ class FociPicking(MM3Container):
             complete_cell_ids=self.mother_cells.keys(),
             all_cells=self.all_cells,
             generations=self.num_generations,
+            min_gens=self.min_generations,
         )
         self.cell_lineages = list(cell_lineage_iter)
 
@@ -568,6 +573,9 @@ class FociPicking(MM3Container):
         self.crop_right_widget = SpinBox(
             label="right_crop", min=0, max=self.crop_right, value=self.crop_right
         )
+        self.cell_min_generations_widget = SpinBox(
+            label="min_generations", min=1, max=5, value=self.num_generations
+        )
         self.cell_generations_widget = SpinBox(
             label="generations", min=1, max=5, value=self.num_generations
         )
@@ -579,6 +587,7 @@ class FociPicking(MM3Container):
 
         self.append(self.crop_left_widget)
         self.append(self.crop_right_widget)
+        self.append(self.cell_min_generations_widget)
         self.append(self.cell_generations_widget)
         self.append(self.cell_label_widget)
         self.append(self.jump_to_cell_id_widget)
@@ -586,6 +595,7 @@ class FociPicking(MM3Container):
 
         self.crop_left_widget.changed.connect(self.set_crop_left)
         self.crop_right_widget.changed.connect(self.set_crop_right)
+        self.cell_min_generations_widget.changed.connect(self.set_cell_generations)
         self.cell_generations_widget.changed.connect(self.set_cell_generations)
         self.cell_label_widget.changed.connect(self.cell_label_changed)
         self.save_to_matlab_widget.changed.connect(self.save_to_matlab)
