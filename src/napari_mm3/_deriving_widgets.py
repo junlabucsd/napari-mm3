@@ -443,7 +443,11 @@ class MM3Container(Container):
         name == 'widget_name'.
         Apply the saved parameters to the currently extant widgets.
         """
-        widget_name = self.parent.name
+        try:
+            widget_name = self.parent.name
+        except:
+            warning('Could not extract widget name to save settings.')
+            widget_name = ''
         history = []
         if Path("./history.json").exists():
             with open("./history.json", "r") as h:
@@ -467,6 +471,7 @@ class MM3Container(Container):
 
         with open("./history.json", "w") as h:
             json.dump(history, h, indent=2)
+
 
 
 class TimeRangeSelector(RangeEdit):
