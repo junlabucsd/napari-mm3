@@ -908,7 +908,7 @@ def make_time_table(params, analyzed_imgs):
         # init dictionary for specific times per FOV
         if idata["fov"] not in time_table:
             time_table[idata["fov"]] = {}
-
+            
     for iname, idata in six.iteritems(analyzed_imgs):
         if params["use_jd"]:
             # convert jd time to elapsed time in seconds
@@ -917,6 +917,7 @@ def make_time_table(params, analyzed_imgs):
                     (idata["jd"] - first_time) * 24 * 60 * 60, decimals=0
                 ).astype("uint32")
             except:
+                information('Failed to extract time from metadata. Using user-specified interval.')
                 t_in_seconds = np.around(
                     (idata["t"] - first_time) * params["seconds_per_time_index"],
                     decimals=0,
@@ -1566,7 +1567,8 @@ class Compile(MM3Container):
             "cell_dir": self.analysis_folder / "cell_data",
             "track_dir": self.analysis_folder / "tracking",
             # use jd time in image metadata to make time table. Set to false if no jd time
-            "use_jd": self.image_source in {"nd2", "TIFF_from_elements"},
+            # "use_jd": self.image_source in {"nd2", "TIFF_from_elements"},
+            "use_jd": False, # disabling for now because of bug with Elements output formatting
         }
         self.viewer.window._status_bar._toggle_activity_dock(True)
 
