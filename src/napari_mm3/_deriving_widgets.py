@@ -416,10 +416,13 @@ class MM3Container(Container):
             return {}
         # get the most recent run of the relevant widget.
         old_params = {}
-        for historic_widget_name, _, params in reversed(history):
-            if historic_widget_name == self.parent.name:
-                old_params = params
-                break
+        try:
+            for historic_widget_name, _, params in reversed(history):
+                if historic_widget_name == self.parent.name:
+                    old_params = params
+                    break
+        except AttributeError:
+            pass
 
         return old_params
 
@@ -445,7 +448,7 @@ class MM3Container(Container):
         """
         try:
             widget_name = self.parent.name
-        except:
+        except AttributeError:
             warning('Could not extract widget name to save settings.')
             widget_name = ''
         history = []
