@@ -422,8 +422,9 @@ class Foci(MM3Container):
             self.segmentation_method,
             str(self.cellfile),
         )
+        new_file_name = self.cellfile.name[:-5] + "_foci.json"
         write_cells_to_json(
-            computed_cells, self.analysis_folder / "cell_data" / "all_cells_foci.json"
+            computed_cells, self.cellfile.parent / new_file_name
         )
 
     def load_preview_cells(self):
