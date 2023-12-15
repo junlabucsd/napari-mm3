@@ -78,9 +78,9 @@ def compute_blob_signal(img: np.ndarray, blob):
     col = np.rint(blob[1]).astype(np.int32)
     radius = np.rint(blob[2]).astype(np.int32)
     row_min = row - radius
-    row_max = row + radius + 1
+    row_max = row + radius
     col_min = col - radius
-    col_max = col + radius + 1
+    col_max = col + radius
     img_box = img[row_min:row_max, col_min:col_max]
     # in this case, SNR is arbitrary-enough units anyway,
     # so this doesn't need to actually mean anything.
@@ -96,9 +96,9 @@ def compute_cell_noise(cell_region: np.ndarray, img_foci: np.ndarray, blob):
     col = np.rint(blob[1]).astype(np.int32)
     radius = np.rint(blob[2]).astype(np.int32)
     row_min = row - radius
-    row_max = row + radius + 1
+    row_max = row + radius
     col_min = col - radius
-    col_max = col + radius + 1
+    col_max = col + radius
     # Turn the foci into a blank.
     img_foci_masked[row_min:row_max, col_min:col_max] = np.nan
     cell_fl_std = np.nanstd(img_foci_masked)
@@ -112,8 +112,6 @@ def find_peak_blobs(peak: np.ndarray, foci_params: FociParams):
     for t, img in enumerate(peak):
         blobs = find_img_blobs(img, foci_params)
         all_blobs += list(blobs)
-        if t == 195:
-            print(blobs)
         blob_times += len(blobs) * [t]
     all_blobs = np.array(all_blobs)
     return blob_times, all_blobs
@@ -194,8 +192,6 @@ def foci_preview(
 
 # find foci using a difference of gaussians method.
 # the idea of this one is to be run on a single preview
-
-
 def gen_image_kymo(stack: np.ndarray, n_steps=50):
     image_kymo = []
     for i in range(stack.shape[0] - n_steps):
