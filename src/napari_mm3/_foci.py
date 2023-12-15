@@ -199,7 +199,7 @@ def foci_preview(
 def gen_image_kymo(stack: np.ndarray, n_steps=50):
     image_kymo = []
     for i in range(stack.shape[0] - n_steps):
-        sub_stack_fl2 = stack[i: i + n_steps, :, :]
+        sub_stack_fl2 = stack[i : i + n_steps, :, :]
         mini_kymo = np.hstack(sub_stack_fl2)
         image_kymo.append(mini_kymo)
     return np.array(image_kymo)
@@ -422,9 +422,7 @@ class Foci(MM3Container):
             str(self.cellfile),
         )
         new_file_name = self.cellfile.name[:-5] + "_foci.json"
-        write_cells_to_json(
-            computed_cells, self.cellfile.parent / new_file_name
-        )
+        write_cells_to_json(computed_cells, self.cellfile.parent / new_file_name)
         print("Foci detection complete.")
 
     def load_preview_cells(self):
@@ -502,7 +500,13 @@ class Foci(MM3Container):
         cells_by_peak = organize_cells_by_channel(self.cells, specs)
         cells_visible = cells_by_peak[self.preview_fov][self.preview_peak]
         # only going to show cells that were lineage tracked.
-        seg_stack = load_seg_stack(self.analysis_folder, self.experiment_name, self.preview_fov, self.preview_peak, self.segmentation_method)
+        seg_stack = load_seg_stack(
+            self.analysis_folder,
+            self.experiment_name,
+            self.preview_fov,
+            self.preview_peak,
+            self.segmentation_method,
+        )
         cell_filter_stack = [[] for _ in range(len(seg_stack))]
         # check about frame 0.
         for cell_id, cell in cells_visible.items():
