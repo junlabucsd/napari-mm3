@@ -287,7 +287,6 @@ def foci(
             continue
 
         for peak_id, cells_of_peak in cells_by_peak[fov_id].items():
-            # TODO: Finish this.
             if len(cells_of_peak) == 0:
                 return
 
@@ -426,6 +425,7 @@ class Foci(MM3Container):
         write_cells_to_json(
             computed_cells, self.cellfile.parent / new_file_name
         )
+        print("Foci detection complete.")
 
     def load_preview_cells(self):
         cells = read_cells_from_json(str(self.cellfile))
