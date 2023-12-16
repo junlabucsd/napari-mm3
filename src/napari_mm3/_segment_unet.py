@@ -392,13 +392,6 @@ def segment_fov_unet(
         if spec == 1:
             break  # just break out with the current peak_id
 
-    # img_stack = load_stack_params(params, fov_id, peak_id, postfix=color)
-    img_stack = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix = color)
-    img_height = img_stack.shape[1]
-    img_width = img_stack.shape[2]
-
-    pad_dict = get_pad_distances(unet_shape, img_height, img_width)
-
     # dermine how many channels we have to analyze for this FOV
     ana_peak_ids = []
     for peak_id, spec in six.iteritems(specs[fov_id]):
@@ -407,7 +400,7 @@ def segment_fov_unet(
     ana_peak_ids.sort()  # sort for repeatability
 
     segment_cells_unet(
-        ana_peak_ids, fov_id, pad_dict, unet_shape, model, params, view_result
+        ana_peak_ids, fov_id, unet_shape, model, params, view_result
     )
 
     information("Finished segmentation for FOV {}.".format(fov_id))
@@ -416,7 +409,7 @@ def segment_fov_unet(
 
 
 def segment_cells_unet(
-    ana_peak_ids, fov_id, pad_dict, unet_shape, model, params, view_result: bool = False
+    ana_peak_ids, fov_id, unet_shape, model, params, view_result: bool = False
 ):
     """
     Segments cells using U-net model.
@@ -440,6 +433,11 @@ def segment_cells_unet(
         #     params, fov_id, peak_id, postfix=params["phase_plane"]
         # )
         img_stack = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, params["phase_plane"])
+
+        img_height = img_stack.shape[1]
+        img_width = img_stack.shape[2]
+
+        pad_dict = get_pad_distances(unet_shape, img_height, img_width)
 
         # do the segmentation
         predictions = segment_peak_unet(img_stack, unet_shape, pad_dict, model, params)
