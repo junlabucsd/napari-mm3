@@ -35,6 +35,9 @@ contributions:
   - id: napari-mm3.Foci
     title: Detect and track foci
     python_name: napari_mm3._foci:Foci
+  - id: napari-mm3.FociPicking
+    title: Foci picking
+    python_name: napari_mm3._foci_picking:FociPicking
   # - id: napari-mm3.DebugOtsu
   #   title: Performs Mother Machine analysis
   #   python_name: napari_mm3._function:DebugOtsu
@@ -71,6 +74,9 @@ contributions:
     autogenerate: False
   - command: napari-mm3.Foci
     display_name: Foci
+    autogenerate: False
+  - command: napari-mm3.FociPicking
+    display_name: FociPicking
     autogenerate: False
   # - command: napari-mm3.DebugOtsu
   #   display_name: DebugOtsu

@@ -149,8 +149,11 @@ def get_valid_planes(TIFF_folder):
         A list of strings indicating the valid imaging planes
     """
     found_files = TIFF_folder.glob("*.tif")
+    filepaths = [f for f in found_files]
+    if len(filepaths) == 0:
+        raise ValueError(f"No TIFF files found in '{TIFF_folder}'.")
     # pull out first tiff to extract dims
-    filepath = [f for f in found_files][0]
+    filepath = filepaths[0]
     test_file = tiff.imread(filepath)
     dim = test_file.ndim
     if dim == 3:
@@ -181,11 +184,18 @@ def get_valid_fovs_folder(TIFF_folder):
 
 
 def get_valid_times(TIFF_folder):
-    found_files = TIFF_folder.glob("*.tif")
+    found_files = list(TIFF_folder.glob("*.tif"))
     filenames = [f.name for f in found_files]
+    if len(filenames) == 0:
+        raise ValueError(f"No files found in '{TIFF_folder}'")
     get_time_regex = re.compile(r"t(\d+)", re.IGNORECASE)
-    time_strings = set(get_time_regex.findall(filename)[0] for filename in filenames)
-    times = list(map(int, sorted(time_strings)))
+
+    try:
+        time_strings = set(get_time_regex.findall(filename)[0] for filename in filenames)
+        times = list(map(int, sorted(time_strings)))
+    except IndexError:
+        img = load_tiff(found_files[0])
+        return (1, img.shape[0])
     return (min(times), max(times))
 
 
@@ -332,7 +342,7 @@ class MM3Container(Container):
 
     def _load_from_data_conditional(self):
         if self.validate_folders and not self._validate_folders():
-            print(f"A folder validation was requested but not successful.\n")
+            print("A folder validation was requested but not successful.\n")
             print("Limited traceback:")
             traceback.print_stack(limit=1)
             return
@@ -340,7 +350,7 @@ class MM3Container(Container):
             self.create_widgets()
             self.append(self.run_widget)
             return
-        print(f"Failed to find a key piece of info:")
+        print("Failed to find a key piece of info:")
         print(f"planes found: {self.found_planes}")
         print(f"fovs found: {self.found_fovs}")
         print(f"times found: {self.found_times}")
@@ -391,18 +401,28 @@ class MM3Container(Container):
         try:
             self.valid_times = get_valid_times(self.TIFF_folder)
             self.found_times = True
-        except:
-            self.found_times = False
+        except ValueError:
+            try:
+                self.valid_times = get_valid_times(self.analysis_folder / "subtracted")
+                self.found_times = True
+            except ValueError:
+                self.found_times = False
+
+
 
     def _set_valid_planes(self):
         try:
             self.valid_planes = get_valid_planes(self.TIFF_folder)
             self.found_planes = True
-        except FileNotFoundError:
-            self.found_planes = False
+        except ValueError:
+            try:
+                self.valid_planes = get_valid_planes(self.analysis_folder / "subtracted")
+                self.found_planes = True
+            except ValueError:
+                self.found_planes = False
 
     def _validate_folders(self):
-        return self.TIFF_folder.exists() and self.analysis_folder.exists()
+        return self.TIFF_folder.exists() or self.analysis_folder.exists()
 
     def _get_most_recent_run(self):
         """

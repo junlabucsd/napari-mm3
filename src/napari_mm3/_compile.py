@@ -20,7 +20,7 @@ from multiprocessing import Pool
 from pathlib import Path
 from pprint import pprint
 from scipy.signal import find_peaks_cwt
-from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, ComboBox
+from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, ComboBox, CheckBox
 from napari import Viewer
 from napari.utils import progress
 from ._deriving_widgets import (
@@ -1416,11 +1416,13 @@ def compile(params):
             information("Could not load cross-correlations.")
 
 
-def load_fov(image_directory, fov_id):
+def load_fov(image_directory, fov_id, filter_str = ""):
     information("getting files")
     found_files = image_directory.glob("*.tif")
     file_string = re.compile(f"xy{fov_id:02d}.*.tif", re.IGNORECASE)
     found_files = [f.name for f in found_files if re.search(file_string, f.name)]
+    if filter_str:
+        found_files = [f for f in found_files if filter_str in f]
 
     information("sorting files")
     found_files = sorted(found_files)  # should sort by timepoint
@@ -1453,6 +1455,10 @@ class Compile(MM3Container):
         self.image_source_widget = ComboBox(
             label="image source",
             choices=["nd2", "BioFormats / other", "TIFF_from_elements"],
+        )
+        self.split_channels_widget = CheckBox(
+            label="separate channel files",
+            tooltip="use this setting if you have separate tiffs for channel1/channel2. Leave unchecked if not, or if you have only 1 channel."
         )
         self.phase_plane_widget = PlanePicker(
             self.valid_planes, label="phase plane channel"
@@ -1498,6 +1504,7 @@ class Compile(MM3Container):
 
         self.fov_widget.connect_callback(self.set_fovs)
         self.image_source_widget.changed.connect(self.set_image_source)
+        self.split_channels_widget.changed.connect(self.set_split_channels)
         self.phase_plane_widget.changed.connect(self.set_phase_plane)
         self.time_range_widget.changed.connect(self.set_range)
         self.seconds_per_frame_widget.changed.connect(self.set_seconds_per_frame)
@@ -1508,6 +1515,7 @@ class Compile(MM3Container):
 
         self.append(self.fov_widget)
         self.append(self.image_source_widget)
+        self.append(self.split_channels_widget)
         self.append(self.phase_plane_widget)
         self.append(self.time_range_widget)
         self.append(self.seconds_per_frame_widget)
@@ -1517,6 +1525,7 @@ class Compile(MM3Container):
         self.append(self.inspect_widget)
 
         self.set_image_source()
+        self.set_split_channels()
         self.set_phase_plane()
         self.set_fovs(self.valid_fovs)
         self.set_range()
@@ -1578,7 +1587,10 @@ class Compile(MM3Container):
     def display_single_fov(self):
         self.viewer.layers.clear()
         self.viewer.text_overlay.visible = False
-        image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
+        if self.split_channels:
+            image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs), filter_str = "C1")
+        else:
+            image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
         images = self.viewer.add_image(np.array(image_fov_stack))
         self.viewer.dims.current_step = (0, 0)
         images.reset_contrast_limits()
@@ -1662,3 +1674,7 @@ class Compile(MM3Container):
     
     def set_channel_orientation(self):
         self.channel_orientation = self.channel_orientation_widget.value
+
+    def set_split_channels(self):
+        self.split_channels = self.split_channels_widget.value
+        self.display_single_fov()
