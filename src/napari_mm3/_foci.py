@@ -112,7 +112,7 @@ def find_peak_blobs(peak: np.ndarray, foci_params: FociParams):
     for t, img in enumerate(peak):
         blobs = find_img_blobs(img, foci_params)
         all_blobs += list(blobs)
-        blob_times += len(blobs) * [t]
+        blob_times += len(blobs) * [t + 1]
     all_blobs = np.array(all_blobs)
     return blob_times, all_blobs
 
@@ -126,14 +126,14 @@ def assign_blobs_to_cells(
     signal_to_noise: float,
     absolute_locs=False,
 ):
-    # Generate a map that takes in a time and spits out a cell.
+    # Generate a map that takes in a time and spits out a list of cells at that time.
     time_to_cells_map = {}
     for cell_id, cell in cell_dict.items():
-        for time in cell.times:
-            if time - 1 in time_to_cells_map:
-                time_to_cells_map[time - 1].append(cell_id)
+        for time_real in cell.times:
+            if time_real in time_to_cells_map:
+                time_to_cells_map[time_real].append(cell_id)
             else:
-                time_to_cells_map[time - 1] = [cell_id]
+                time_to_cells_map[time_real] = [cell_id]
 
     cell_foci_ys = []
     cell_foci_xs = []
@@ -142,19 +142,21 @@ def assign_blobs_to_cells(
     foci_hs = []
     times = []
     blob_assignments = []
-    for blob, time in zip(blobs, blob_times):
-        if not (time in time_to_cells_map):
+    for blob, time_real in zip(blobs, blob_times):
+        # The fucking time is 1-indexed...
+        time_idx = time_real - 1
+        if not (time_real in time_to_cells_map):
             continue
-        same_time_cells = time_to_cells_map[time]
+        same_time_cells = time_to_cells_map[time_real]
         for cell_id in same_time_cells:
             cell = cell_dict[cell_id]
-            cell_y, cell_x, cell_time = cell.place_in_cell(blob[1], blob[0], time)
+            cell_y, cell_x, cell_time = cell.place_in_cell(blob[1], blob[0], time_real)
             # need a better signal-to-noise definition...
             # Ok -- to test things out, for now remove filtering completely.
             if cell_y is not None:
-                cell_mask = seg_stack[time] == cell.labels[cell_time]
-                noise = compute_cell_noise(cell_mask, img_stack[time], blob)
-                blob_signal = compute_blob_signal(img_stack[time], blob)
+                cell_mask = seg_stack[time_idx] == cell.labels[cell_time]
+                noise = compute_cell_noise(cell_mask, img_stack[time_idx], blob)
+                blob_signal = compute_blob_signal(img_stack[time_idx], blob)
 
                 if blob_signal / noise < signal_to_noise:
                     continue
@@ -166,7 +168,7 @@ def assign_blobs_to_cells(
                 blob_assignments.append(cell.id)
                 foci_ys.append(blob[0])
                 foci_xs.append(blob[1])
-                times.append(time)
+                times.append(time_real)
                 break
 
     if absolute_locs:
@@ -178,7 +180,7 @@ def foci_preview(
     cells: Cells, seg_stack: np.ndarray, img_stack: np.ndarray, foci_params: FociParams
 ):
     blob_times, blobs = find_peak_blobs(img_stack, foci_params)
-    cell_foci_ys, cell_foci_xs, foci_hs, assignments, times = assign_blobs_to_cells(
+    cell_foci_ys, cell_foci_xs, foci_hs, assignments, times_real = assign_blobs_to_cells(
         blobs,
         blob_times,
         cells,
@@ -187,7 +189,8 @@ def foci_preview(
         foci_params.median_ratio,
         absolute_locs=True,
     )
-    return cell_foci_ys, cell_foci_xs, foci_hs, assignments, times
+    time_idx = [time_real - 1 for time_real in times_real]
+    return cell_foci_ys, cell_foci_xs, foci_hs, assignments, time_idx
 
 
 # find foci using a difference of gaussians method.
@@ -232,8 +235,6 @@ def cell_foci(
             cur_cell.disp_l = [[] for _ in cur_cell.times]
             cur_cell.disp_w = [[] for _ in cur_cell.times]
             cur_cell.foci_h = [[] for _ in cur_cell.times]
-        print(len(cur_cell.disp_l))
-        print(cell_time_idx)
         cur_cell.disp_l[cell_time_idx].append(foci_y)
         cur_cell.disp_w[cell_time_idx].append(foci_x)
         cur_cell.foci_h[cell_time_idx].append(foci_h)
@@ -300,9 +301,9 @@ def foci(
                 peak_id=peak_id,
                 seg_mode=seg_method,
             )
-            cell_foci(cells_of_peak, seg_stack, img_stack, foci_params)
 
-            print(f"running foci analysis for peak {peak_id}")
+            print(f"running foci analysis for peak {peak_id} and fov {fov_id}")
+            cell_foci(cells_of_peak, seg_stack, img_stack, foci_params)
 
     return cells
 
