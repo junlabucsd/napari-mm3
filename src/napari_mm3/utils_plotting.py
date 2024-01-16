@@ -45,6 +45,15 @@ def cells2df(Cells_dict, columns = None):
 
     return Cells_df
 
+def cells2dict(Cells):
+    '''
+    Take a dictionary of Cells and returns a dictionary of dictionaries
+    '''
+
+    Cells_dict = {cell_id : vars(cell) for cell_id, cell in six.iteritems(Cells)}
+
+    return Cells_dict
+
 ### Filtering functions ############################################################################
 def find_cells_of_birth_label(Cells, label_num=1):
     '''Return only cells whose starting region label is given.
