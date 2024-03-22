@@ -70,6 +70,45 @@ def get_time(filepath: str) -> Union[np.int_, None]:
         return None
 
 
+def restack_planes(found_files_c1: list, found_files_c2: list, params: dict) -> None:
+    """Check if phase and fluorescence channels are separate tiffs.
+    If so, restack them as one tiff file and save out to TIFF_dir.
+    Move the original files to a new directory TIFF_unstacked.
+
+    Parameters
+    ---------
+    found_files_c1: list of files for 1st imaging plane
+    found_files_c1: list of files for 2nd imaging plane
+
+    Returns
+    ---------
+    None
+    """
+
+    found_files_c1 = sorted(found_files_c1)
+    found_files_c2 = sorted(found_files_c2)
+
+    for f1, f2 in zip(found_files_c1, found_files_c2):
+        information("Merging images " + str(f1) + " and " + str(f2))
+        im1 = tiff.imread(f1)
+        im2 = tiff.imread(f2)
+        im_out = np.stack((im1, im2), axis=0)
+
+        # need to insert regex here to catch variants
+        name_out = re.sub("c*01", "", re.IGNORECASE)
+        # 'minisblack' necessary to ensure that it interprets image as black/white.
+        tiff.imwrite(name_out, im_out, photometric="minisblack")
+
+        ## make a new directory rather than just deleting the old images
+        old_tiff_path = params["TIFF_dir"].parent / "TIFF_unstacked"
+        if not old_tiff_path.exists():
+            old_tiff_path.mkdir()
+            information("Creating directory for original TIFFs")
+        f1.replace(str(f1).replace(str(params["TIFF_dir"]), "TIFF_unstacked"))
+        f2.replace(str(f2).replace(str(params["TIFF_dir"]), "TIFF_unstacked"))
+
+    return
+
 ### Functions for working with TIFF metadata ###
 
 # get params is the major function which processes raw TIFF images
@@ -150,6 +189,57 @@ def get_tif_params(
             "filepath": params["TIFF_dir"] / image_filename,
             "analyze_success": False,
         }
+
+
+def get_tif_params_loop(params: dict, found_files: list) -> dict:
+    """Loop over found files and extract image parameters.
+
+    Parameters
+    ----------
+    params:
+        dictionary of parameters
+    found_files:
+        list of tiff files to analyze.
+
+    Returns
+    --------
+    analyzed_imgs
+        dictionary of image metadata.
+    """
+
+    analyzed_imgs = {}  # stores image metadata
+    # initialize pool for analyzing image metadata
+    pool = Pool(params["num_analyzers"])
+
+    # loop over images and get information
+    for fn in found_files:
+        # get_params gets the image metadata and puts it in analyzed_imgs dictionary
+        # for each file name. True means look for channels
+
+        # This is the non-parallelized version (useful for debug)
+        # analyzed_imgs[fn] = get_tif_params(params,fn, True)
+
+        # # Parallelized
+        analyzed_imgs[fn] = pool.apply_async(get_tif_params, args=(params, fn, True))
+
+    information("Waiting for image analysis pool to be finished.")
+
+    pool.close()  # tells the process nothing more will be added.
+    pool.join()  # blocks script until everything has been processed and workers exit
+
+    information("Image analysis pool finished, getting results.")
+
+    # get results from the pool and put them in a dictionary
+    for fn in analyzed_imgs.keys():
+        result = analyzed_imgs[fn]
+        if result.successful():
+            analyzed_imgs[
+                fn
+            ] = result.get()  # put the metadata in the dict if it's good
+        else:
+            analyzed_imgs[fn] = False  # put a false there if it's bad
+
+    return analyzed_imgs
 
 
 def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
@@ -361,7 +451,13 @@ def channel_xcorr(params: dict, fov_id: int, peak_id: int) -> list:
     # image_data = load_stack_params(
     #    params, fov_id, peak_id, postfix=params["phase_plane"]
     # )
-    image_data = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, params["phase_plane"])
+    image_data = load_unmodified_stack(
+        params["ana_dir"],
+        params["experiment_name"],
+        fov_id,
+        peak_id,
+        params["phase_plane"],
+    )
 
     # if there are more images than number_of_images, use number_of_images images evenly
     # spaced across the range
@@ -381,6 +477,91 @@ def channel_xcorr(params: dict, fov_id: int, peak_id: int) -> list:
         xcorr_array.append(np.max(match_template(first_img, img)))
 
     return xcorr_array
+
+def compute_xcorr(channel_masks: dict, user_spec_fovs: list, params: dict) -> None:
+    """Loop over FOVs and compute time autocorrelation for each channel
+    Calls channel_xcorr
+
+    Parameters
+    ----------
+    channel_masks: list
+        Trap locations relative to FOV
+    user_spec_fovs:
+        FOVs to analyzed
+
+    params: dict
+        dictionary of parameters
+
+    Returns
+    ---------
+    None
+    """
+
+    # a nested dict to hold cross corrs per channel per fov.
+    crosscorrs = {}
+
+    # for each fov find cross correlations (sending to pull)
+    for fov_id in progress(user_spec_fovs):
+        information("Calculating cross correlations for FOV %d." % fov_id)
+
+        # nested dict keys are peak_ids and values are cross correlations
+        crosscorrs[fov_id] = {}
+
+        # initialize pool for analyzing image metadata
+        pool = Pool(params["num_analyzers"])
+
+        # find all peak ids in the current FOV
+        for peak_id in sorted(channel_masks[fov_id].keys()):
+            information("Calculating cross correlations for peak %d." % peak_id)
+
+            # linear loop
+            # crosscorrs[fov_id][peak_id] = channel_xcorr(params, fov_id, peak_id)
+
+            # multiprocessing verion
+            crosscorrs[fov_id][peak_id] = pool.apply_async(
+                channel_xcorr,
+                args=(
+                    params,
+                    fov_id,
+                    peak_id,
+                ),
+            )
+
+        information("Waiting for cross correlation pool to finish for FOV %d." % fov_id)
+
+        pool.close()  # tells the process nothing more will be added.
+        pool.join()  # blocks script until everything has been processed and workers exit
+
+        information("Finished cross correlations for FOV %d." % fov_id)
+
+    # get results from the pool and put the results in the dictionary if succesful
+    for fov_id, peaks in six.iteritems(crosscorrs):
+        for peak_id, result in six.iteritems(peaks):
+            if result.successful():
+                # put the results, with the average, and a guess if the channel
+                # is full into the dictionary
+                crosscorrs[fov_id][peak_id] = {
+                    "ccs": result.get(),
+                    "cc_avg": np.average(result.get()),
+                }
+            else:
+                crosscorrs[fov_id][peak_id] = False  # put a false there if it's bad
+
+    # linear loop for debug
+    # get results from the pool and put the results in the dictionary if succesful
+    # for fov_id, peaks in six.iteritems(crosscorrs):
+    #     for peak_id, result in six.iteritems(peaks):
+    #         crosscorrs[fov_id][peak_id] = {'ccs' : result,
+    #                                            'cc_avg' : np.average(result),
+    #                                            'full' : np.average(result) < params['compile']['channel_picking_threshold']}
+
+    # write cross-correlations to pickle and text
+    information("Writing cross correlations file.")
+    with open(os.path.join(params["ana_dir"], "crosscorrs.pkl"), "wb") as xcorrs_file:
+        pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(os.path.join(params["ana_dir"], "crosscorrs.txt"), "w") as xcorrs_file:
+        pprint(crosscorrs, stream=xcorrs_file)
+    information("Wrote cross correlations files.")
 
 
 ### functions about trimming, padding, and manipulating images
@@ -692,6 +873,20 @@ def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> d
     """
     information("Determining initial channel masks...")
 
+    # only calculate channels masks from images before t_end in case it is specified
+    if t_start:
+        analyzed_imgs = {
+            fn: i_metadata
+            for fn, i_metadata in six.iteritems(analyzed_imgs)
+            if i_metadata["t"] >= t_start
+        }
+    if t_end:
+        analyzed_imgs = {
+            fn: i_metadata
+            for fn, i_metadata in six.iteritems(analyzed_imgs)
+            if i_metadata["t"] <= t_end
+        }
+
     # declare temp variables from yaml parameter dict.
     crop_wp = int(
         params["compile"]["channel_width_pad"] + params["compile"]["channel_width"] / 2
@@ -924,7 +1119,9 @@ def make_time_table(params: dict, analyzed_imgs: dict) -> dict:
                     (idata["jd"] - first_time) * 24 * 60 * 60, decimals=0
                 ).astype("uint32")
             except:
-                information('Failed to extract time from metadata. Using user-specified interval.')
+                information(
+                    "Failed to extract time from metadata. Using user-specified interval."
+                )
                 t_in_seconds = np.around(
                     (idata["t"] - first_time) * params["seconds_per_time_index"],
                     decimals=0,
@@ -1092,344 +1289,243 @@ def fix_orientation(params: dict, image_data: np.ndarray) -> np.ndarray:
     return image_data
 
 
-def compile(params):
-    """mm3_Compile.py locates and slices out mother machine channels into image stacks."""
+def filter_files(
+    found_files: list, t_start: int, t_end: int, user_spec_fovs: list
+) -> list:
+    """Filter images for analysis based on user specified start / end time and FOVs
+
+    Parameters
+    ------------
+    found_files: list
+        list of files in TIFF directory.
+    t_start: int
+        start time for analysis.
+    t_end: int
+        end time for analysis.
+
+    Returns
+    ---------
+    found_files: list
+        filtered files for analysis.
+
+    """
+
+    found_files = [filepath.name for filepath in found_files]  # remove pre-path
+    found_files = sorted(found_files)  # should sort by timepoint
+
+    # keep images starting at this timepoint
+    if t_start is not None:
+        information("Removing images before time {}".format(t_start))
+        # go through list and find first place where timepoint is equivalent to t_start
+        for n, ifile in enumerate(found_files):
+            string = re.compile(
+                "t{:0=3}xy|t{:0=4}xy".format(t_start, t_start), re.IGNORECASE
+            )  # account for 3 and 4 digit
+            # if re.search == True then a match was found
+            if re.search(string, ifile):
+                # cut off every file name prior to this one and quit the loop
+                found_files = found_files[n:]
+                break
+
+    # remove images after this timepoint
+    if t_end is not None:
+        information("Removing images after time {}".format(t_end))
+        # go through list and find first place where timepoint is equivalent to t_end
+        for n, ifile in enumerate(found_files):
+            string = re.compile(
+                "t%03dxy|t%04dxy" % (t_end, t_end), re.IGNORECASE
+            )  # account for 3 and 4 digit
+            if re.search(string, ifile):
+                found_files = found_files[:n]
+                break
+
+    # if user has specified only certain FOVs, filter for those
+    if len(user_spec_fovs) > 0:
+        information("Filtering TIFFs by FOV.")
+        fitered_files = []
+        for fov_id in user_spec_fovs:
+            fov_string = re.compile("xy%02d|xy%03d" % (fov_id, fov_id), re.IGNORECASE)
+            fitered_files += [
+                ifile for ifile in found_files if re.search(fov_string, ifile)
+            ]
+
+        found_files = fitered_files[:]
+
+    return found_files
+
+def slice_channels(
+    channel_masks: dict, analyzed_imgs: dict, user_spec_fovs: list, params: dict
+):
+    """Loops over FOVs and slices individual traps for analysis.
+
+    Parameters:
+    ------------
+    channel_masks: dict
+        dictionary of trap positions for slicing.
+
+    analyzed_imgs
+        dictionary of image filenames and parameters
+
+    user spec_fovs
+        FOVs to analyze
+
+    params: dict
+        parameters dictionary"""
+
+    # do it by FOV. Not set up for multiprocessing
+    for fov, peaks in six.iteritems(channel_masks):
+
+        # skip fov if not in the group
+        if user_spec_fovs and fov not in user_spec_fovs:
+            continue
+
+        information("Loading images for FOV %03d." % fov)
+
+        # get filenames just for this fov along with the julian date of acquistion
+        send_to_write = [
+            [k, v["t"]] for k, v in six.iteritems(analyzed_imgs) if v["fov"] == fov
+        ]
+
+        # sort the filenames by jdn
+        send_to_write = progress(sorted(send_to_write, key=lambda time: time[1]))
+
+        if params["output"] == "TIFF":
+            # This is for loading the whole raw tiff stack and then slicing through it
+            tiff_stack_slice_and_write(
+                params, send_to_write, channel_masks, analyzed_imgs
+            )
+
+        elif params["output"] == "HDF5":
+            # Or write it to hdf5
+            hdf5_stack_slice_and_write(
+                params, send_to_write, channel_masks, analyzed_imgs
+            )
+
+    information("Channel slices saved.")
+
+
+def compile(params: dict) -> None:
+    """locates and slices out mother machine channels into image stacks."""
 
     # Load the project parameters file
     information("Loading experiment parameters.")
-    p = params
 
     user_spec_fovs = params["FOV"]
 
-    information("Using {} threads for multiprocessing.".format(p["num_analyzers"]))
+    information("Using {} threads for multiprocessing.".format(params["num_analyzers"]))
 
     # only analyze images up until this t point. Put in None otherwise
-    if "t_end" in p["compile"]:
-        t_end = p["compile"]["t_end"]
+    if "t_end" in params["compile"]:
+        t_end = params["compile"]["t_end"]
         if t_end == "None":
             t_end = None
     else:
         t_end = None
     # only analyze images at and after this t point. Put in None otherwise
-    if "t_start" in p["compile"]:
-        t_start = p["compile"]["t_start"]
+    if "t_start" in params["compile"]:
+        t_start = params["compile"]["t_start"]
         if t_start == "None":
             t_start = None
     else:
         t_start = None
 
     # create the subfolders if they don't exist
-    if not os.path.exists(p["ana_dir"]):
-        os.makedirs(p["ana_dir"])
-    if p["output"] == "TIFF":
-        if not os.path.exists(p["chnl_dir"]):
-            os.makedirs(p["chnl_dir"])
-    elif p["output"] == "HDF5":
-        if not os.path.exists(p["hdf5_dir"]):
-            os.makedirs(p["hdf5_dir"])
-
-    # declare information variables
-    analyzed_imgs = {}  # for storing get_params pool results.
+    if not os.path.exists(params["ana_dir"]):
+        os.makedirs(params["ana_dir"])
+    if params["output"] == "TIFF":
+        if not os.path.exists(params["chnl_dir"]):
+            os.makedirs(params["chnl_dir"])
+    elif params["output"] == "HDF5":
+        if not os.path.exists(params["hdf5_dir"]):
+            os.makedirs(params["hdf5_dir"])
 
     ## need to stack phase and fl plane if not exported from .nd2
-    if p["TIFF_source"] == "BioFormats / other":
+    if params["TIFF_source"] == "BioFormats / other":
         information("Checking if phase & fluorescence planes are separated")
-        found_files = list(p["TIFF_dir"].glob("*.tif"))
+        found_files = list(params["TIFF_dir"].glob("*.tif"))
         found_files = sorted(found_files)  # sort by timepoint
 
-        string_c1 = re.compile("c1", re.IGNORECASE)
-        string_c2 = re.compile("c2", re.IGNORECASE)
+        string_c1 = re.compile("c(0)*1", re.IGNORECASE)
+        string_c2 = re.compile("c(0)*2", re.IGNORECASE)
+
+        found_files_c1 = [f for f in found_files if re.search(string_c1, f.name)]
+        found_files_c2 = [f for f in found_files if re.search(string_c2, f.name)]
 
         ## if there is a second plane, stack and save them out
-        if string_c2:
+        if found_files_c2:
             information("Restacking TIFFs")
-            found_files_c1 = [f for f in found_files if re.search(string_c1, f.name)]
-            found_files_c2 = [f for f in found_files if re.search(string_c2, f.name)]
-
-            found_files_c1 = sorted(found_files_c1)
-            found_files_c2 = sorted(found_files_c2)
-
-            for f1, f2 in zip(found_files_c1, found_files_c2):
-                information("Merging images " + str(f1) + " and " + str(f2))
-                im1 = tiff.imread(f1)
-                im2 = tiff.imread(f2)
-                im_out = np.stack((im1, im2), axis=0)
-                name_out = str(f1).replace("C1", "")
-                # 'minisblack' necessary to ensure that it interprets image as black/white.
-                tiff.imwrite(name_out, im_out, photometric="minisblack")
-
-                ## make a new directory rather than just deleting the old images
-                old_tiff_path = p["TIFF_dir"].parent / "TIFF_unstacked"
-                if not old_tiff_path.exists():
-                    old_tiff_path.mkdir()
-                    information("Creating directory for original TIFFs")
-                f1.replace(str(f1).replace(str(p["TIFF_dir"]), "TIFF_unstacked"))
-                f2.replace(str(f2).replace(str(p["TIFF_dir"]), "TIFF_unstacked"))
+            restack_planes(found_files_c1,found_files_c2, params)
         else:
             pass
 
     ### process TIFFs for metadata #################################################################
-    if not p["compile"]["do_metadata"]:
+    if not params["compile"]["do_metadata"]:
         information("Loading image parameters dictionary.")
 
         with open(
-            os.path.join(p["ana_dir"], "TIFF_metadata.pkl"), "rb"
+            os.path.join(params["ana_dir"], "TIFF_metadata.pkl"), "rb"
         ) as tiff_metadata:
-            analyzed_imgs = pickle.load(tiff_metadata)
+            analyzed_imgs = pickle.load(tiff_metadata)  # stores image metadata
 
     else:
         information("Finding image parameters.")
         # get all the TIFFs in the folder
-        found_files = p["TIFF_dir"].glob("*.tif")  # get all tiffs
-        found_files = [filepath.name for filepath in found_files]  # remove pre-path
-        found_files = sorted(found_files)  # should sort by timepoint
-
-        # keep images starting at this timepoint
-        if t_start is not None:
-            information("Removing images before time {}".format(t_start))
-            # go through list and find first place where timepoint is equivalent to t_start
-            for n, ifile in enumerate(found_files):
-                string = re.compile(
-                    "t{:0=3}xy|t{:0=4}xy".format(t_start, t_start), re.IGNORECASE
-                )  # account for 3 and 4 digit
-                # if re.search == True then a match was found
-                if re.search(string, ifile):
-                    # cut off every file name prior to this one and quit the loop
-                    found_files = found_files[n:]
-                    break
-
-        # remove images after this timepoint
-        if t_end is not None:
-            information("Removing images after time {}".format(t_end))
-            # go through list and find first place where timepoint is equivalent to t_end
-            for n, ifile in enumerate(found_files):
-                string = re.compile(
-                    "t%03dxy|t%04dxy" % (t_end, t_end), re.IGNORECASE
-                )  # account for 3 and 4 digit
-                if re.search(string, ifile):
-                    found_files = found_files[:n]
-                    break
-
-        # if user has specified only certain FOVs, filter for those
-        if len(user_spec_fovs) > 0:
-            information("Filtering TIFFs by FOV.")
-            fitered_files = []
-            for fov_id in user_spec_fovs:
-                fov_string = re.compile(
-                    "xy%02d|xy%03d" % (fov_id, fov_id), re.IGNORECASE
-                )
-                fitered_files += [
-                    ifile for ifile in found_files if re.search(fov_string, ifile)
-                ]
-
-            found_files = fitered_files[:]
-
+        found_files = params["TIFF_dir"].glob("*.tif")  # get all tiffs
+        found_files = filter_files(found_files, t_start, t_end, user_spec_fovs)
         # get information for all these starting tiffs
         if len(found_files) > 0:
             information("Found %d image files." % len(found_files))
         else:
             warning("No TIFF files found")
-
-        # initialize pool for analyzing image metadata
-        pool = Pool(p["num_analyzers"])
-
-        # loop over images and get information
-        for fn in found_files:
-            # get_params gets the image metadata and puts it in analyzed_imgs dictionary
-            # for each file name. True means look for channels
-
-            # This is the non-parallelized version (useful for debug)
-            # analyzed_imgs[fn] = get_tif_params(params,fn, True)
-
-            # # Parallelized
-            analyzed_imgs[fn] = pool.apply_async(
-                get_tif_params, args=(params, fn, True)
-            )
-
-        information("Waiting for image analysis pool to be finished.")
-
-        pool.close()  # tells the process nothing more will be added.
-        pool.join()  # blocks script until everything has been processed and workers exit
-
-        information("Image analysis pool finished, getting results.")
-
-        # get results from the pool and put them in a dictionary
-        for fn in analyzed_imgs.keys():
-            result = analyzed_imgs[fn]
-            if result.successful():
-                analyzed_imgs[
-                    fn
-                ] = result.get()  # put the metadata in the dict if it's good
-            else:
-                analyzed_imgs[fn] = False  # put a false there if it's bad
+        analyzed_imgs = get_tif_params_loop(
+            params, found_files
+        )  # stores image metadata
 
         # save metadata to a .pkl and a human readable txt file
         information("Saving metadata from analyzed images...")
         with open(
-            os.path.join(p["ana_dir"], "TIFF_metadata.pkl"), "wb"
+            os.path.join(params["ana_dir"], "TIFF_metadata.pkl"), "wb"
         ) as tiff_metadata:
             pickle.dump(analyzed_imgs, tiff_metadata, protocol=pickle.HIGHEST_PROTOCOL)
         with open(
-            os.path.join(p["ana_dir"], "TIFF_metadata.txt"), "w"
+            os.path.join(params["ana_dir"], "TIFF_metadata.txt"), "w"
         ) as tiff_metadata:
             pprint(analyzed_imgs, stream=tiff_metadata)
         information("Saved metadata from analyzed images.")
 
     ### Make table for jd time to FOV and time point
-    if not p["compile"]["do_time_table"]:
+    if not params["compile"]["do_time_table"]:
         information("Skipping time table creation.")
     else:
         time_table = make_time_table(params, analyzed_imgs)
 
     ### Make consensus channel masks and get other shared metadata #################################
-    if not p["compile"]["do_channel_masks"] and p["compile"]["do_slicing"]:
+    if not params["compile"]["do_channel_masks"] and params["compile"]["do_slicing"]:
         channel_masks = load_channel_masks(params)
 
-    elif p["compile"]["do_channel_masks"]:
+    elif params["compile"]["do_channel_masks"]:
 
-        # only calculate channels masks from images before t_end in case it is specified
-        if t_start:
-            analyzed_imgs = {
-                fn: i_metadata
-                for fn, i_metadata in six.iteritems(analyzed_imgs)
-                if i_metadata["t"] >= t_start
-            }
-        if t_end:
-            analyzed_imgs = {
-                fn: i_metadata
-                for fn, i_metadata in six.iteritems(analyzed_imgs)
-                if i_metadata["t"] <= t_end
-            }
-
-        # Uses channelinformation from the already processed image data
-        channel_masks = make_masks(params, analyzed_imgs)
+        # Uses channel information from the already processed image data
+        channel_masks = make_masks(params, analyzed_imgs, t_start, t_end)
 
     ### Slice and write TIFF files into channels ###################################################
-    if p["compile"]["do_slicing"]:
+    if params["compile"]["do_slicing"]:
 
         information("Saving channel slices.")
-
-        # do it by FOV. Not set up for multiprocessing
-        for fov, peaks in six.iteritems(channel_masks):
-
-            # skip fov if not in the group
-            if user_spec_fovs and fov not in user_spec_fovs:
-                continue
-
-            information("Loading images for FOV %03d." % fov)
-
-            # get filenames just for this fov along with the julian date of acquistion
-            send_to_write = [
-                [k, v["t"]] for k, v in six.iteritems(analyzed_imgs) if v["fov"] == fov
-            ]
-
-            # sort the filenames by jdn
-            send_to_write = progress(sorted(send_to_write, key=lambda time: time[1]))
-
-            if p["output"] == "TIFF":
-                # This is for loading the whole raw tiff stack and then slicing through it
-                tiff_stack_slice_and_write(
-                    params, send_to_write, channel_masks, analyzed_imgs
-                )
-
-            elif p["output"] == "HDF5":
-                # Or write it to hdf5
-                hdf5_stack_slice_and_write(
-                    params, send_to_write, channel_masks, analyzed_imgs
-                )
-
-        information("Channel slices saved.")
+        slice_channels(channel_masks, analyzed_imgs, user_spec_fovs, params)
 
     ### Cross correlations ########################################################################
-    if p["compile"]["do_crosscorrs"]:
-        # a nested dict to hold cross corrs per channel per fov.
-        crosscorrs = {}
-
-        # for each fov find cross correlations (sending to pull)
-        for fov_id in progress(user_spec_fovs):
-            information("Calculating cross correlations for FOV %d." % fov_id)
-
-            # nested dict keys are peak_ids and values are cross correlations
-            crosscorrs[fov_id] = {}
-
-            # initialize pool for analyzing image metadata
-            pool = Pool(p["num_analyzers"])
-
-            # find all peak ids in the current FOV
-            for peak_id in sorted(channel_masks[fov_id].keys()):
-                information("Calculating cross correlations for peak %d." % peak_id)
-
-                # linear loop
-                # crosscorrs[fov_id][peak_id] = channel_xcorr(params, fov_id, peak_id)
-
-                # multiprocessing verion
-                crosscorrs[fov_id][peak_id] = pool.apply_async(
-                    channel_xcorr,
-                    args=(
-                        params,
-                        fov_id,
-                        peak_id,
-                    ),
-                )
-
-            information(
-                "Waiting for cross correlation pool to finish for FOV %d." % fov_id
-            )
-
-            pool.close()  # tells the process nothing more will be added.
-            pool.join()  # blocks script until everything has been processed and workers exit
-
-            information("Finished cross correlations for FOV %d." % fov_id)
-
-        # get results from the pool and put the results in the dictionary if succesful
-        for fov_id, peaks in six.iteritems(crosscorrs):
-            for peak_id, result in six.iteritems(peaks):
-                if result.successful():
-                    # put the results, with the average, and a guess if the channel
-                    # is full into the dictionary
-                    crosscorrs[fov_id][peak_id] = {
-                        "ccs": result.get(),
-                        "cc_avg": np.average(result.get()),
-                    }
-                else:
-                    crosscorrs[fov_id][peak_id] = False  # put a false there if it's bad
-
-        # linear loop for debug
-        # get results from the pool and put the results in the dictionary if succesful
-        # for fov_id, peaks in six.iteritems(crosscorrs):
-        #     for peak_id, result in six.iteritems(peaks):
-        #         crosscorrs[fov_id][peak_id] = {'ccs' : result,
-        #                                            'cc_avg' : np.average(result),
-        #                                            'full' : np.average(result) < p['compile']['channel_picking_threshold']}
-
-        # write cross-correlations to pickle and text
-        information("Writing cross correlations file.")
-        with open(os.path.join(p["ana_dir"], "crosscorrs.pkl"), "wb") as xcorrs_file:
-            pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(os.path.join(p["ana_dir"], "crosscorrs.txt"), "w") as xcorrs_file:
-            pprint(crosscorrs, stream=xcorrs_file)
-        information("Wrote cross correlations files.")
-
-    # try to load previously calculated cross correlations
-    else:
-        information("Loading precalculated cross-correlations.")
-        try:
-            with open(
-                os.path.join(p["ana_dir"], "crosscorrs.pkl"), "rb"
-            ) as xcorrs_file:
-                crosscorrs = pickle.load(xcorrs_file)
-        except:
-            crosscorrs = None
-            information("Could not load cross-correlations.")
+    compute_xcorr(channel_masks, user_spec_fovs, params)
 
 
-def load_fov(image_directory, fov_id, filter_str = ""):
+def load_fov(image_directory: Path, fov_id: int, filter_str: str = "") -> np.ndarray:
     information("getting files")
     found_files = image_directory.glob("*.tif")
     file_string = re.compile(f"xy{fov_id:02d}.*.tif", re.IGNORECASE)
     found_files = [f.name for f in found_files if re.search(file_string, f.name)]
     if filter_str:
-        found_files = [f for f in found_files if filter_str in f]
+        # found_files = [f for f in found_files if filter_str in f]
+        found_files = [f for f in found_files if re.search(filter_str,f, re.IGNORECASE)]
 
     information("sorting files")
     found_files = sorted(found_files)  # should sort by timepoint
@@ -1446,7 +1542,7 @@ def load_fov(image_directory, fov_id, filter_str = ""):
             image_fov_stack.append(tif.asarray())
 
     information("numpying files")
-    return np.array(image_fov_stack)
+    return np.array(image_fov_stack, dtype=object)
 
 
 class Compile(MM3Container):
