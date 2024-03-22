@@ -13,6 +13,7 @@ import numpy as np
 import json
 import struct
 import nd2reader
+from typing import Union
 
 from scipy import ndimage as ndi
 from skimage.feature import match_template
@@ -37,7 +38,7 @@ from ._deriving_widgets import (
 #### Helpful utility functions.
 
 
-def get_plane(filepath):
+def get_plane(filepath: str) -> Union[str, None]:
     """Extracts the plane / channel number (e.g. phase fluorescence etc.) from a tiff file name.
     It is used to sort the tiff files into the correct order for processing.
     """
@@ -49,7 +50,7 @@ def get_plane(filepath):
         return None
 
 
-def get_fov(filepath):
+def get_fov(filepath: str) -> Union[int, None]:
     """Extracts the fov number from a tiff file name."""
     pattern = r"xy(\d+)\w*.tif"
     res = re.search(pattern, filepath, re.IGNORECASE)
@@ -59,7 +60,7 @@ def get_fov(filepath):
         return None
 
 
-def get_time(filepath):
+def get_time(filepath: str) -> Union[np.int_, None]:
     """Extracts the time point from a tiff file name."""
     pattern = r"t(\d+)\w*.tif"
     res = re.search(pattern, filepath, re.IGNORECASE)
@@ -72,7 +73,9 @@ def get_time(filepath):
 ### Functions for working with TIFF metadata ###
 
 # get params is the major function which processes raw TIFF images
-def get_tif_params(params, image_filename, find_channels=True):
+def get_tif_params(
+    params: dict, image_filename: str, find_channels: bool = True 
+) -> dict:
     """This is a damn important function for getting the information
     out of an image. It loads a tiff file, pulls out the image data, and the metadata,
     including the location of the channels if flagged.
@@ -87,11 +90,11 @@ def get_tif_params(params, image_filename, find_channels=True):
     'channels': cp_dict, # dictionary of channel locations, in the case of Unet-based channel segmentation, it's a dictionary of channel labels
 
     Called by
-    mm3_Compile.py __main__
+    compile
 
     Calls
-    mm3.extract_metadata
-    mm3.find_channels
+    extract_metadata
+    find_channels
     """
 
     try:
@@ -149,9 +152,9 @@ def get_tif_params(params, image_filename, find_channels=True):
         }
 
 
-def get_tif_metadata_nd2(tif):
+def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
     """This function pulls out the metadata from a tif file and returns it as a dictionary.
-    This if tiff files as exported by the mm3 function mm3_nd2.py. All the metdata
+    This if tiff files as exported by the mm3 function nd2ToTiff. All the metdata
     is found in that script and saved in json format to the tiff, so it is simply extracted here
 
     Paramters:
@@ -180,7 +183,7 @@ def get_tif_metadata_nd2(tif):
     return idata
 
 
-def get_tif_metadata_filename(tif):
+def get_tif_metadata_filename(tif: tiff.TiffFile) -> dict:
     """This function pulls out the metadata from a tif filename and returns it as a dictionary.
     This just gets the tiff metadata from the filename and is a backup option when the known format of the metadata is not known.
 
@@ -193,7 +196,7 @@ def get_tif_metadata_filename(tif):
             'jdn' (float)
 
     Called by
-    mm3_Compile.get_tif_params
+    get_tif_params
 
     """
     idata = {
@@ -206,7 +209,7 @@ def get_tif_metadata_filename(tif):
     return idata
 
 
-def get_tif_metadata_elements(tif):
+def get_tif_metadata_elements(tif: tiff.TiffFile) -> dict:
     """
     This function pulls out the metadata from a tif file which has been exported with Nikon Elements
     and returns it as a dictionary.
@@ -224,7 +227,7 @@ def get_tif_metadata_elements(tif):
             'plane_names' (list of strings)
 
     Called by
-    mm3.Compile
+    compile
 
     """
 
@@ -339,7 +342,7 @@ def get_tif_metadata_elements(tif):
 
 ### Functions for dealing with cross-correlations, which are used to determine empty/full channels ###
 # calculate cross correlation between pixels in channel stack
-def channel_xcorr(params, fov_id, peak_id):
+def channel_xcorr(params: dict, fov_id: int, peak_id: int) -> list:
     """
     Function calculates the cross correlation of images in a
     stack to the first image in the stack. The output is an
@@ -382,7 +385,7 @@ def channel_xcorr(params, fov_id, peak_id):
 
 ### functions about trimming, padding, and manipulating images
 # cuts out channels from the image
-def cut_slice(image_data, channel_loc):
+def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
     """Takes an image and cuts out the channel based on the slice location
     slice location is the list with the peak information, in the form
     [][y1, y2],[x1, x2]]. Returns the channel slice as a numpy array.
@@ -438,7 +441,9 @@ def cut_slice(image_data, channel_loc):
 
 
 # same thing as tiff_stack_slice_and_write but do it for hdf5
-def hdf5_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_imgs):
+def hdf5_stack_slice_and_write(
+    params: dict, images_to_write: list, channel_masks: list, analyzed_imgs: dict
+) -> None:
     """Writes out 4D stacks of TIFF images to an HDF5 file.
 
     Called by
@@ -584,7 +589,9 @@ def hdf5_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_
 
 
 # slice_and_write cuts up the image files one at a time and writes them out to tiff stacks
-def tiff_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_imgs):
+def tiff_stack_slice_and_write(
+    params: dict, images_to_write: list, channel_masks: dict, analyzed_imgs: dict
+) -> None:
     """Writes out 4D stacks of TIFF images per channel.
     Loads all tiffs from and FOV into memory and then slices all time points at once.
 
@@ -659,7 +666,7 @@ def tiff_stack_slice_and_write(params, images_to_write, channel_masks, analyzed_
 
 
 # make masks from initial set of images (same images as clusters)
-def make_masks(params, analyzed_imgs):
+def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> dict:
     """
     Make masks goes through the channel locations in the image metadata and builds a consensus
     Mask for each image per fov, which it returns as dictionary named channel_masks.
@@ -679,7 +686,7 @@ def make_masks(params, analyzed_imgs):
         dictionary of consensus channel masks.
 
     Called By
-    mm3_Compile.py
+    compile
 
     Calls
     """
@@ -840,7 +847,7 @@ def make_masks(params, analyzed_imgs):
 
 
 # function for loading the channel masks
-def load_channel_masks(params):
+def load_channel_masks(params: dict) -> dict:
     """Load channel masks dictionary. Should be .yaml but try pickle too."""
     information("Loading channel masks dictionary.")
 
@@ -867,13 +874,13 @@ def load_channel_masks(params):
 
 
 # make a lookup time table for converting nominal time to elapsed time in seconds
-def make_time_table(params, analyzed_imgs):
+def make_time_table(params: dict, analyzed_imgs: dict) -> dict:
     """
     Loops through the analyzed images and uses the jd time in the metadata to find the elapsed
     time in seconds that each picture was taken. This is later used for more accurate elongation
     rate calculation.
 
-    Parametrs
+    Parameters
     ---------
     analyzed_imgs : dict
         The output of get_tif_params.
@@ -946,14 +953,14 @@ def make_time_table(params, analyzed_imgs):
 
 
 # finds the location of channels in a tif
-def find_channel_locs(params, image_data):
+def find_channel_locs(params: dict, image_data: np.ndarray) -> dict:
     """Finds the location of channels from a phase contrast image. The channels are returned in
     a dictionary where the key is the x position of the channel in pixel and the value is a
     dicionary with the open and closed end in pixels in y.
 
 
     Called by
-    mm3_Compile.get_tif_params
+    get_tif_params
 
     """
 
@@ -1032,13 +1039,13 @@ def find_channel_locs(params, image_data):
 
 
 # define function for flipping the images on an FOV by FOV basis
-def fix_orientation(params, image_data):
+def fix_orientation(params: dict, image_data: np.ndarray) -> np.ndarray:
     """
     Fix the orientation. The standard direction for channels to open to is down.
 
     called by
-    process_tif
-    get_params
+        process_tif
+        get_params
     """
 
     # user parameter indicates how things should be flipped
