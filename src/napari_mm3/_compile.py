@@ -1714,7 +1714,9 @@ class Compile(MM3Container):
         self.viewer.layers.clear()
         self.viewer.text_overlay.visible = False
         if self.split_channels:
-            image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs), filter_str = "C1")
+            image_fov_stack = load_fov(
+                self.TIFF_folder, min(self.valid_fovs), filter_str="c*01"
+            )
         else:
             image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
         images = self.viewer.add_image(np.array(image_fov_stack))
