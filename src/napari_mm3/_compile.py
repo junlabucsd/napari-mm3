@@ -1720,6 +1720,7 @@ class Compile(MM3Container):
         else:
             image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
         image_fov_stack = np.squeeze(image_fov_stack) ## remove axes of length 1 for napari viewer
+        images = self.viewer.add_image(image_fov_stack.astype(np.float32))
         self.viewer.dims.current_step = (0, 0)
         images.reset_contrast_limits()
         # images.gamma = 0.5
