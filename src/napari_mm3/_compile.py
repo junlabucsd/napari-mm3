@@ -1561,8 +1561,8 @@ class Compile(MM3Container):
             choices=["nd2", "BioFormats / other", "TIFF_from_elements"],
         )
         self.split_channels_widget = CheckBox(
-            label="separate channel files",
-            tooltip="use this setting if you have separate tiffs for channel1/channel2. Leave unchecked if not, or if you have only 1 channel."
+            label="separate image plane files",
+            tooltip="Check this box if you have separate tiffs for phase / fluorescence channels. Used for display only."
         )
         self.phase_plane_widget = PlanePicker(
             self.valid_planes, label="phase plane channel"
@@ -1639,7 +1639,6 @@ class Compile(MM3Container):
         self.set_channel_width()
         self.set_channel_separation()
         self.set_channel_orientation()
-        self.set_rotation()
 
         self.display_single_fov()
 
@@ -1663,7 +1662,6 @@ class Compile(MM3Container):
                 "t_start": self.time_range[0],
                 "t_end": self.time_range[1] + 1,
                 "image_orientation": self.channel_orientation,
-                "rotation": self.rotation,
                 "channel_width": self.channel_width,
                 "channel_separation": self.channel_separation,
                 "channel_detection_snr": 1,
