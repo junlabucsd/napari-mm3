@@ -141,11 +141,11 @@ def get_tif_params(
         with tiff.TiffFile(params["TIFF_dir"] / image_filename) as tif:
             image_data = tif.asarray()
 
-            if params["TIFF_source"] == "TIFF_from_elements":
+            if params["TIFF_source"] == "TIFF from Elements":
                 image_metadata = get_tif_metadata_elements(tif)
             elif params["TIFF_source"] == "nd2":
                 image_metadata = get_tif_metadata_nd2(tif)
-            elif params["TIFF_source"] == "BioFormats / other":
+            elif params["TIFF_source"] == "BioFormats / other TIFF":
                 image_metadata = get_tif_metadata_filename(tif)
 
         # look for channels if flagged
@@ -1558,7 +1558,7 @@ class Compile(MM3Container):
         # TODO: Auto-infer?
         self.image_source_widget = ComboBox(
             label="image source",
-            choices=["nd2", "BioFormats / other", "TIFF_from_elements"],
+            choices=["nd2", "BioFormats / other TIFF", "TIFF from Elements"],
         )
         self.split_channels_widget = CheckBox(
             label="separate image plane files",
@@ -1682,7 +1682,7 @@ class Compile(MM3Container):
             "cell_dir": self.analysis_folder / "cell_data",
             "track_dir": self.analysis_folder / "tracking",
             # use jd time in image metadata to make time table. Set to false if no jd time
-            # "use_jd": self.image_source in {"nd2", "TIFF_from_elements"},
+            # "use_jd": self.image_source in {"nd2", "TIFF from Elements"},
             "use_jd": False, # disabling for now because of bug with Elements output formatting
         }
         self.viewer.window._status_bar._toggle_activity_dock(True)
