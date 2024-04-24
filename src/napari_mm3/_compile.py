@@ -621,155 +621,6 @@ def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
 
     return channel_slice
 
-
-# same thing as tiff_stack_slice_and_write but do it for hdf5
-def hdf5_stack_slice_and_write(
-    params: dict, images_to_write: list, channel_masks: list, analyzed_imgs: dict
-) -> None:
-    """Writes out 4D stacks of TIFF images to an HDF5 file.
-
-    Called by
-    __main__
-    """
-
-    # make an array of images and then concatenate them into one big stack
-    image_fov_stack = []
-
-    # make arrays for filenames and times
-    image_filenames = []
-    image_times = []  # times is still an integer but may be indexed arbitrarily
-    image_jds = []  # jds = julian dates (times)
-
-    # go through list of images, load and fix them, and create arrays of metadata
-    for n, image in enumerate(images_to_write):
-        image_name = image[0]  # [0] is the key, [1] is jd
-
-        # analyzed_imgs dictionary will be found in main scope.
-        image_params = analyzed_imgs[image_name]
-        information("Loading %s." % image_params["filepath"].name)
-
-        # add information to metadata arrays
-        image_filenames.append(image_name)
-        image_times.append(image_params["t"])
-        image_jds.append(image_params["jd"])
-
-        # declare identification variables for saving using first image
-        if n == 1:
-            # same across fov
-            fov_id = image_params["fov"]
-            x_loc = image_params["x"]
-            y_loc = image_params["y"]
-            image_shape = image_params["shape"]
-            image_planes = image_params["planes"]
-
-        # load the tif and store it in array
-        with tiff.TiffFile(image_params["filepath"]) as tif:
-            image_data = tif.asarray()
-
-        # channel finding was also done on images after orientation was fixed
-        image_data = fix_orientation(params, image_data)
-
-        # add additional axis if the image is flat
-        if len(image_data.shape) == 2:
-            image_data = np.expand_dims(image_data, 0)
-
-        # change axis so it goes X, Y, Plane
-        image_data = np.rollaxis(image_data, 0, 3)
-
-        # add it to list. The images should be in time order
-        image_fov_stack.append(image_data)
-
-    # concatenate the list into one big ass stack
-    image_fov_stack = np.stack(image_fov_stack, axis=0)
-
-    # create the HDF5 file for the FOV, first time this is being done.
-    with h5py.File(
-        params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "w", libver="earliest"
-    ) as h5f:
-
-        # add in metadata for this FOV
-        # these attributes should be common for all channel
-        h5f.attrs.create("fov_id", fov_id)
-        h5f.attrs.create("stage_x_loc", x_loc)
-        h5f.attrs.create("stage_y_loc", y_loc)
-        h5f.attrs.create("image_shape", image_shape)
-        # encoding is because HDF5 has problems with numpy unicode
-        h5f.attrs.create("planes", [plane.encode("utf8") for plane in image_planes])
-        h5f.attrs.create("peaks", sorted(channel_masks[fov_id].keys()))
-
-        # this is for things that change across time, for these create a dataset
-        h5ds = h5f.create_dataset(
-            "filenames",
-            data=np.expand_dims(image_filenames, 1),
-            chunks=True,
-            maxshape=(None, 1),
-            dtype="S100",
-            compression="gzip",
-            shuffle=True,
-            fletcher32=True,
-        )
-        h5ds = h5f.create_dataset(
-            "times",
-            data=np.expand_dims(image_times, 1),
-            chunks=True,
-            maxshape=(None, 1),
-            compression="gzip",
-            shuffle=True,
-            fletcher32=True,
-        )
-        h5ds = h5f.create_dataset(
-            "times_jd",
-            data=np.expand_dims(image_jds, 1),
-            chunks=True,
-            maxshape=(None, 1),
-            compression="gzip",
-            shuffle=True,
-            fletcher32=True,
-        )
-
-        # cut out the channels as per channel masks for this fov
-        for peak, channel_loc in six.iteritems(channel_masks[fov_id]):
-            # information('Slicing and saving channel peak %s.' % channel_filename.split('/')[-1])
-            information("Slicing and saving channel peak %d." % peak)
-
-            # create group for this channel
-            h5g = h5f.create_group("channel_%04d" % peak)
-
-            # add attribute for peak_id, channel location
-            h5g.attrs.create("peak_id", peak)
-            h5g.attrs.create("channel_loc", channel_loc)
-
-            # channel masks should only contain ints, but you can use this for a hard fix
-            # for i in range(len(channel_loc)):
-            #     for j in range(len(channel_loc[i])):
-            #         channel_loc[i][j] = int(channel_loc[i][j])
-
-            # slice out channel.
-            # The function should recognize the shape length as 4 and cut all time points
-            channel_stack = cut_slice(image_fov_stack, channel_loc)
-
-            # save a different dataset for all colors
-            for color_index in range(channel_stack.shape[3]):
-
-                # create the dataset for the image. Review docs for these options.
-                h5ds = h5g.create_dataset(
-                    "p%04d_c%1d" % (peak, color_index + 1),
-                    data=channel_stack[:, :, :, color_index],
-                    chunks=(1, channel_stack.shape[1], channel_stack.shape[2]),
-                    maxshape=(None, channel_stack.shape[1], channel_stack.shape[2]),
-                    compression="gzip",
-                    shuffle=True,
-                    fletcher32=True,
-                )
-
-                # h5ds.attrs.create('plane', image_planes[color_index].encode('utf8'))
-
-                # write the data even though we have more to write (free up memory)
-                h5f.flush()
-
-    return
-
-
 # slice_and_write cuts up the image files one at a time and writes them out to tiff stacks
 def tiff_stack_slice_and_write(
     params: dict, images_to_write: list, channel_masks: dict, analyzed_imgs: dict
@@ -1390,17 +1241,10 @@ def slice_channels(
         # sort the filenames by jdn
         send_to_write = progress(sorted(send_to_write, key=lambda time: time[1]))
 
-        if params["output"] == "TIFF":
-            # This is for loading the whole raw tiff stack and then slicing through it
-            tiff_stack_slice_and_write(
-                params, send_to_write, channel_masks, analyzed_imgs
-            )
-
-        elif params["output"] == "HDF5":
-            # Or write it to hdf5
-            hdf5_stack_slice_and_write(
-                params, send_to_write, channel_masks, analyzed_imgs
-            )
+        # This is for loading the whole raw tiff stack and then slicing through it
+        tiff_stack_slice_and_write(
+            params, send_to_write, channel_masks, analyzed_imgs
+        )
 
     information("Channel slices saved.")
 
@@ -1433,15 +1277,12 @@ def compile(params: dict) -> None:
     # create the subfolders if they don't exist
     if not os.path.exists(params["ana_dir"]):
         os.makedirs(params["ana_dir"])
-    if params["output"] == "TIFF":
-        if not os.path.exists(params["chnl_dir"]):
-            os.makedirs(params["chnl_dir"])
-    elif params["output"] == "HDF5":
-        if not os.path.exists(params["hdf5_dir"]):
-            os.makedirs(params["hdf5_dir"])
+
+    if not os.path.exists(params["chnl_dir"]):
+        os.makedirs(params["chnl_dir"])
 
     ## need to stack phase and fl plane if not exported from .nd2
-    if params["TIFF_source"] == "BioFormats / other":
+    if params["TIFF_source"] == "BioFormats / other TIFF":
         information("Checking if phase & fluorescence planes are separated")
         found_files = list(params["TIFF_dir"].glob("*.tif"))
         found_files = sorted(found_files)  # sort by timepoint
@@ -1673,7 +1514,6 @@ class Compile(MM3Container):
             "num_analyzers": multiprocessing.cpu_count(),
             "TIFF_dir": self.TIFF_folder,
             "ana_dir": self.analysis_folder,
-            "hdf5_dir": self.analysis_folder / "hdf5",
             "chnl_dir": self.analysis_folder / "channels",
             "empty_dir": self.analysis_folder / "empties",
             "sub_dir": self.analysis_folder / "subtracted",
