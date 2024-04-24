@@ -17,7 +17,6 @@ from typing import Union
 
 from scipy import ndimage as ndi
 from skimage.feature import match_template
-from skimage.transform import rotate
 from multiprocessing import Pool
 from pathlib import Path
 from pprint import pprint
@@ -152,13 +151,6 @@ def get_tif_params(
         # look for channels if flagged
         if find_channels:
             # fix the image orientation and get the number of planes
-            if rotate:
-                information(f'Rotating image by {params["compile"]["rotation"]} degrees')
-                if len(image_data.shape)>2:
-                    for i in range(image_data.shape[0]):
-                        image_data[i] = rotate(image_data[i],params["compile"]["rotation"],preserve_range=True)
-                else:
-                    image_data = rotate(image_data,params["compile"]["rotation"],preserve_range=True)
 
             image_data = fix_orientation(params, image_data)
 
@@ -1589,14 +1581,6 @@ class Compile(MM3Container):
             label="trap orientation", choices=["auto", "up", "down"]
         )
 
-        self.rotate_widget = SpinBox(
-            value=0,
-            label="Rotate",
-            tooltip="Angle in degrees to rotate images",
-            min=-30,
-            max=30,
-        )
-
         self.channel_width_widget = SpinBox(
             value=10,
             label="channel width",
@@ -1634,7 +1618,6 @@ class Compile(MM3Container):
         self.channel_separation_widget.changed.connect(self.set_channel_separation)
         self.inspect_widget.clicked.connect(self.display_all_fovs)
         self.channel_orientation_widget.changed.connect(self.set_channel_orientation)
-        self.rotate_widget.changed.connect(self.set_rotation)
 
         self.append(self.fov_widget)
         self.append(self.image_source_widget)
@@ -1643,7 +1626,6 @@ class Compile(MM3Container):
         self.append(self.time_range_widget)
         self.append(self.seconds_per_frame_widget)
         self.append(self.channel_orientation_widget)
-        self.append(self.rotate_widget)
         self.append(self.channel_width_widget)
         self.append(self.channel_separation_widget)
         self.append(self.inspect_widget)
@@ -1806,6 +1788,3 @@ class Compile(MM3Container):
     def set_split_channels(self):
         self.split_channels = self.split_channels_widget.value
         self.display_single_fov()
-
-    def set_rotation(self):
-        self.rotation = self.rotate_widget.value
