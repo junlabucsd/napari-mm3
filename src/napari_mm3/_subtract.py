@@ -151,7 +151,25 @@ def subtract_fluor_helper(all_args):
 
 # this function is used when one FOV doesn't have an empty
 def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
-    """Copy an empty stack from one FOV to another"""
+    """Copy an empty stack from one FOV to another.
+    
+    Parameters
+    ----------
+    params: dict
+        dictionary of parameters
+    empty_dir: Path
+        Path to copy empty stack to
+    from_fov: int
+        fov to copy from
+    to_fov: int
+        fov to copy to
+    color: str
+        imaging plane
+    
+    Returns
+    -------
+    None
+    """
 
     # load empty stack from one FOV
     information(
@@ -163,37 +181,14 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
     avg_empty_stack = load_empty_stack(params["ana_dir"], params["experiment_name"], from_fov, postfix="empty_{}".format(color))
 
     # save out data
-    if params["output"] == "TIFF":
-        # make new name and save it
-        empty_filename = params["experiment_name"] + "_xy%03d_empty_%s.tif" % (
-            to_fov,
-            color,
-        )
-        tiff.imwrite(
-            empty_dir / empty_filename, avg_empty_stack, compression=("zlib", 4)
-        )
-
-    if params["output"] == "HDF5":
-        h5f = h5py.File(params["hdf5_dir"] / ("xy%03d.hdf5" % to_fov), "r+")
-
-        # delete the dataset if it exists (important for debug)
-        if "empty_%s" % color in h5f:
-            del h5f["empty_%s" % color]
-
-        # the empty channel should be it's own dataset
-        h5ds = h5f.create_dataset(
-            "empty_%s" % color,
-            data=avg_empty_stack,
-            chunks=(1, avg_empty_stack.shape[1], avg_empty_stack.shape[2]),
-            maxshape=(None, avg_empty_stack.shape[1], avg_empty_stack.shape[2]),
-            compression="gzip",
-            shuffle=True,
-            fletcher32=True,
-        )
-
-        # give attribute which says which channels contribute. Just put 0
-        h5ds.attrs.create("empty_channels", [0])
-        h5f.close()
+    # make new name and save it
+    empty_filename = params["experiment_name"] + "_xy%03d_empty_%s.tif" % (
+        to_fov,
+        color,
+    )
+    tiff.imwrite(
+        empty_dir / empty_filename, avg_empty_stack, compression=("zlib", 4)
+    )
 
     information("Saved empty channel for FOV %d." % to_fov)
 
@@ -274,48 +269,24 @@ def subtract_fov_stack(
         subtracted_stack = np.stack(subtracted_imgs, axis=0)
 
         # save out the subtracted stack
-        if params["output"] == "TIFF":
-            sub_filename = params["experiment_name"] + "_xy%03d_p%04d_sub_%s.tif" % (
-                fov_id,
-                peak_id,
-                color,
-            )
-            # TODO: Make this respect compression levels
-            tiff.imwrite(
-                sub_dir / sub_filename, subtracted_stack, compression=("zlib", 4)
-            )  # save it
+        sub_filename = params["experiment_name"] + "_xy%03d_p%04d_sub_%s.tif" % (
+            fov_id,
+            peak_id,
+            color,
+        )
+        # TODO: Make this respect compression levels
+        tiff.imwrite(
+            sub_dir / sub_filename, subtracted_stack, compression=("zlib", 4)
+        )  # save it
 
-            if preview:
-                napari.current_viewer().add_image(
-                    subtracted_stack,
-                    name="Subtracted" + "_xy%03d_p%04d" % (fov_id, peak_id),
-                    visible=True,
-                )
-
-        if params["output"] == "HDF5":
-            h5f = h5py.File(params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+")
-
-            # put subtracted channel in correct group
-            h5g = h5f["channel_%04d" % peak_id]
-
-            # delete the dataset if it exists (important for debug)
-            if "p%04d_sub_%s" % (peak_id, color) in h5g:
-                del h5g["p%04d_sub_%s" % (peak_id, color)]
-
-            h5ds = h5g.create_dataset(
-                "p%04d_sub_%s" % (peak_id, color),
-                data=subtracted_stack,
-                chunks=(1, subtracted_stack.shape[1], subtracted_stack.shape[2]),
-                maxshape=(None, subtracted_stack.shape[1], subtracted_stack.shape[2]),
-                compression="gzip",
-                shuffle=True,
-                fletcher32=True,
+        if preview:
+            napari.current_viewer().add_image(
+                subtracted_stack,
+                name="Subtracted" + "_xy%03d_p%04d" % (fov_id, peak_id),
+                visible=True,
             )
 
         information("Saved subtracted channel %d." % peak_id)
-
-    if params["output"] == "HDF5":
-        h5f.close()
 
     return True
 
@@ -461,37 +432,14 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
         avg_empty_stack = np.stack(avg_empty_stack, axis=0)
 
     # save out data
-    if params["output"] == "TIFF":
-        # make new name and save it
-        empty_filename = params["experiment_name"] + "_xy%03d_empty_%s.tif" % (
-            fov_id,
-            color,
-        )
-        tiff.imwrite(
-            empty_dir / empty_filename, avg_empty_stack, compression=("zlib", 4)
-        )
-
-    if params["output"] == "HDF5":
-        h5f = h5py.File(params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+")
-
-        # delete the dataset if it exists (important for debug)
-        if "empty_%s" % color in h5f:
-            del h5f["empty_%s" % color]
-
-        # the empty channel should be it's own dataset
-        h5ds = h5f.create_dataset(
-            "empty_%s" % color,
-            data=avg_empty_stack,
-            chunks=(1, avg_empty_stack.shape[1], avg_empty_stack.shape[2]),
-            maxshape=(None, avg_empty_stack.shape[1], avg_empty_stack.shape[2]),
-            compression="gzip",
-            shuffle=True,
-            fletcher32=True,
-        )
-
-        # give attribute which says which channels contribute
-        h5ds.attrs.create("empty_channels", empty_peak_ids)
-        h5f.close()
+    # make new name and save it
+    empty_filename = params["experiment_name"] + "_xy%03d_empty_%s.tif" % (
+        fov_id,
+        color,
+    )
+    tiff.imwrite(
+        empty_dir / empty_filename, avg_empty_stack, compression=("zlib", 4)
+    )
 
     information("Saved empty channel for FOV %d." % fov_id)
 
@@ -649,7 +597,6 @@ class Subtract(MM3Container):
         """Overriding method. Perform mother machine analysis."""
         params = dict()
         params["experiment_name"] = self.experiment_name
-        params["output"] = "TIFF"
         params["FOV"] = self.fovs
 
         params["subtract"] = dict()
@@ -662,7 +609,6 @@ class Subtract(MM3Container):
         # useful folder shorthands for opening files
         params["TIFF_dir"] = self.TIFF_folder
         params["ana_dir"] = self.analysis_folder
-        params["hdf5_dir"] = params["ana_dir"] / "hdf5"
         params["chnl_dir"] = params["ana_dir"] / "channels"
         params["sub_dir"] = params["ana_dir"] / "subtracted"
         params["empty_dir"] = params["ana_dir"] / "empties"
