@@ -39,7 +39,7 @@ from ._deriving_widgets import (
 )
 
 # loss functions for model
-def dice_coeff(y_true, y_pred):
+def dice_coeff(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     """Dice coefficient for segmentation accuracy.
     Parameters
     ----------
@@ -63,12 +63,34 @@ def dice_coeff(y_true, y_pred):
     return score
 
 
-def dice_loss(y_true, y_pred):
+def dice_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """
+    Dice loss
+    Parameters
+    ----------
+    y_true: Tensor
+        ground truth labels
+    y_pred: Tensor
+        predicted labels
+
+    Returns
+    -------
+    loss: Tensor
+        dice loss between inputs
+    """
     loss = 1 - dice_coeff(y_true, y_pred)
     return loss
 
 
-def bce_dice_loss(y_true, y_pred):
+def bce_dice_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """
+    Combined cross entropy and dice loss
+    Parameters
+    ----------
+    y_true: Tensor
+        ground truth labels
+    y_pred: Tensor
+        predicted labels"""
     loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
 
 
@@ -87,7 +109,7 @@ def pixelwise_weighted_bce(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
 
     Returns
     -------
-    Tensor
+    loss: Tensor
         Pixel-wise weight binary cross-entropy between inputs.
 
     """
@@ -206,7 +228,7 @@ def save_out(params, segmented_imgs, fov_id, peak_id):
         Field of view ID.
     peak_id : int
         Peak ID.
-    
+
     Returns
     -------
     None."""
@@ -251,7 +273,7 @@ def normalize_to_one(img_stack):
     ----------
     img_stack : np.ndarray
         Image stack.
-    
+
     Returns
     -------
     np.ndarray
@@ -278,7 +300,7 @@ def binarize_and_label(predictions, cellClassThreshold, min_object_size):
         Threshold for binarizing the predictions.
     min_object_size : int
         Minimum object size to keep.
-    
+
     Returns
     -------
     np.ndarray
@@ -323,7 +345,7 @@ def trim_and_pad(img_stack, unet_shape, pad_dict):
         Shape of the U-net.
     pad_dict : dict
         Dictionary of padding values.
-    
+
     Returns
     -------
     np.ndarray
@@ -399,9 +421,7 @@ def segment_fov_unet(
             ana_peak_ids.append(peak_id)
     ana_peak_ids.sort()  # sort for repeatability
 
-    segment_cells_unet(
-        ana_peak_ids, fov_id, unet_shape, model, params, view_result
-    )
+    segment_cells_unet(ana_peak_ids, fov_id, unet_shape, model, params, view_result)
 
     information("Finished segmentation for FOV {}.".format(fov_id))
 
@@ -432,7 +452,13 @@ def segment_cells_unet(
         # img_stack = load_stack_params(
         #     params, fov_id, peak_id, postfix=params["phase_plane"]
         # )
-        img_stack = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, params["phase_plane"])
+        img_stack = load_unmodified_stack(
+            params["ana_dir"],
+            params["experiment_name"],
+            fov_id,
+            peak_id,
+            params["phase_plane"],
+        )
 
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
@@ -730,7 +756,13 @@ class SegmentUnet(MM3Container):
         # img_stack = load_stack_params(
         #     self.params, valid_fov, valid_peak, postfix=self.params["phase_plane"]
         # )
-        img_stack = load_unmodified_stack(self.params["ana_dir"], self.params["experiment_name"], valid_fov, valid_peak, postfix = self.params["phase_plane"])
+        img_stack = load_unmodified_stack(
+            self.params["ana_dir"],
+            self.params["experiment_name"],
+            valid_fov,
+            valid_peak,
+            postfix=self.params["phase_plane"],
+        )
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
 
