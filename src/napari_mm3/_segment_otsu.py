@@ -39,13 +39,14 @@ def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
 
     information("Segmenting FOV %d, channel %d." % (fov_id, peak_id))
 
-
     # load subtracted images
     # sub_stack = load_stack_params(
     #    params, fov_id, peak_id, postfix="sub_{}".format(params["phase_plane"])
     # )
-    postfix=f'sub_{params["phase_plane"]}'
-    sub_stack = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix)
+    postfix = f'sub_{params["phase_plane"]}'
+    sub_stack = load_subtracted_stack(
+        params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix
+    )
 
     # # set up multiprocessing pool to do segmentation. Will do everything before going on.
     # pool = Pool(processes=params['num_analyzers'])
@@ -72,7 +73,9 @@ def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
         params["seg_img"],
     )
     tiff.imwrite(
-        os.path.join(params["seg_dir"], seg_filename), segmented_imgs, compression='zlib'
+        os.path.join(params["seg_dir"], seg_filename),
+        segmented_imgs,
+        compression="zlib",
     )
     if view_result:
         viewer = napari.current_viewer()
@@ -99,9 +102,11 @@ def segment_image(params, image):
     """Segments a subtracted image and returns a labeled image
 
     Parameters
+    ----------
     image : a ndarray which is an image. This should be the subtracted image
 
     Returns
+    -------
     labeled_image : a ndarray which is also an image. Labeled values, which
         should correspond to cells, all have the same integer value starting with 1.
         Non labeled area should have value zero.
@@ -122,12 +127,6 @@ def segment_image(params, image):
         return np.zeros_like(image)
 
     threshholded = image > OTSU_threshold * thresh  # will create binary image
-
-    # if there are no cells, good to clear the border
-    # because otherwise the OTSU is just for random bullshit, most
-    # likely on the side of the image
-    # Ryan - removing this because cropping can leave cells on the lower border
-    # threshholded = segmentation.clear_border(threshholded)
 
     # Opening = erosion then dialation.
     # opening smooths images, breaks isthmuses, and eliminates protrusions.
@@ -356,16 +355,14 @@ class SegmentOtsu(MM3Container):
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         ## pull out first fov & peak id with cells
-        
-        # sub_stack = load_stack_params(
-        #     self.params,
-        #     valid_fov,
-        #     valid_peak,
-        #     postfix="sub_{}".format(self.params["phase_plane"]),
-        # )
-        postfix=f'sub_{self.params["phase_plane"]}'
-        sub_stack = load_subtracted_stack(self.params["ana_dir"], self.params["experiment_name"], valid_fov, valid_peak, postfix)
-
+        postfix = f'sub_{self.params["phase_plane"]}'
+        sub_stack = load_subtracted_stack(
+            self.params["ana_dir"],
+            self.params["experiment_name"],
+            valid_fov,
+            valid_peak,
+            postfix,
+        )
 
         # image by image for debug
         segmented_imgs = []
