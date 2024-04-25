@@ -451,7 +451,7 @@ def channel_xcorr(params: dict, fov_id: int, peak_id: int) -> list:
         fov to analyze
     peak_id:
         peak (trap) to analyze
-    
+
     Returns
     -------
     xcorr_array: list
@@ -607,7 +607,7 @@ def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
         image to be sliced
     channel_loc: list
         nested list of slice locations [[y1, y2],[x1, x2]]
-    
+
     Returns
     -------
     channel_slice: np.ndarray
@@ -735,7 +735,7 @@ def make_consensus_mask(
     crop_wp: int,
     chan_lp: int,
 ) -> np.ndarray:
-    '''
+    """
     Generate consensus channel mask for a given fov.
 
     Parameters
@@ -756,7 +756,7 @@ def make_consensus_mask(
     Returns
     -------
     consensus_mask: np.ndarray
-    '''
+    """
 
     consensus_mask = np.zeros([image_rows, image_cols])  # mask for labeling
 
@@ -897,8 +897,8 @@ def adjust_channel_mask(
         else:
             cm_copy[1][0] = max(chnl_mask[1][0] - (wid_diff - 1) / 2, 0)
             cm_copy[1][1] = min(chnl_mask[1][1] + (wid_diff + 1) / 2, image_cols - 1)
-    
-    cm_copy = [list(map(int,i)) for i in cm_copy] # make sure they are ints
+
+    cm_copy = [list(map(int, i)) for i in cm_copy]  # make sure they are ints
 
     return cm_copy
 
@@ -1009,9 +1009,7 @@ def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> d
                 chnl_mask, cm_copy[fov][peak], max_len, max_wid, image_cols
             )
 
-    # save the channel mask dictionary to a pickle and a text file
-    # with open(os.path.join(params['ana_dir'], 'channel_masks.pkl'), 'wb') as cmask_file:
-    #     pickle.dump(cm_copy, cmask_file, protocol=pickle.HIGHEST_PROTOCOL)
+    # save the channel mask dictionary to a yaml and a text file
     with open(os.path.join(params["ana_dir"], "channel_masks.txt"), "w") as cmask_file:
         pprint(cm_copy, stream=cmask_file)
     with open(os.path.join(params["ana_dir"], "channel_masks.yaml"), "w") as cmask_file:
@@ -1025,12 +1023,12 @@ def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> d
 # function for loading the channel masks
 def load_channel_masks(params: dict) -> dict:
     """Load channel masks dictionary. Should be .yaml but try pickle too.
-    
+
     Parameters
     ----------
     params: dict
         parameters dictionary
-    
+
     Returns
     -------
     channel_masks: dict
