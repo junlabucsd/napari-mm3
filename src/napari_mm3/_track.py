@@ -1,5 +1,6 @@
 import multiprocessing
 from multiprocessing import Pool
+from pathlib import Path
 import napari
 import matplotlib.pyplot as plt
 import yaml
@@ -31,7 +32,6 @@ from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, CheckBox, PushButt
 from .utils import (
     Cell,
     find_complete_cells,
-    find_cells_of_birth_label,
     find_cells_of_fov_and_peak,
     write_cells_to_json,
 )
@@ -869,7 +869,7 @@ def Track_Cells(params):
     information("Using {} images for tracking.".format(p["track"]["seg_img"]))
 
     # create segmenteation and cell data folder if they don't exist
-    if not os.path.exists(p["seg_dir"]) and p["output"] == "TIFF":
+    if not os.path.exists(p["seg_dir"]):
         os.makedirs(p["seg_dir"])
     if not os.path.exists(p["cell_dir"]):
         os.makedirs(p["cell_dir"])
@@ -1066,7 +1066,6 @@ class Track(MM3Container):
         self.params["FOV"] = self.fovs
         self.params["phase_plane"] = self.phase_plane
         self.params["pxl2um"] = self.pxl2um
-        self.params["output"] = "TIFF"
         self.params["num_analyzers"] = multiprocessing.cpu_count()
         self.params["track"] = dict()
         self.params["track"]["lost_cell_time"] = self.lost_cell_time
@@ -1084,7 +1083,6 @@ class Track(MM3Container):
         # useful folder shorthands for opening files
         self.params["TIFF_dir"] = self.TIFF_folder
         self.params["ana_dir"] = self.analysis_folder
-        self.params["hdf5_dir"] = self.params["ana_dir"] / "hdf5"
         self.params["chnl_dir"] = self.params["ana_dir"] / "channels"
         self.params["empty_dir"] = self.params["ana_dir"] / "empties"
         self.params["sub_dir"] = self.params["ana_dir"] / "subtracted"
