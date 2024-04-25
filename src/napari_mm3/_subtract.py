@@ -22,9 +22,10 @@ from ._deriving_widgets import (
 )
 
 
-def subtract_phase(params, cropped_channel, empty_channel):
-    """subtract_phase aligns and subtracts a .
-    Modified from subtract_phase_only by jt on 20160511
+def subtract_phase(
+    params: dict, cropped_channel: np.ndarray, empty_channel: np.ndarray
+) -> np.ndarray:
+    """subtract_phase aligns and subtracts an empty phase contrast channel (trap) from a channel containing cells.
     The subtracted image returned is the same size as the image given. It may however include
     data points around the edge that are meaningless but not marked.
 
@@ -88,7 +89,9 @@ def subtract_phase_helper(all_args):
     return subtract_phase(*all_args)
 
 
-def subtract_fluor(params, cropped_channel, empty_channel):
+def subtract_fluor(
+    cropped_channel: np.ndarray, empty_channel: np.ndarray
+) -> np.ndarray:
     """subtract_fluor does a simple subtraction of one image to another. Unlike subtract_phase,
     there is no alignment. Also, the empty channel is subtracted from the full channel.
 
@@ -125,7 +128,6 @@ def subtract_fluor(params, cropped_channel, empty_channel):
                 ],
                 "edge",
             )
-            # mm3.information('size adjusted 1')
         empty_size = np.shape(empty_channel)[:2]
         if crop_size[0] < empty_size[0] or crop_size[1] < empty_size[1]:
             empty_channel = empty_channel[
@@ -150,9 +152,11 @@ def subtract_fluor_helper(all_args):
 
 
 # this function is used when one FOV doesn't have an empty
-def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
+def copy_empty_stack(
+    params: dict, empty_dir: Path, from_fov: int, to_fov: int, color="c1"
+) -> None:
     """Copy an empty stack from one FOV to another.
-    
+
     Parameters
     ----------
     params: dict
@@ -165,7 +169,7 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
         fov to copy to
     color: str
         imaging plane
-    
+
     Returns
     -------
     None
@@ -175,10 +179,13 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
     information(
         "Loading empty stack from FOV {} to save for FOV {}.".format(from_fov, to_fov)
     )
-    # avg_empty_stack = load_stack_params(
-    #     params, from_fov, 0, postfix="empty_{}".format(color)
-    # )
-    avg_empty_stack = load_empty_stack(params["ana_dir"], params["experiment_name"], from_fov, postfix="empty_{}".format(color))
+
+    avg_empty_stack = load_empty_stack(
+        params["ana_dir"],
+        params["experiment_name"],
+        from_fov,
+        postfix="empty_{}".format(color),
+    )
 
     # save out data
     # make new name and save it
@@ -186,43 +193,51 @@ def copy_empty_stack(params, empty_dir, from_fov, to_fov, color="c1"):
         to_fov,
         color,
     )
-    tiff.imwrite(
-        empty_dir / empty_filename, avg_empty_stack, compression=("zlib", 4)
-    )
+    tiff.imwrite(empty_dir / empty_filename, avg_empty_stack, compression=("zlib", 4))
 
     information("Saved empty channel for FOV %d." % to_fov)
 
 
 # Do subtraction for an fov over many timepoints
 def subtract_fov_stack(
-    params, sub_dir, fov_id, specs, color="c1", method="phase", preview=False
-):
+    params: dict,
+    sub_dir: Path,
+    fov_id: int,
+    specs: dict,
+    color: str = "c1",
+    method: str = "phase",
+    preview: bool = False,
+) -> bool:
     """
     For a given FOV, loads the precomputed empty stack and does subtraction on
     all peaks in the FOV designated to be analyzed
 
     Parameters
     ----------
+    sub_dir: Path
+        directory where subtracted images will be stored
+    fov_id: int
+        fov to analyze
+    specs: dict
+        dictionary indicating whether a peak should be analyzed,
+        used as a subtraction template, or ignored
     color : string, 'c1', 'c2', etc.
         This is the channel to subtraction. will be appended to the word empty.
-
-    Called by
-    mm3_Subtract.py
-
-    Calls
-    mm3.subtract_phase
+    method: str
+        image type to be analyzed ("phase" or "fluorescence")
+    preview: bool
+        whether to display output in napari viewer
 
     """
 
     information("Subtracting peaks for FOV %d." % fov_id)
 
-    # load empty stack feed dummy peak number to get empty
-    # avg_empty_stack = load_stack_params(
-    #     params, fov_id, 0, postfix="empty_{}".format(color)
-    # )
-
-    avg_empty_stack = load_empty_stack(params["ana_dir"], params["experiment_name"], fov_id, postfix="empty_{}".format(color))
-
+    avg_empty_stack = load_empty_stack(
+        params["ana_dir"],
+        params["experiment_name"],
+        fov_id,
+        postfix="empty_{}".format(color),
+    )
 
     # determine which peaks are to be analyzed
     ana_peak_ids = []
@@ -241,22 +256,25 @@ def subtract_fov_stack(
         information("Subtracting peak %d." % peak_id)
 
         # image_data = load_stack_params(params, fov_id, peak_id, postfix=color)
-        image_data = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix = color)
+        image_data = load_unmodified_stack(
+            params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=color
+        )
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
         subtract_pairs = zip(image_data, avg_empty_stack)
-        subtract_args = [(params, pair[0], pair[1]) for pair in subtract_pairs]
+        subtract_phase_args = [(params, pair[0], pair[1]) for pair in subtract_pairs]
+        subtract_fl_args = [(pair[0], pair[1]) for pair in subtract_pairs]
 
         # set up multiprocessing pool to do subtraction. Should wait until finished
         pool = Pool(processes=params["num_analyzers"])
 
         if method == "phase":
             subtracted_imgs = pool.map(
-                subtract_phase_helper, subtract_args, chunksize=10
+                subtract_phase_helper, subtract_phase_args, chunksize=10
             )
         elif method == "fluor":
             subtracted_imgs = pool.map(
-                subtract_fluor_helper, subtract_args, chunksize=10
+                subtract_fluor_helper, subtract_fl_args, chunksize=10
             )
 
         pool.close()  # tells the process nothing more will be added.
@@ -292,7 +310,7 @@ def subtract_fov_stack(
 
 
 # averages a list of empty channels
-def average_empties(params, imgs, align=True):
+def average_empties(params: dict, imgs: list, align: bool = True) -> np.ndarray:
     """
     This function averages a set of images (empty channels) and returns a single image
     of the same size. It first aligns the images to the first image before averaging.
@@ -358,7 +376,14 @@ def average_empties(params, imgs, align=True):
 
 
 # average empty channels from stacks, making another TIFF stack
-def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=True):
+def average_empties_stack(
+    params: dict,
+    empty_dir: Path,
+    fov_id: int,
+    specs: dict,
+    color: str = "c1",
+    align: bool = True,
+) -> bool:
     """Takes the fov file name and the peak names of the designated empties,
     averages them and saves the image
 
@@ -402,7 +427,9 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
 
         # load the one phase contrast as the empties
         # avg_empty_stack = load_stack_params(params, fov_id, peak_id, postfix=color)
-        avg_empty_stack = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=color)
+        avg_empty_stack = load_unmodified_stack(
+            params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=color
+        )
 
     # but if there is more than one empty you need to align and average them per timepoint
     elif len(empty_peak_ids) > 1:
@@ -411,7 +438,13 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
         for peak_id in empty_peak_ids:
             # load data and append to list
             # image_data = load_stack_params(params, fov_id, peak_id, postfix=color)
-            image_data = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix = color)
+            image_data = load_unmodified_stack(
+                params["ana_dir"],
+                params["experiment_name"],
+                fov_id,
+                peak_id,
+                postfix=color,
+            )
 
             empty_stacks.append(image_data)
 
@@ -425,7 +458,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
         for t in time_points:
             # get images from one timepoint at a time and send to alignment and averaging
             imgs = [stack[t] for stack in empty_stacks]
-            avg_empty = average_empties(params, imgs, align=align)  # function is in mm3
+            avg_empty = average_empties(params, imgs, align=align)
             avg_empty_stack.append(avg_empty)
 
         # concatenate list and then save out to tiff stack
@@ -437,9 +470,7 @@ def average_empties_stack(params, empty_dir, fov_id, specs, color="c1", align=Tr
         fov_id,
         color,
     )
-    tiff.imwrite(
-        empty_dir / empty_filename, avg_empty_stack, compression=("zlib", 4)
-    )
+    tiff.imwrite(empty_dir / empty_filename, avg_empty_stack, compression=("zlib", 4))
 
     information("Saved empty channel for FOV %d." % fov_id)
 
@@ -453,11 +484,10 @@ def subtract(
     fluor_mode: bool,
     preview=False,
 ):
-    """mm3_Subtract.py averages empty channels and then subtracts them from channels with cells"""
+    """subtract averages empty channels and then subtracts them from channels with cells"""
 
     # Load the project parameters file
     information("Loading experiment parameters.")
-    # p = mm3_.init_mm3_helpers() # initialized the helper library
     p = params
 
     viewer = napari.current_viewer()
