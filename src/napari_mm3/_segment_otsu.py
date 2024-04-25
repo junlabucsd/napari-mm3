@@ -66,50 +66,28 @@ def segment_chnl_stack(params, fov_id, peak_id, view_result: bool = False):
     segmented_imgs = segmented_imgs.astype("uint8")
 
     # save out the segmented stack
-    if params["output"] == "TIFF":
-        seg_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-            fov_id,
-            peak_id,
-            params["seg_img"],
+    seg_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
+        fov_id,
+        peak_id,
+        params["seg_img"],
+    )
+    tiff.imwrite(
+        os.path.join(params["seg_dir"], seg_filename), segmented_imgs, compression='zlib'
+    )
+    if view_result:
+        viewer = napari.current_viewer()
+
+        viewer.grid.enabled = True
+
+        viewer.add_labels(
+            segmented_imgs,
+            name="Segmented"
+            + "_xy%03d_p%04d" % (fov_id, peak_id)
+            + "_"
+            + str(params["seg_img"])
+            + ".tif",
+            visible=True,
         )
-        tiff.imwrite(
-            os.path.join(params["seg_dir"], seg_filename), segmented_imgs, compression='zlib'
-        )
-        if view_result:
-            viewer = napari.current_viewer()
-
-            viewer.grid.enabled = True
-
-            viewer.add_labels(
-                segmented_imgs,
-                name="Segmented"
-                + "_xy%03d_p%04d" % (fov_id, peak_id)
-                + "_"
-                + str(params["seg_img"])
-                + ".tif",
-                visible=True,
-            )
-
-    if params["output"] == "HDF5":
-        h5f = h5py.File(os.path.join(params["hdf5_dir"], "xy%03d.hdf5" % fov_id), "r+")
-
-        # put segmented channel in correct group
-        h5g = h5f["channel_%04d" % peak_id]
-
-        # delete the dataset if it exists (important for debug)
-        if "p%04d_%s" % (peak_id, params["seg_img"]) in h5g:
-            del h5g["p%04d_%s" % (peak_id, params["seg_img"])]
-
-        h5ds = h5g.create_dataset(
-            "p%04d_%s" % (peak_id, params["seg_img"]),
-            data=segmented_imgs,
-            chunks=(1, segmented_imgs.shape[1], segmented_imgs.shape[2]),
-            maxshape=(None, segmented_imgs.shape[1], segmented_imgs.shape[2]),
-            compression="gzip",
-            shuffle=True,
-            fletcher32=True,
-        )
-        h5f.close()
 
     information("Saved segmented channel %d." % peak_id)
 
@@ -224,7 +202,7 @@ def segmentOTSU(params, view_result: bool = False):
     user_spec_fovs = p["FOV"]
 
     # create segmenteation and cell data folder if they don't exist
-    if not os.path.exists(p["seg_dir"]) and p["output"] == "TIFF":
+    if not os.path.exists(p["seg_dir"]):
         os.makedirs(p["seg_dir"])
     if not os.path.exists(p["cell_dir"]):
         os.makedirs(p["cell_dir"])
@@ -324,7 +302,6 @@ class SegmentOtsu(MM3Container):
     def set_params(self):
         self.params = dict()
         self.params["experiment_name"] = self.experiment_name
-        self.params["output"] = "TIFF"
         self.params["FOV"] = self.fovs
         self.params["phase_plane"] = self.phase_plane
 
@@ -339,7 +316,6 @@ class SegmentOtsu(MM3Container):
         # useful folder shorthands for opening files
         self.params["TIFF_dir"] = self.TIFF_folder
         self.params["ana_dir"] = self.analysis_folder
-        self.params["hdf5_dir"] = self.params["ana_dir"] / "hdf5"
         self.params["chnl_dir"] = self.params["ana_dir"] / "channels"
         self.params["empty_dir"] = self.params["ana_dir"] / "empties"
         self.params["sub_dir"] = self.params["ana_dir"] / "subtracted"
