@@ -109,11 +109,12 @@ def restack_planes(found_files_c1: list, found_files_c2: list, params: dict) -> 
 
     return
 
+
 ### Functions for working with TIFF metadata ###
 
 # get params is the major function which processes raw TIFF images
 def get_tif_params(
-    params: dict, image_filename: str, find_channels: bool = True 
+    params: dict, image_filename: str, find_channels: bool = True
 ) -> dict:
     """This is a damn important function for getting the information
     out of an image. It loads a tiff file, pulls out the image data, and the metadata,
@@ -441,6 +442,20 @@ def channel_xcorr(params: dict, fov_id: int, peak_id: int) -> list:
     correlation between that image and the first image.
 
     The very first value should be 1.
+
+    Parameters
+    ----------
+    params: dict
+        dictionary of parameters
+    fov_id: int
+        fov to analyze
+    peak_id:
+        peak (trap) to analyze
+    
+    Returns
+    -------
+    xcorr_array: list
+        array of cross correlations over time
     """
 
     pad_size = params["compile"]["alignment_pad"]
@@ -478,6 +493,7 @@ def channel_xcorr(params: dict, fov_id: int, peak_id: int) -> list:
         xcorr_array.append(np.max(match_template(first_img, img)))
 
     return xcorr_array
+
 
 def compute_xcorr(channel_masks: dict, user_spec_fovs: list, params: dict) -> None:
     """Loop over FOVs and compute time autocorrelation for each channel
@@ -570,7 +586,7 @@ def compute_xcorr(channel_masks: dict, user_spec_fovs: list, params: dict) -> No
 def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
     """Takes an image and cuts out the channel based on the slice location
     slice location is the list with the peak information, in the form
-    [][y1, y2],[x1, x2]]. Returns the channel slice as a numpy array.
+    [[y1, y2],[x1, x2]]. Returns the channel slice as a numpy array.
     The numpy array will be a stack if there are multiple planes.
 
     if you want to slice all the channels from a picture with the channel_masks
@@ -584,6 +600,18 @@ def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
     image is and slice accordingly. It expects the images are in the order
     [t, x, y, c]. It assumes images with three dimensions are [x, y, c] not
     [t, x, y].
+
+    Parameters
+    ----------
+    image_data: np.ndarray
+        image to be sliced
+    channel_loc: list
+        nested list of slice locations [[y1, y2],[x1, x2]]
+    
+    Returns
+    -------
+    channel_slice: np.ndarray
+        sliced channel
     """
 
     # case where image is in form [x, y]
@@ -620,6 +648,7 @@ def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
         channel_slice = np.pad(channel_slice, paddings, mode="edge")
 
     return channel_slice
+
 
 # slice_and_write cuts up the image files one at a time and writes them out to tiff stacks
 def tiff_stack_slice_and_write(
@@ -698,12 +727,188 @@ def tiff_stack_slice_and_write(
     return
 
 
+def make_consensus_mask(
+    fov: int,
+    analyzed_imgs: dict,
+    image_rows: int,
+    image_cols: int,
+    crop_wp: int,
+    chan_lp: int,
+) -> np.ndarray:
+    '''
+    Generate consensus channel mask for a given fov.
+
+    Parameters
+    ----------
+    fov: int
+        fov to analyze
+    analyzed_imgs: dict
+        image data
+    image_rows: int
+        image height
+    image_cols: int
+        image width
+    crop_wp: int
+        channel width padding
+    crop_lp: int
+        channel_width padding
+
+    Returns
+    -------
+    consensus_mask: np.ndarray
+    '''
+
+    consensus_mask = np.zeros([image_rows, image_cols])  # mask for labeling
+
+    # bring up information for each image
+    for img_k in analyzed_imgs.keys():
+        img_v = analyzed_imgs[img_k]
+        # skip this one if it is not of the current fov
+        if img_v["fov"] != fov:
+            continue
+
+        # for each channel in each image make a single mask
+        img_chnl_mask = np.zeros([image_rows, image_cols])
+
+        # and add the channel mask to it
+        for chnl_peak, peak_ends in six.iteritems(img_v["channels"]):
+            # pull out the peak location and top and bottom location
+            # and expand by padding (more padding done later for width)
+            x1 = max(chnl_peak - crop_wp, 0)
+            x2 = min(chnl_peak + crop_wp, image_cols)
+            y1 = max(peak_ends["closed_end_px"] - chan_lp, 0)
+            y2 = min(peak_ends["open_end_px"] + chan_lp, image_rows)
+
+            # add it to the mask for this image
+            img_chnl_mask[y1:y2, x1:x2] = 1
+
+        # add it to the consensus mask
+        consensus_mask += img_chnl_mask
+
+    # Normalize consensus mask between 0 and 1.
+    consensus_mask = consensus_mask.astype("float32") / float(np.amax(consensus_mask))
+
+    # threshhold and homogenize each channel mask within the mask, label them
+    # label when value is above 0.1 (so 90% occupancy), transpose.
+    # the [0] is for the array ([1] is the number of regions)
+    # It transposes and then transposes again so regions are labeled left to right
+    # clear border it to make sure the channels are off the edge
+    consensus_mask = ndi.label(consensus_mask)[0]
+
+    return consensus_mask
+
+
+def update_channel_masks(
+    max_len: int,
+    max_wid: int,
+    binary_core: np.ndarray,
+    image_cols: int,
+    channel_masks_1fov: dict,
+) -> tuple[int, int, dict]:
+    """
+    Add channel locations to dict. Update max channel length/width.
+
+    Parameters
+    ----------
+    max_len: int
+        maximum channel length
+    max_wid: int
+        maximum channel width
+    binary_core: np.ndarray
+        binary mask selecting current label
+    image_cols: int
+        image width
+    channel_masks_1fov: dict
+        dictionary of channel masks
+
+    Returns
+    -------
+    max_len: int
+        updated maximum channel length
+    max_wid: int
+        updated maximum channel width
+    channel_masks_1fov: dict
+        updated dictionary of channel masks
+    """
+
+    # clean up the rough edges
+    poscols = np.any(binary_core, axis=0)  # column positions where true (any)
+    posrows = np.any(binary_core, axis=1)  # row positions where true (any)
+
+    # channel_id given by horizontal position
+    # this is important. later updates to the positions will have to check
+    # if their channels contain this median value to match up
+    channel_id = int(np.median(np.where(poscols)[0]))
+
+    # store the edge locations of the channel mask in the dictionary. Will be ints
+    min_row = np.min(np.where(posrows)[0])
+    max_row = np.max(np.where(posrows)[0])
+    min_col = np.min(np.where(poscols)[0])
+    max_col = np.max(np.where(poscols)[0])
+
+    # if the min/max cols are within the image bounds,
+    # add the mask, as 4 points, to the dictionary
+    if min_col > 0 and max_col < image_cols:
+        channel_masks_1fov[channel_id] = [
+            [min_row, max_row],
+            [min_col, max_col],
+        ]
+
+        # find the largest channel width and height while you go round
+        max_len = int(max(max_len, max_row - min_row))
+        max_wid = int(max(max_wid, max_col - min_col))
+
+    return max_len, max_wid, channel_masks_1fov
+
+
+def adjust_channel_mask(
+    chnl_mask: list, cm_copy: list, max_len: int, max_wid: int, image_cols: int
+) -> list:
+    """
+    Expand channel mask to match maximum length and width.
+
+    Parameters
+    ----------
+    chnl_mask: list
+        indices of channel mask corners
+    cm_copy: list
+        consensus channel mask
+    max_len: int
+        maximum channel length
+    max_width: int
+        maximum channel width
+    image_cols: int
+        image width in pixels
+
+    Returns
+    -------
+    cm_copy: list
+        updated consensus channel mask
+    """
+    # just add length to the open end (bottom of image, low column)
+    if chnl_mask[0][1] - chnl_mask[0][0] != max_len:
+        cm_copy[0][1] = chnl_mask[0][0] + max_len
+    # enlarge widths around the middle, but make sure you don't get floats
+    if chnl_mask[1][1] - chnl_mask[1][0] != max_wid:
+        wid_diff = max_wid - (chnl_mask[1][1] - chnl_mask[1][0])
+        if wid_diff % 2 == 0:
+            cm_copy[1][0] = max(chnl_mask[1][0] - wid_diff / 2, 0)
+            cm_copy[1][1] = min(chnl_mask[1][1] + wid_diff / 2, image_cols - 1)
+        else:
+            cm_copy[1][0] = max(chnl_mask[1][0] - (wid_diff - 1) / 2, 0)
+            cm_copy[1][1] = min(chnl_mask[1][1] + (wid_diff + 1) / 2, image_cols - 1)
+    
+    cm_copy = [list(map(int,i)) for i in cm_copy] # make sure they are ints
+
+    return cm_copy
+
+
 # make masks from initial set of images (same images as clusters)
 def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> dict:
     """
     Make masks goes through the channel locations in the image metadata and builds a consensus
     Mask for each image per fov, which it returns as dictionary named channel_masks.
-    The keys in this dictionary are fov id, and the values is a another dictionary. This dict's keys are channel locations (peaks) and the values is a [2][2] array:
+    The keys in this dictionary are fov id, and the values is another dictionary. This dict's keys are channel locations (peaks) and the values is a [2][2] array:
     [[minrow, maxrow],[mincol, maxcol]] of pixel locations designating the corner of each mask
     for each channel on the whole image
 
@@ -711,10 +916,12 @@ def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> d
     channel slices are decided now. Updates to mask must coordinate with these values.
 
     Parameters
+    ----------
     analyzed_imgs : dict
         image information created by get_params
 
     Returns
+    -------
     channel_masks : dict
         dictionary of consensus channel masks.
 
@@ -722,6 +929,9 @@ def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> d
     compile
 
     Calls
+    make_consensus_mask
+    get_max_chnl_dim
+    adjust_channel_mask
     """
     information("Determining initial channel masks...")
 
@@ -745,9 +955,6 @@ def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> d
     )
     chan_lp = int(params["compile"]["channel_length_pad"])
 
-    # intiaize dictionary
-    channel_masks = {}
-
     # get the size of the images (hope they are the same)
     for img_k in analyzed_imgs.keys():
         img_v = analyzed_imgs[img_k]
@@ -764,86 +971,31 @@ def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> d
 
     # max width and length across all fovs. channels will get expanded by these values
     # this important for later updates to the masks, which should be the same
-    max_chnl_mask_len = 0
-    max_chnl_mask_wid = 0
+    max_len = 0
+    max_wid = 0
+
+    # intialize dictionary
+    channel_masks = {}
 
     # for each fov make a channel_mask dictionary from consensus mask
     for fov in fovs:
-        # initialize a the dict and consensus mask
-        channel_masks_1fov = (
-            {}
-        )  # dict which holds channel masks {peak : [[y1, y2],[x1,x2]],...}
-        consensus_mask = np.zeros([image_rows, image_cols])  # mask for labeling
 
-        # bring up information for each image
-        for img_k in analyzed_imgs.keys():
-            img_v = analyzed_imgs[img_k]
-            # skip this one if it is not of the current fov
-            if img_v["fov"] != fov:
-                continue
-
-            # for each channel in each image make a single mask
-            img_chnl_mask = np.zeros([image_rows, image_cols])
-
-            # and add the channel mask to it
-            for chnl_peak, peak_ends in six.iteritems(img_v["channels"]):
-                # pull out the peak location and top and bottom location
-                # and expand by padding (more padding done later for width)
-                x1 = max(chnl_peak - crop_wp, 0)
-                x2 = min(chnl_peak + crop_wp, image_cols)
-                y1 = max(peak_ends["closed_end_px"] - chan_lp, 0)
-                y2 = min(peak_ends["open_end_px"] + chan_lp, image_rows)
-
-                # add it to the mask for this image
-                img_chnl_mask[y1:y2, x1:x2] = 1
-
-            # add it to the consensus mask
-            consensus_mask += img_chnl_mask
-
-        # Normalize concensus mask between 0 and 1.
-        consensus_mask = consensus_mask.astype("float32") / float(
-            np.amax(consensus_mask)
+        consensus_mask = make_consensus_mask(
+            fov, analyzed_imgs, image_rows, image_cols, crop_wp, chan_lp
         )
 
-        # threshhold and homogenize each channel mask within the mask, label them
-        # label when value is above 0.1 (so 90% occupancy), transpose.
-        # the [0] is for the array ([1] is the number of regions)
-        # It transposes and then transposes again so regions are labeled left to right
-        # clear border it to make sure the channels are off the edge
-        consensus_mask = ndi.label(consensus_mask)[0]
+        # initialize dict which holds channel masks {peak : [[y1, y2],[x1,x2]],...}
+        channel_masks_1fov = {}
 
         # go through each label
         for label in np.unique(consensus_mask):
             if label == 0:  # label zero is the background
                 continue
+
             binary_core = consensus_mask == label
-
-            # clean up the rough edges
-            poscols = np.any(binary_core, axis=0)  # column positions where true (any)
-            posrows = np.any(binary_core, axis=1)  # row positions where true (any)
-
-            # channel_id givin by horizontal position
-            # this is important. later updates to the positions will have to check
-            # if their channels contain this median value to match up
-            channel_id = int(np.median(np.where(poscols)[0]))
-
-            # store the edge locations of the channel mask in the dictionary. Will be ints
-            min_row = np.min(np.where(posrows)[0])
-            max_row = np.max(np.where(posrows)[0])
-            min_col = np.min(np.where(poscols)[0])
-            max_col = np.max(np.where(poscols)[0])
-
-            # if the min/max cols are within the image bounds,
-            # add the mask, as 4 points, to the dictionary
-            if min_col > 0 and max_col < image_cols:
-                channel_masks_1fov[channel_id] = [
-                    [min_row, max_row],
-                    [min_col, max_col],
-                ]
-
-                # find the largest channel width and height while you go round
-                max_chnl_mask_len = int(max(max_chnl_mask_len, max_row - min_row))
-                max_chnl_mask_wid = int(max(max_chnl_mask_wid, max_col - min_col))
+            max_len, max_wid, channel_masks_1fov = update_channel_masks(
+                max_len, max_wid, binary_core, image_cols, channel_masks_1fov
+            )
 
         # add channel_mask dictionary to the fov dictionary, use copy to play it safe
         channel_masks[fov] = channel_masks_1fov.copy()
@@ -852,33 +1004,10 @@ def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> d
     cm_copy = channel_masks.copy()
 
     for fov, peaks in six.iteritems(channel_masks):
-        # f_id = int(fov)
         for peak, chnl_mask in six.iteritems(peaks):
-            # p_id = int(peak)
-            # just add length to the open end (bottom of image, low column)
-            if chnl_mask[0][1] - chnl_mask[0][0] != max_chnl_mask_len:
-                cm_copy[fov][peak][0][1] = chnl_mask[0][0] + max_chnl_mask_len
-            # enlarge widths around the middle, but make sure you don't get floats
-            if chnl_mask[1][1] - chnl_mask[1][0] != max_chnl_mask_wid:
-                wid_diff = max_chnl_mask_wid - (chnl_mask[1][1] - chnl_mask[1][0])
-                if wid_diff % 2 == 0:
-                    cm_copy[fov][peak][1][0] = max(chnl_mask[1][0] - wid_diff / 2, 0)
-                    cm_copy[fov][peak][1][1] = min(
-                        chnl_mask[1][1] + wid_diff / 2, image_cols - 1
-                    )
-                else:
-                    cm_copy[fov][peak][1][0] = max(
-                        chnl_mask[1][0] - (wid_diff - 1) / 2, 0
-                    )
-                    cm_copy[fov][peak][1][1] = min(
-                        chnl_mask[1][1] + (wid_diff + 1) / 2, image_cols - 1
-                    )
-
-            # convert all values to ints
-            chnl_mask[0][0] = int(chnl_mask[0][0])
-            chnl_mask[0][1] = int(chnl_mask[0][1])
-            chnl_mask[1][0] = int(chnl_mask[1][0])
-            chnl_mask[1][1] = int(chnl_mask[1][1])
+            cm_copy[fov][peak] = adjust_channel_mask(
+                chnl_mask, cm_copy[fov][peak], max_len, max_wid, image_cols
+            )
 
     # save the channel mask dictionary to a pickle and a text file
     # with open(os.path.join(params['ana_dir'], 'channel_masks.pkl'), 'wb') as cmask_file:
@@ -895,7 +1024,18 @@ def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> d
 
 # function for loading the channel masks
 def load_channel_masks(params: dict) -> dict:
-    """Load channel masks dictionary. Should be .yaml but try pickle too."""
+    """Load channel masks dictionary. Should be .yaml but try pickle too.
+    
+    Parameters
+    ----------
+    params: dict
+        parameters dictionary
+    
+    Returns
+    -------
+    channel_masks: dict
+        dictionary of channel masks
+    """
     information("Loading channel masks dictionary.")
 
     # try loading from .yaml before .pkl
@@ -962,7 +1102,7 @@ def make_time_table(params: dict, analyzed_imgs: dict) -> dict:
         # init dictionary for specific times per FOV
         if idata["fov"] not in time_table:
             time_table[idata["fov"]] = {}
-            
+
     for iname, idata in six.iteritems(analyzed_imgs):
         if params["use_jd"]:
             # convert jd time to elapsed time in seconds
@@ -1205,6 +1345,7 @@ def filter_files(
 
     return found_files
 
+
 def slice_channels(
     channel_masks: dict, analyzed_imgs: dict, user_spec_fovs: list, params: dict
 ):
@@ -1242,9 +1383,7 @@ def slice_channels(
         send_to_write = progress(sorted(send_to_write, key=lambda time: time[1]))
 
         # This is for loading the whole raw tiff stack and then slicing through it
-        tiff_stack_slice_and_write(
-            params, send_to_write, channel_masks, analyzed_imgs
-        )
+        tiff_stack_slice_and_write(params, send_to_write, channel_masks, analyzed_imgs)
 
     information("Channel slices saved.")
 
@@ -1296,7 +1435,7 @@ def compile(params: dict) -> None:
         ## if there is a second plane, stack and save them out
         if found_files_c2:
             information("Restacking TIFFs")
-            restack_planes(found_files_c1,found_files_c2, params)
+            restack_planes(found_files_c1, found_files_c2, params)
         else:
             pass
 
@@ -1367,7 +1506,9 @@ def load_fov(image_directory: Path, fov_id: int, filter_str: str = "") -> np.nda
     found_files = [f.name for f in found_files if re.search(file_string, f.name)]
     if filter_str:
         # found_files = [f for f in found_files if filter_str in f]
-        found_files = [f for f in found_files if re.search(filter_str,f, re.IGNORECASE)]
+        found_files = [
+            f for f in found_files if re.search(filter_str, f, re.IGNORECASE)
+        ]
 
     information("sorting files")
     found_files = sorted(found_files)  # should sort by timepoint
@@ -1403,7 +1544,7 @@ class Compile(MM3Container):
         )
         self.split_channels_widget = CheckBox(
             label="separate image plane files",
-            tooltip="Check this box if you have separate tiffs for phase / fluorescence channels. Used for display only."
+            tooltip="Check this box if you have separate tiffs for phase / fluorescence channels. Used for display only.",
         )
         self.phase_plane_widget = PlanePicker(
             self.valid_planes, label="phase plane channel"
@@ -1523,7 +1664,7 @@ class Compile(MM3Container):
             "track_dir": self.analysis_folder / "tracking",
             # use jd time in image metadata to make time table. Set to false if no jd time
             # "use_jd": self.image_source in {"nd2", "TIFF from Elements"},
-            "use_jd": False, # disabling for now because of bug with Elements output formatting
+            "use_jd": False,  # disabling for now because of bug with Elements output formatting
         }
         self.viewer.window._status_bar._toggle_activity_dock(True)
 
@@ -1539,7 +1680,9 @@ class Compile(MM3Container):
             )
         else:
             image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
-        image_fov_stack = np.squeeze(image_fov_stack) ## remove axes of length 1 for napari viewer
+        image_fov_stack = np.squeeze(
+            image_fov_stack
+        )  ## remove axes of length 1 for napari viewer
         images = self.viewer.add_image(image_fov_stack.astype(np.float32))
         self.viewer.dims.current_step = (0, 0)
         images.reset_contrast_limits()
