@@ -8,6 +8,8 @@ import numpy as np
 import six
 import pickle
 import os
+from typing import Dict, List, Tuple
+
 import matplotlib as mpl
 import seaborn as sns
 import matplotlib.patches as mpatches
@@ -37,7 +39,7 @@ from .utils import (
 )
 
 # load the time table
-def load_time_table(ana_dir):
+def load_time_table(ana_dir: Path) -> dict:
     """Add the time table dictionary to the params global dictionary.
     This is so it can be used during Cell creation.
     """
@@ -54,9 +56,23 @@ def load_time_table(ana_dir):
 # functions for checking if a cell has divided or not
 # this function should also take the variable t to
 # weight the allowed changes by the difference in time as well
-def check_growth_by_region(params, cell, region):
+def check_growth_by_region(params: dict, cell: Cell, region) -> bool:
     """Checks to see if it makes sense
     to grow a cell by a particular region
+
+    Parameters
+    ----------
+    params: dict
+        dictionary of parameters
+    cell: Cell object
+        Cell object currently tracked
+    region: RegionProps object
+        regionprops object containing area attributes
+
+    Returns
+    -------
+    bool
+        True if it makes sense to grow the cell
     """
     # load parameters for checking
     max_growth_length = params["track"]["max_growth_length"]
@@ -98,7 +114,7 @@ def check_growth_by_region(params, cell, region):
 
 
 # see if a cell has reasonably divided
-def check_division(params, cell, region1, region2):
+def check_division(params: dict, cell: Cell, region1, region2) -> int:
     """Checks to see if it makes sense to divide a
     cell into two new cells based on two regions.
 
@@ -150,7 +166,9 @@ def check_division(params, cell, region1, region2):
 
 
 # take info and make string for cell id
-def create_cell_id(region, t, peak, fov, experiment_name=None):
+def create_cell_id(
+    region, t: int, peak: int, fov: int, experiment_name: str = None
+) -> str:
     """Make a unique cell id string for a new cell"""
     # cell_id = ['f', str(fov), 'p', str(peak), 't', str(t), 'r', str(region.label)]
     if experiment_name is None:
@@ -172,8 +190,284 @@ def create_cell_id(region, t, peak, fov, experiment_name=None):
     return cell_id
 
 
+def update_leaf_regions(
+    regions: list, current_leaf_positions: list, leaf_region_map: dict
+) -> dict:
+    # go through regions, they will come off in Y position order
+    for r, region in enumerate(regions):
+        # create tuple which is cell_id of closest leaf, distance
+        current_closest = (None, float("inf"))
+
+        # check this region against all positions of all current leaf regions,
+        # find the closest one in y.
+        for leaf in current_leaf_positions:
+            # calculate distance between region and leaf
+            y_dist_region_to_leaf = abs(region.centroid[0] - leaf[1])
+
+            # if the distance is closer than before, update
+            if y_dist_region_to_leaf < current_closest[1]:
+                current_closest = (leaf[0], y_dist_region_to_leaf)
+
+        # update map with the closest region
+        leaf_region_map[current_closest[0]].append((r, y_dist_region_to_leaf))
+
+    return leaf_region_map
+
+
+def get_two_closest_regions(region_links):
+    closest_two_regions = sorted(region_links, key=lambda x: x[1])[:2]
+    # but sort by region order so top region is first
+    closest_two_regions = sorted(closest_two_regions, key=lambda x: x[0])
+    return closest_two_regions
+
+
+def handle_discarded_regions(
+    cell_leaves: list,
+    region_links: list,
+    regions,
+    new_cell_y_cutoff: int,
+    new_cell_region_cutoff: int,
+    Cells: dict,
+    params: dict,
+    time_table: dict,
+    t: int,
+    peak_id: int,
+    fov_id: int,
+) -> Tuple[list, dict]:
+    discarded_regions = sorted(region_links, key=lambda x: x[1])[2:]
+    for discarded_region in discarded_regions:
+        region = regions[discarded_region[0]]
+        if (
+            region.centroid[0] < new_cell_y_cutoff
+            and region.label <= new_cell_region_cutoff
+        ):
+            cell_id = create_cell_id(region, t, peak_id, fov_id)
+            Cells[cell_id] = Cell(
+                params["pxl2um"],
+                time_table,
+                cell_id,
+                region,
+                t,
+                parent_id=None,
+            )
+            cell_leaves.append(cell_id)  # add to leaves
+        else:
+            # since the regions are ordered, none of the remaining will pass
+            break
+    return cell_leaves, Cells
+
+
+def divide_cell(
+    region1,
+    region2,
+    t: int,
+    peak_id: int,
+    fov_id: int,
+    Cells: dict,
+    params: dict,
+    time_table,
+    leaf_id: str,
+) -> Tuple[str, str, dict]:
+    # create two new cells and divide the mother
+    daughter1_id = create_cell_id(region1, t, peak_id, fov_id)
+    daughter2_id = create_cell_id(region2, t, peak_id, fov_id)
+    Cells[daughter1_id] = Cell(
+        params["pxl2um"],
+        time_table,
+        daughter1_id,
+        region1,
+        t,
+        parent_id=leaf_id,
+    )
+    Cells[daughter2_id] = Cell(
+        params["pxl2um"],
+        time_table,
+        daughter2_id,
+        region2,
+        t,
+        parent_id=leaf_id,
+    )
+    Cells[leaf_id].divide(Cells[daughter1_id], Cells[daughter2_id], t)
+
+    return daughter1_id, daughter2_id, Cells
+
+
+def add_leaf_daughter(region, cell_leaves: list, id: str, y_cutoff: int, region_cutoff: int) -> list:
+    # add the daughter ids to list of current leaves if they pass cutoffs
+    if region.centroid[0] < y_cutoff and region.label <= region_cutoff:
+        cell_leaves.append(id)
+
+    return cell_leaves
+
+
+def add_leaf_orphan(
+    region,
+    cell_leaves: list,
+    Cells: dict,
+    y_cutoff: int,
+    region_cutoff: int,
+    t: int,
+    peak_id: int,
+    fov_id: int,
+    params: dict,
+    time_table: dict,
+) -> Tuple[list, dict]:
+    if region.centroid[0] < y_cutoff and region.label <= region_cutoff:
+        cell_id = create_cell_id(region, t, peak_id, fov_id)
+        Cells[cell_id] = Cell(
+            params["pxl2um"],
+            time_table,
+            cell_id,
+            region,
+            t,
+            parent_id=None,
+        )
+        cell_leaves.append(cell_id)  # add to leaves
+    return cell_leaves, Cells
+
+
+def handle_two_regions(
+    region1,
+    region2,
+    params,
+    leaf_id,
+    t,
+    peak_id,
+    fov_id,
+    time_table,
+    y_cutoff,
+    region_cutoff,
+):
+
+    # check_division returns 3 if cell divided,
+    # 1 if first region is just the cell growing and the second is trash
+    # 2 if the second region is the cell, and the first is trash
+    # or 0 if it cannot be determined.
+    check_division_result = check_division(params, Cells[leaf_id], region1, region2)
+
+    if check_division_result == 3:
+        daughter1_id, daughter2_id, Cells = divide_cell(
+            region1, region2, t, peak_id, fov_id, Cells, params, time_table, leaf_id
+        )
+        # remove mother from current leaves
+        cell_leaves.remove(leaf_id)
+
+        # add the daughter ids to list of current leaves if they pass cutoffs
+        cell_leaves = add_leaf_daughter(
+            region1, cell_leaves, daughter1_id, y_cutoff, region_cutoff
+        )
+
+        cell_leaves = add_leaf_daughter(
+            region2, cell_leaves, daughter2_id, y_cutoff, region_cutoff
+        )
+
+    # 1 means that daughter 1 is just a continuation of the mother
+    # The other region should be a leaf it passes the requirements
+    elif check_division_result == 1:
+        Cells[leaf_id].grow(time_table, region1, t)
+
+        cell_leaves, Cells = add_leaf_orphan(
+            region2,
+            cell_leaves,
+            Cells,
+            y_cutoff,
+            region_cutoff,
+            t,
+            peak_id,
+            fov_id,
+            params,
+            time_table,
+        )
+
+    # ditto for 2
+    elif check_division_result == 2:
+        Cells[leaf_id].grow(time_table, region2, t)
+
+        cell_leaves, Cells = add_leaf_orphan(
+            region1,
+            cell_leaves,
+            Cells,
+            y_cutoff,
+            region_cutoff,
+            t,
+            peak_id,
+            fov_id,
+            params,
+            time_table,
+        )
+
+    return cell_leaves, Cells
+
+
+def prune_leaves(cell_leaves: list, Cells: dict, lost_cell_time: int, t: int) -> Tuple[list, dict]:
+    for leaf_id in cell_leaves:
+        if t - Cells[leaf_id].times[-1] > lost_cell_time:
+            cell_leaves.remove(leaf_id)
+    return cell_leaves, Cells
+
+
+def update_region_links(
+    cell_leaves, Cells, leaf_region_map, regions, params, time_table
+):
+    ### iterate over the leaves, looking to see what regions connect to them.
+    for leaf_id, region_links in six.iteritems(leaf_region_map):
+        # if there is just one suggested descendant,
+        # see if it checks out and append the data
+        if len(region_links) == 1:
+            region = regions[region_links[0][0]]  # grab the region from the list
+
+            # check if the pairing makes sense based on size and position
+            # this function returns true if things are okay
+            if check_growth_by_region(params, Cells[leaf_id], region):
+                # grow the cell by the region in this case
+                Cells[leaf_id].grow(time_table, region, t)
+
+        # there may be two daughters, or maybe there is just one child and a new cell
+        elif len(region_links) == 2:
+            # grab these two daughters
+            region1 = regions[region_links[0][0]]
+            region2 = regions[region_links[1][0]]
+            cell_leaves, Cells = handle_two_regions(
+                region1, region2, cell_leaves, Cells
+            )
+
+    return cell_leaves, Cells
+
+
+def make_leaf_region_map(regions, params, time_table):
+    ### create mapping between regions and leaves
+    leaf_region_map = {}
+    leaf_region_map = {leaf_id: [] for leaf_id in cell_leaves}
+
+    # get the last y position of current leaves and create tuple with the id
+    current_leaf_positions = [
+        (leaf_id, Cells[leaf_id].centroids[-1][0]) for leaf_id in cell_leaves
+    ]
+
+    leaf_region_map = update_leaf_regions(
+        regions, current_leaf_positions, leaf_region_map
+    )
+
+    # go through the current leaf regions.
+    # limit by the closest two current regions if there are three regions to the leaf
+    for leaf_id, region_links in six.iteritems(leaf_region_map):
+        if len(region_links) > 2:
+
+            leaf_region_map[leaf_id] = get_two_closest_regions(region_links)
+
+            # for the discarded regions, put them as new leaves
+            # if they are near the closed end of the channel
+            cell_leaves, Cells = handle_discarded_regions()
+
+    cell_leaves, Cells = update_region_links(
+        cell_leaves, Cells, leaf_region_map, regions, params, time_table
+    )
+
+    return cell_leaves, Cells
+
+
 # Creates lineage for a single channel
-def make_lineage_chnl_stack(params, fov_and_peak_id):
+def make_lineage_chnl_stack(params: dict, fov_and_peak_id: tuple) -> dict:
     """
     Create the lineage for a set of segmented images for one channel. Start by making the regions in the first time points potenial cells.
     Go forward in time and map regions in the timepoint to the potential cells in previous time points, building the life of a cell.
@@ -210,13 +504,12 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
     start_time_index = min(time_table[fov_id].keys())
 
     information("Creating lineage for FOV %d, channel %d." % (fov_id, peak_id))
- 
-    # load segmented data
-    # image_data_seg = load_stack_params(
-    #    params, fov_id, peak_id, postfix=params["track"]["seg_img"]
-    # )
-    
-    seg_mode = SegmentationMode.UNET if params["track"]["seg_img"] == "seg_unet" else SegmentationMode.OTSU
+
+    seg_mode = (
+        SegmentationMode.UNET
+        if params["track"]["seg_img"] == "seg_unet"
+        else SegmentationMode.OTSU
+    )
     image_data_seg = load_seg_stack(
         ana_dir=params["ana_dir"],
         experiment_name=params["experiment_name"],
@@ -240,198 +533,27 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
     for t, regions in enumerate(regions_by_time, start=start_time_index):
         # if there are cell leaves who are still waiting to be linked, but
         # too much time has passed, remove them.
-        for leaf_id in cell_leaves:
-            if t - Cells[leaf_id].times[-1] > lost_cell_time:
-                cell_leaves.remove(leaf_id)
+        cell_leaves = prune_leaves(cell_leaves, Cells, lost_cell_time, t)
 
         # make all the regions leaves if there are no current leaves
         if not cell_leaves:
             for region in regions:
-                if (
-                    region.centroid[0] < new_cell_y_cutoff
-                    and region.label <= new_cell_region_cutoff
-                ):
-                    # Create cell and put in cell dictionary
-                    cell_id = create_cell_id(region, t, peak_id, fov_id)
-                    Cells[cell_id] = Cell(
-                        params["pxl2um"], time_table, cell_id, region, t, parent_id=None
-                    )
-
-                    # add thes id to list of current leaves
-                    cell_leaves.append(cell_id)
+                cell_leaves, Cells = add_leaf_orphan(
+                    region,
+                    cell_leaves,
+                    Cells,
+                    new_cell_y_cutoff,
+                    new_cell_region_cutoff,
+                    t,
+                    peak_id,
+                    fov_id,
+                    params,
+                    time_table,
+                )
 
         # Determine if the regions are children of current leaves
         else:
-            ### create mapping between regions and leaves
-            leaf_region_map = {}
-            leaf_region_map = {leaf_id: [] for leaf_id in cell_leaves}
-
-            # get the last y position of current leaves and create tuple with the id
-            current_leaf_positions = [
-                (leaf_id, Cells[leaf_id].centroids[-1][0]) for leaf_id in cell_leaves
-            ]
-
-            # go through regions, they will come off in Y position order
-            for r, region in enumerate(regions):
-                # create tuple which is cell_id of closest leaf, distance
-                current_closest = (None, float("inf"))
-
-                # check this region against all positions of all current leaf regions,
-                # find the closest one in y.
-                for leaf in current_leaf_positions:
-                    # calculate distance between region and leaf
-                    y_dist_region_to_leaf = abs(region.centroid[0] - leaf[1])
-
-                    # if the distance is closer than before, update
-                    if y_dist_region_to_leaf < current_closest[1]:
-                        current_closest = (leaf[0], y_dist_region_to_leaf)
-
-                # update map with the closest region
-                leaf_region_map[current_closest[0]].append((r, y_dist_region_to_leaf))
-
-            # go through the current leaf regions.
-            # limit by the closest two current regions if there are three regions to the leaf
-            for leaf_id, region_links in six.iteritems(leaf_region_map):
-                if len(region_links) > 2:
-                    closest_two_regions = sorted(region_links, key=lambda x: x[1])[:2]
-                    # but sort by region order so top region is first
-                    closest_two_regions = sorted(
-                        closest_two_regions, key=lambda x: x[0]
-                    )
-                    # replace value in dictionary
-                    leaf_region_map[leaf_id] = closest_two_regions
-
-                    # for the discarded regions, put them as new leaves
-                    # if they are near the closed end of the channel
-                    discarded_regions = sorted(region_links, key=lambda x: x[1])[2:]
-                    for discarded_region in discarded_regions:
-                        region = regions[discarded_region[0]]
-                        if (
-                            region.centroid[0] < new_cell_y_cutoff
-                            and region.label <= new_cell_region_cutoff
-                        ):
-                            cell_id = create_cell_id(region, t, peak_id, fov_id)
-                            Cells[cell_id] = Cell(
-                                params["pxl2um"],
-                                time_table,
-                                cell_id,
-                                region,
-                                t,
-                                parent_id=None,
-                            )
-                            cell_leaves.append(cell_id)  # add to leaves
-                        else:
-                            # since the regions are ordered, none of the remaining will pass
-                            break
-
-            ### iterate over the leaves, looking to see what regions connect to them.
-            for leaf_id, region_links in six.iteritems(leaf_region_map):
-
-                # if there is just one suggested descendant,
-                # see if it checks out and append the data
-                if len(region_links) == 1:
-                    region = regions[
-                        region_links[0][0]
-                    ]  # grab the region from the list
-
-                    # check if the pairing makes sense based on size and position
-                    # this function returns true if things are okay
-                    if check_growth_by_region(params, Cells[leaf_id], region):
-                        # grow the cell by the region in this case
-                        Cells[leaf_id].grow(time_table, region, t)
-
-                # there may be two daughters, or maybe there is just one child and a new cell
-                elif len(region_links) == 2:
-                    # grab these two daughters
-                    region1 = regions[region_links[0][0]]
-                    region2 = regions[region_links[1][0]]
-
-                    # check_division returns 3 if cell divided,
-                    # 1 if first region is just the cell growing and the second is trash
-                    # 2 if the second region is the cell, and the first is trash
-                    # or 0 if it cannot be determined.
-                    check_division_result = check_division(
-                        params, Cells[leaf_id], region1, region2
-                    )
-
-                    if check_division_result == 3:
-                        # create two new cells and divide the mother
-                        daughter1_id = create_cell_id(region1, t, peak_id, fov_id)
-                        daughter2_id = create_cell_id(region2, t, peak_id, fov_id)
-                        Cells[daughter1_id] = Cell(
-                            params["pxl2um"],
-                            time_table,
-                            daughter1_id,
-                            region1,
-                            t,
-                            parent_id=leaf_id,
-                        )
-                        Cells[daughter2_id] = Cell(
-                            params["pxl2um"],
-                            time_table,
-                            daughter2_id,
-                            region2,
-                            t,
-                            parent_id=leaf_id,
-                        )
-                        Cells[leaf_id].divide(
-                            Cells[daughter1_id], Cells[daughter2_id], t
-                        )
-
-                        # remove mother from current leaves
-                        cell_leaves.remove(leaf_id)
-
-                        # add the daughter ids to list of current leaves if they pass cutoffs
-                        if (
-                            region1.centroid[0] < new_cell_y_cutoff
-                            and region1.label <= new_cell_region_cutoff
-                        ):
-                            cell_leaves.append(daughter1_id)
-
-                        if (
-                            region2.centroid[0] < new_cell_y_cutoff
-                            and region2.label <= new_cell_region_cutoff
-                        ):
-                            cell_leaves.append(daughter2_id)
-
-                    # 1 means that daughter 1 is just a continuation of the mother
-                    # The other region should be a leaf it passes the requirements
-                    elif check_division_result == 1:
-                        Cells[leaf_id].grow(time_table, region1, t)
-
-                        if (
-                            region2.centroid[0] < new_cell_y_cutoff
-                            and region2.label <= new_cell_region_cutoff
-                        ):
-                            cell_id = create_cell_id(region2, t, peak_id, fov_id)
-                            Cells[cell_id] = Cell(
-                                params["pxl2um"],
-                                time_table,
-                                cell_id,
-                                region2,
-                                t,
-                                parent_id=None,
-                            )
-                            cell_leaves.append(cell_id)  # add to leaves
-
-                    # ditto for 2
-                    elif check_division_result == 2:
-                        Cells[leaf_id].grow(time_table, region2, t)
-
-                        if (
-                            region1.centroid[0] < new_cell_y_cutoff
-                            and region1.label <= new_cell_region_cutoff
-                        ):
-                            cell_id = create_cell_id(region1, t, peak_id, fov_id)
-                            Cells[cell_id] = Cell(
-                                params["pxl2um"],
-                                time_table,
-                                cell_id,
-                                region1,
-                                t,
-                                parent_id=None,
-                            )
-                            cell_leaves.append(cell_id)  # add to leaves
+            cell_leaves, Cells = make_leaf_region_map(cell_leaves, Cells)
 
     ## plot kymograph with lineage overlay & save it out
     make_lineage_plot(params, fov_id, peak_id, Cells, start_time_index)
@@ -441,7 +563,7 @@ def make_lineage_chnl_stack(params, fov_and_peak_id):
 
 
 # finds lineages for all peaks in a fov
-def make_lineages_fov(params, fov_id, specs):
+def make_lineages_fov(params: dict, fov_id: int, specs: dict) -> dict:
     """
     For a given fov, create the lineages from the segmented images.
 
@@ -492,7 +614,9 @@ def make_lineages_fov(params, fov_id, specs):
     return Cells
 
 
-def make_lineage_plot(params, fov_id, peak_id, Cells, start_time_index):
+def make_lineage_plot(
+    params: dict, fov_id: int, peak_id: int, Cells: dict, start_time_index: int
+):
     """Produces a lineage image for the first valid FOV containing cells"""
     # plotting lineage trees for complete cells
 
@@ -501,7 +625,12 @@ def make_lineage_plot(params, fov_id, peak_id, Cells, start_time_index):
         os.makedirs(lin_dir)
 
     fig, ax = plot_lineage_images(
-        params, Cells, fov_id, peak_id, bgcolor=params["phase_plane"],t_adj = start_time_index
+        params,
+        Cells,
+        fov_id,
+        peak_id,
+        bgcolor=params["phase_plane"],
+        t_adj=start_time_index,
     )
     lin_filename = f'{params["experiment_name"]}_{fov_id}_{peak_id}.tif'
     lin_filepath = lin_dir / lin_filename
@@ -509,11 +638,11 @@ def make_lineage_plot(params, fov_id, peak_id, Cells, start_time_index):
         fig.savefig(lin_filepath, dpi=75)
     # sometimes image size is too large for matplotlib renderer
     except ValueError:
-        warning('Image size may be too large for matplotlib')
+        warning("Image size may be too large for matplotlib")
     plt.close(fig)
 
 
-def load_lineage_image(params, fov_id, peak_id):
+def load_lineage_image(params: dict, fov_id: int, peak_id: int):
     """Loads a lineage image for the given FOV and peak
 
     Parameters
@@ -549,16 +678,143 @@ def load_lineage_image(params, fov_id, peak_id):
     return img_stack
 
 
+def connect_centroids(
+    fig: plt.figure,
+    ax: plt.axes,
+    Cells: dict,
+    cell_id: str,
+    n: int,
+    transFigure: plt.figure,
+    t: int,
+    t_adj: int,
+    x: int,
+    y: int,
+):
+    # coordinates of the next centroid
+    x_next = Cells[cell_id].centroids[n + 1][1]
+    y_next = Cells[cell_id].centroids[n + 1][0]
+    t_next = Cells[cell_id].times[n + 1] - t_adj  # adjust for special indexing
+
+    # get coordinates for the whole figure
+    coord1 = transFigure.transform(ax[t].transData.transform([x, y]))
+    coord2 = transFigure.transform(ax[t_next].transData.transform([x_next, y_next]))
+
+    # create line
+    line = mpl.lines.Line2D(
+        (coord1[0], coord2[0]),
+        (coord1[1], coord2[1]),
+        transform=fig.transFigure,
+        color="white",
+        lw=1,
+        alpha=0.5,
+    )
+
+    # add it to plot
+    fig.lines.append(line)
+    return fig, ax
+
+
+def connect_mother_daughter(
+    fig: plt.figure,
+    ax: plt.axes,
+    Cells: dict,
+    cell_id: str,
+    transFigure: plt.figure,
+    t: int,
+    t_adj: int,
+    x: int,
+    y,
+):
+    # daughter ids
+    d1_id = Cells[cell_id].daughters[0]
+    d2_id = Cells[cell_id].daughters[1]
+
+    # both daughters should have been born at the same time.
+    t_next = Cells[d1_id].times[0] - t_adj
+
+    # coordinates of the two daughters
+    x_d1 = Cells[d1_id].centroids[0][1]
+    y_d1 = Cells[d1_id].centroids[0][0]
+    x_d2 = Cells[d2_id].centroids[0][1]
+    y_d2 = Cells[d2_id].centroids[0][0]
+
+    # get coordinates for the whole figure
+    coord1 = transFigure.transform(ax[t].transData.transform([x, y]))
+    coordd1 = transFigure.transform(ax[t_next].transData.transform([x_d1, y_d1]))
+    coordd2 = transFigure.transform(ax[t_next].transData.transform([x_d2, y_d2]))
+
+    # create line and add it to plot for both
+    for coord in [coordd1, coordd2]:
+        line = mpl.lines.Line2D(
+            (coord1[0], coord[0]),
+            (coord1[1], coord[1]),
+            transform=fig.transFigure,
+            color="white",
+            lw=1,
+            alpha=0.5,
+            ls="dashed",
+        )
+        # add it to plot
+        fig.lines.append(line)
+    return fig, ax
+
+
+def plot_tracks(Cells, t_adj, time_set, transFigure):
+    for cell_id in Cells:
+        for n, t in enumerate(Cells[cell_id].times):
+            t -= t_adj  # adjust for special indexing
+
+            x = Cells[cell_id].centroids[n][1]
+            y = Cells[cell_id].centroids[n][0]
+
+            # add a circle at the centroid for every point in this cell's life
+            circle = mpatches.Circle(
+                xy=(x, y), radius=2, color="white", lw=0, alpha=0.5
+            )
+            ax[t].add_patch(circle)
+
+            # draw connecting lines between the centroids of cells in same lineage
+            try:
+                if n < len(Cells[cell_id].times) - 1:
+                    fig, ax = connect_centroids(
+                        fig, ax, Cells, cell_id, n, transFigure, t, t_adj, x, y
+                    )
+            except:
+                pass
+
+            # draw connecting between mother and daughters
+            try:
+                if n == len(Cells[cell_id].times) - 1 and Cells[cell_id].daughters:
+                    fig, ax = connect_mother_daughter(
+                        fig, ax, Cells, cell_id, transFigure, t, t_adj, x, y
+                    )
+            except:
+                pass
+    return fig, ax
+
+
+def plot_regions(seg_data, regions, cmap, vmin, vmax, ax):
+    # make a new version of the segmented image where the
+    # regions are relabeled by their y centroid position.
+    # scale it so it falls within 100.
+    seg_relabeled = seg_data.copy().astype(float)
+    for region in regions:
+        rescaled_color_index = region.centroid[0] / seg_data.shape[1] * vmax
+        seg_relabeled[seg_relabeled == region.label] = (
+            int(rescaled_color_index) - 0.1
+        )  # subtract small value to make it so there is not overlabeling
+    ax.imshow(seg_relabeled, cmap=cmap, alpha=0.5, vmin=vmin, vmax=vmax)
+    return ax
+
+
 def plot_lineage_images(
     params,
     Cells,
     fov_id,
     peak_id,
-    Cells2=None,
     bgcolor="c1",
     fgcolor="seg",
     plot_tracks=True,
-    trim_time=False,
     time_set=(0, 100),
     t_adj=1,
 ):
@@ -568,7 +824,6 @@ def plot_lineage_images(
     ----------
     bgcolor : Designation of background to use. Subtracted images look best if you have them.
     fgcolor : Designation of foreground to use. This should be a segmented image.
-    Cells2 : second set of linages to overlay. Useful for comparing lineage output.
     plot_tracks : bool
         If to plot cell traces or not.
     t_adj : int
@@ -580,12 +835,17 @@ def plot_lineage_images(
 
     # load subtracted and segmented data
     # image_data_bg = load_stack_params(params, fov_id, peak_id, postfix=bgcolor)
-    image_data_bg = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix = bgcolor)
-
+    image_data_bg = load_unmodified_stack(
+        params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=bgcolor
+    )
 
     if fgcolor:
         # image_data_seg = load_stack_params(params, fov_id, peak_id, postfix=fgcolor)
-        seg_mode = SegmentationMode.OTSU if params["track"]["seg_img"] == "seg_otsu" else SegmentationMode.UNET
+        seg_mode = (
+            SegmentationMode.OTSU
+            if params["track"]["seg_img"] == "seg_otsu"
+            else SegmentationMode.UNET
+        )
         image_data_seg = load_seg_stack(
             ana_dir=params["ana_dir"],
             experiment_name=params["experiment_name"],
@@ -594,13 +854,8 @@ def plot_lineage_images(
             seg_mode=seg_mode,
         )
 
-    if trim_time:
-        image_data_bg = image_data_bg[time_set[0] : time_set[1]]
-        if fgcolor:
-            image_data_seg = image_data_seg[time_set[0] : time_set[1]]
-
     n_imgs = image_data_bg.shape[0]
-    image_indicies = range(n_imgs)
+    image_indices = range(n_imgs)
 
     if fgcolor:
         # calculate the regions across the segmented images
@@ -635,218 +890,17 @@ def plot_lineage_images(
         ttl = a.title
         ttl.set_position([0.5, 0.05])
 
-    for i in image_indicies:
+    for i in image_indices:
         ax[i].imshow(image_data_bg[i], cmap=plt.cm.gray, aspect="equal")
 
         if fgcolor:
-            # make a new version of the segmented image where the
-            # regions are relabeled by their y centroid position.
-            # scale it so it falls within 100.
-            seg_relabeled = image_data_seg[i].copy().astype(float)
-            for region in regions_by_time[i]:
-                rescaled_color_index = (
-                    region.centroid[0] / image_data_seg.shape[1] * vmax
-                )
-                seg_relabeled[seg_relabeled == region.label] = (
-                    int(rescaled_color_index) - 0.1
-                )  # subtract small value to make it so there is not overlabeling
-            ax[i].imshow(seg_relabeled, cmap=cmap, alpha=0.5, vmin=vmin, vmax=vmax)
+            ax[i] = plot_regions(image_data_seg, regions_by_time[i], vmin, vmax, ax[i])
 
         ax[i].set_title(str(i + t_adj), color="white")
 
     # Annotate each cell with information
     if plot_tracks:
-        for cell_id in Cells:
-            for n, t in enumerate(Cells[cell_id].times):
-                t -= t_adj  # adjust for special indexing
-
-                # don't look at time points out of the interval
-                if trim_time:
-                    if t < time_set[0] or t >= time_set[1] - 1:
-                        break
-
-                x = Cells[cell_id].centroids[n][1]
-                y = Cells[cell_id].centroids[n][0]
-
-                # add a circle at the centroid for every point in this cell's life
-                circle = mpatches.Circle(
-                    xy=(x, y), radius=2, color="white", lw=0, alpha=0.5
-                )
-                ax[t].add_patch(circle)
-
-                # draw connecting lines between the centroids of cells in same lineage
-                try:
-                    if n < len(Cells[cell_id].times) - 1:
-                        # coordinates of the next centroid
-                        x_next = Cells[cell_id].centroids[n + 1][1]
-                        y_next = Cells[cell_id].centroids[n + 1][0]
-                        t_next = (
-                            Cells[cell_id].times[n + 1] - t_adj
-                        )  # adjust for special indexing
-
-                        # get coordinates for the whole figure
-                        coord1 = transFigure.transform(
-                            ax[t].transData.transform([x, y])
-                        )
-                        coord2 = transFigure.transform(
-                            ax[t_next].transData.transform([x_next, y_next])
-                        )
-
-                        # create line
-                        line = mpl.lines.Line2D(
-                            (coord1[0], coord2[0]),
-                            (coord1[1], coord2[1]),
-                            transform=fig.transFigure,
-                            color="white",
-                            lw=1,
-                            alpha=0.5,
-                        )
-
-                        # add it to plot
-                        fig.lines.append(line)
-                except:
-                    pass
-
-                # draw connecting between mother and daughters
-                try:
-                    if n == len(Cells[cell_id].times) - 1 and Cells[cell_id].daughters:
-                        # daughter ids
-                        d1_id = Cells[cell_id].daughters[0]
-                        d2_id = Cells[cell_id].daughters[1]
-
-                        # both daughters should have been born at the same time.
-                        t_next = Cells[d1_id].times[0] - t_adj
-
-                        # coordinates of the two daughters
-                        x_d1 = Cells[d1_id].centroids[0][1]
-                        y_d1 = Cells[d1_id].centroids[0][0]
-                        x_d2 = Cells[d2_id].centroids[0][1]
-                        y_d2 = Cells[d2_id].centroids[0][0]
-
-                        # get coordinates for the whole figure
-                        coord1 = transFigure.transform(
-                            ax[t].transData.transform([x, y])
-                        )
-                        coordd1 = transFigure.transform(
-                            ax[t_next].transData.transform([x_d1, y_d1])
-                        )
-                        coordd2 = transFigure.transform(
-                            ax[t_next].transData.transform([x_d2, y_d2])
-                        )
-
-                        # create line and add it to plot for both
-                        for coord in [coordd1, coordd2]:
-                            line = mpl.lines.Line2D(
-                                (coord1[0], coord[0]),
-                                (coord1[1], coord[1]),
-                                transform=fig.transFigure,
-                                color="white",
-                                lw=1,
-                                alpha=0.5,
-                                ls="dashed",
-                            )
-                            # add it to plot
-                            fig.lines.append(line)
-                except:
-                    pass
-
-        # this is for plotting the traces from a second set of cells
-        if Cells2 and plot_tracks:
-            Cells2 = find_cells_of_fov_and_peak(Cells2, fov_id, peak_id)
-            for cell_id in Cells2:
-                for n, t in enumerate(Cells2[cell_id].times):
-                    t -= t_adj
-
-                    # don't look at time points out of the interval
-                    if trim_time:
-                        if t < time_set[0] or t >= time_set[1] - 1:
-                            break
-
-                    x = Cells2[cell_id].centroids[n][1]
-                    y = Cells2[cell_id].centroids[n][0]
-
-                    # add a circle at the centroid for every point in this cell's life
-                    circle = mpatches.Circle(
-                        xy=(x, y), radius=2, color="yellow", lw=0, alpha=0.25
-                    )
-                    ax[t].add_patch(circle)
-
-                    # draw connecting lines between the centroids of cells in same lineage
-                    try:
-                        if n < len(Cells2[cell_id].times) - 1:
-                            # coordinates of the next centroid
-                            x_next = Cells2[cell_id].centroids[n + 1][1]
-                            y_next = Cells2[cell_id].centroids[n + 1][0]
-                            t_next = Cells2[cell_id].times[n + 1] - t_adj
-
-                            # get coordinates for the whole figure
-                            coord1 = transFigure.transform(
-                                ax[t].transData.transform([x, y])
-                            )
-                            coord2 = transFigure.transform(
-                                ax[t_next].transData.transform([x_next, y_next])
-                            )
-
-                            # create line
-                            line = mpl.lines.Line2D(
-                                (coord1[0], coord2[0]),
-                                (coord1[1], coord2[1]),
-                                transform=fig.transFigure,
-                                color="yellow",
-                                lw=1,
-                                alpha=0.25,
-                            )
-
-                            # add it to plot
-                            fig.lines.append(line)
-                    except:
-                        pass
-
-                    # draw connecting between mother and daughters
-                    try:
-                        if (
-                            n == len(Cells2[cell_id].times) - 1
-                            and Cells2[cell_id].daughters
-                        ):
-                            # daughter ids
-                            d1_id = Cells2[cell_id].daughters[0]
-                            d2_id = Cells2[cell_id].daughters[1]
-
-                            # both daughters should have been born at the same time.
-                            t_next = Cells2[d1_id].times[0] - t_adj
-
-                            # coordinates of the two daughters
-                            x_d1 = Cells2[d1_id].centroids[0][1]
-                            y_d1 = Cells2[d1_id].centroids[0][0]
-                            x_d2 = Cells2[d2_id].centroids[0][1]
-                            y_d2 = Cells2[d2_id].centroids[0][0]
-
-                            # get coordinates for the whole figure
-                            coord1 = transFigure.transform(
-                                ax[t].transData.transform([x, y])
-                            )
-                            coordd1 = transFigure.transform(
-                                ax[t_next].transData.transform([x_d1, y_d1])
-                            )
-                            coordd2 = transFigure.transform(
-                                ax[t_next].transData.transform([x_d2, y_d2])
-                            )
-
-                            # create line and add it to plot for both
-                            for coord in [coordd1, coordd2]:
-                                line = mpl.lines.Line2D(
-                                    (coord1[0], coord[0]),
-                                    (coord1[1], coord[1]),
-                                    transform=fig.transFigure,
-                                    color="yellow",
-                                    lw=1,
-                                    alpha=0.25,
-                                    ls="dashed",
-                                )
-                                # add it to plot
-                                fig.lines.append(line)
-                    except:
-                        pass
+        fig, ax = plot_tracks(Cells)
 
     return fig, ax
 
