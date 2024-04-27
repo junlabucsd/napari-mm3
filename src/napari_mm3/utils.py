@@ -206,7 +206,7 @@ class Cell:
             p is 4 digit peak number
             t is 4 digit time point at time of birth
             r is region label for that segmentation
-            Use the function create_cell_id to do return a proper string.
+            Use the function create_cell_id to return a proper string.
 
         region : region properties object
             Information about the labeled region from
