@@ -142,9 +142,7 @@ def get_tif_params(
         with tiff.TiffFile(params["TIFF_dir"] / image_filename) as tif:
             image_data = tif.asarray()
 
-            if params["TIFF_source"] == "TIFF from Elements":
-                image_metadata = get_tif_metadata_elements(tif)
-            elif params["TIFF_source"] == "nd2":
+            if params["TIFF_source"] == "nd2":
                 image_metadata = get_tif_metadata_nd2(tif)
             elif params["TIFF_source"] == "BioFormats / other TIFF":
                 image_metadata = get_tif_metadata_filename(tif)
@@ -297,137 +295,6 @@ def get_tif_metadata_filename(tif: tiff.TiffFile) -> dict:
         "jd": -1 * 0.0,  # absolute julian time
         "planes": get_plane(tif.filename),
     }  # y position on stage [um]
-
-    return idata
-
-
-def get_tif_metadata_elements(tif: tiff.TiffFile) -> dict:
-    """
-    This function pulls out the metadata from a tif file which has been exported with Nikon Elements
-    and returns it as a dictionary.
-    This if tiff files as exported by Nikon Elements as a stacked tiff, each for one tpoint.
-    tif is an opened tif file (using the package tifffile)
-
-
-    arguments:
-        fname (tifffile.TiffFile): TIFF file object from which data will be extracted
-    returns:
-        dictionary of values:
-            'jdn' (float)
-            'x' (float)
-            'y' (float)
-            'plane_names' (list of strings)
-
-    Called by
-    compile
-
-    """
-
-    # image Metadata
-    idata = {
-        "fov": -1,
-        "t": -1,
-        "jd": -1 * 0.0,
-        "planes": [],
-    }
-
-    # get the fov and t simply from the file name
-    idata["fov"] = int(tif.fname.split("xy")[1].split(".tif")[0])
-    idata["t"] = int(tif.fname.split("xy")[0].split("t")[-1])
-
-    # a page is plane, or stack, in the tiff. The other metdata is hidden down in there.
-    for page in tif:
-        for tag in page.tags.values():
-            # print("Checking tag",tag.name,tag.value)
-            t = tag.name, tag.value
-            t_string = ""
-            time_string = ""
-            # Interesting tag names: 65330, 65331 (binary data; good stuff), 65332
-            # we wnat to work with the tag of the name 65331
-            # if the tag name is not in the set of tegs we find interesting then skip this cycle of the loop
-            if tag.name not in (
-                "65331",
-                "65332",
-                "strip_byte_counts",
-                "image_width",
-                "orientation",
-                "compression",
-                "new_subfile_type",
-                "fill_order",
-                "max_sample_value",
-                "bits_per_sample",
-                "65328",
-                "65333",
-            ):
-                # print("*** " + tag.name)
-                # print(tag.value)
-                pass
-            # if tag.name == '65330':
-            #    return tag.value
-            if tag.name in ("65331"):
-                # make info list a list of the tag values 0 to 65535 by zipoing up a paired list of two bytes, at two byte intervals i.e. ::2
-                # note that 0X100 is hex for 256
-                infolist = [
-                    a + b * 0x100 for a, b in zip(tag.value[0::2], tag.value[1::2])
-                ]
-                # get char values for each element in infolist
-                for c_entry in range(0, len(infolist)):
-                    # the element corresponds to an ascii char for a letter or bracket (and a few other things)
-                    if infolist[c_entry] < 127 and infolist[c_entry] > 64:
-                        # add the letter to the unicode string t_string
-                        t_string += chr(infolist[c_entry])
-                    # elif infolist[c_entry] == 0:
-                    #    continue
-                    else:
-                        t_string += " "
-
-                # this block will find the dTimeAbsolute and print the subsequent integers
-                # index 170 is counting seconds, and rollover of index 170 leads to increment of index 171
-                # rollover of index 171 leads to increment of index 172
-                # get the position of the array by finding the index of the t_string at which dTimeAbsolute is listed not that 2*len(dTimeAbsolute)=26
-                # print(t_string)
-
-                arraypos = t_string.index("dXPos") * 2 + 16
-                xarr = tag.value[arraypos : arraypos + 4]
-                b = "".join(chr(i) for i in xarr)
-                idata["x"] = float(struct.unpack("<f", b)[0])
-
-                arraypos = t_string.index("dYPos") * 2 + 16
-                yarr = tag.value[arraypos : arraypos + 4]
-                b = "".join(chr(i) for i in yarr)
-                idata["y"] = float(struct.unpack("<f", b)[0])
-
-                arraypos = t_string.index("dTimeAbsolute") * 2 + 26
-                shortarray = tag.value[arraypos + 2 : arraypos + 10]
-                b = "".join(chr(i) for i in shortarray)
-                idata["jd"] = float(struct.unpack("<d", b)[0])
-
-                # extract plane names
-                il = [a + b * 0x100 for a, b in zip(tag.value[0::2], tag.value[1::2])]
-                li = [a + b * 0x100 for a, b in zip(tag.value[1::2], tag.value[2::2])]
-
-                strings = list(zip(il, li))
-
-                allchars = ""
-                for c_entry in range(0, len(strings)):
-                    if 31 < strings[c_entry][0] < 127:
-                        allchars += chr(strings[c_entry][0])
-                    elif 31 < strings[c_entry][1] < 127:
-                        allchars += chr(strings[c_entry][1])
-                    else:
-                        allchars += " "
-
-                allchars = re.sub(" +", " ", allchars)
-
-                words = allchars.split(" ")
-
-                planes = []
-                for idx in [
-                    i for i, x in enumerate(words) if x == "sOpticalConfigName"
-                ]:
-                    planes.append(words[idx + 1])
-
-                idata["planes"] = planes
 
     return idata
 
@@ -1538,7 +1405,7 @@ class Compile(MM3Container):
         # TODO: Auto-infer?
         self.image_source_widget = ComboBox(
             label="image source",
-            choices=["nd2", "BioFormats / other TIFF", "TIFF from Elements"],
+            choices=["nd2", "BioFormats / other TIFF"],
         )
         self.split_channels_widget = CheckBox(
             label="separate image plane files",
@@ -1660,8 +1527,6 @@ class Compile(MM3Container):
             "pred_dir": self.analysis_folder / "predictions",
             "cell_dir": self.analysis_folder / "cell_data",
             "track_dir": self.analysis_folder / "tracking",
-            # use jd time in image metadata to make time table. Set to false if no jd time
-            # "use_jd": self.image_source in {"nd2", "TIFF from Elements"},
             "use_jd": False,  # disabling for now because of bug with Elements output formatting
         }
         self.viewer.window._status_bar._toggle_activity_dock(True)
