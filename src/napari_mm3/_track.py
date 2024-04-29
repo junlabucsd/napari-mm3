@@ -1273,7 +1273,7 @@ def plot_regions(seg_data: np.ndarray, regions: list, ax: plt.Axes) -> plt.Axes:
     # scale it so it falls within 100.
     seg_relabeled = seg_data.copy().astype(float)
     for region in regions:
-        rescaled_color_index = region.centroid[0] / seg_data.shape[1] * vmax
+        rescaled_color_index = region.centroid[0] / seg_data.shape[0] * vmax
         seg_relabeled[seg_relabeled == region.label] = (
             int(rescaled_color_index) - 0.1
         )  # subtract small value to make it so there is not overlabeling
@@ -1338,7 +1338,12 @@ def plot_cells(
         ax[i].imshow(image_data_bg[i], cmap=plt.cm.gray, aspect="equal")
 
         if fgcolor:
-            ax[i] = plot_regions(image_data_seg, regions_by_time[i], ax[i])
+            # calculate the regions across the segmented images
+            regions_by_time = [regionprops(timepoint) for timepoint in image_data_seg]
+            # Color map for good label colors
+            cmap = mpl.colors.ListedColormap(sns.husl_palette(n_colors=100, h=0.5, l=0.8, s=1))
+            cmap.set_under(color="black")
+            ax[i] = plot_regions(image_data_seg[i], regions_by_time[i], ax[i], cmap)
 
         ax[i].set_title(str(i + t_adj), color="white")
 
