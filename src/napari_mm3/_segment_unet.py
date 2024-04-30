@@ -1,16 +1,18 @@
 from __future__ import print_function, division
+import os
+import multiprocessing
+import six
+
+import numpy as np
+from skimage import segmentation, morphology
+import tifffile as tiff
+import h5py
 import tensorflow as tf
 from tensorflow import keras
-from keras.preprocessing.image import ImageDataGenerator
 from keras import models, losses
 from tensorflow.python.ops import array_ops, math_ops
 from keras import backend as K
-
-import h5py
-import multiprocessing
-import numpy as np
 import napari
-from magicgui import magicgui
 from magicgui.widgets import (
     FileEdit,
     SpinBox,
@@ -19,14 +21,6 @@ from magicgui.widgets import (
     ComboBox,
     PushButton,
 )
-from napari.types import ImageData, LabelsData
-import os
-
-from skimage import segmentation, morphology
-from skimage.filters import median
-
-import six
-import tifffile as tiff
 
 from ._deriving_widgets import (
     FOVChooser,
@@ -35,7 +29,6 @@ from ._deriving_widgets import (
     load_specs,
     information,
     load_unmodified_stack,
-    warning,
 )
 
 # loss functions for model
@@ -523,14 +516,11 @@ def segment_peak_unet(img_stack, unet_shape, pad_dict, model, params):
 
     img_stack = trim_and_pad(img_stack, unet_shape, pad_dict)
     img_stack = np.expand_dims(img_stack, -1)  # TF expects images to be 4D
-    # set up image generator
-    image_datagen = ImageDataGenerator()
-    image_generator = image_datagen.flow(
-        x=img_stack, batch_size=batch_size, shuffle=False
-    )  # keep same order
 
-    # predict cell locations. This has multiprocessing built in but I need to mess with the parameters to see how to best utilize it. ***
-    predictions = model.predict(image_generator, **predict_args)
+    input_data = tf.data.Dataset.from_tensor_slices(img_stack)
+    input_data = input_data.batch(batch_size)
+
+    predictions = model.predict(input_data, **predict_args)
     predictions = pad_back(predictions, unet_shape, pad_dict)
 
     return predictions
