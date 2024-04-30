@@ -466,8 +466,8 @@ def add_leaf_orphan(
         peak id
     fov: int
         fov id
-    params: dict
-        dictionary of parameters
+    pxl2um: float
+        pixel to micron conversion
     time_table: dict
         dictionary of time points
 
@@ -918,6 +918,20 @@ def make_lineages_fov(params: dict, fov_id: int, specs: dict) -> dict:
     """
     For a given fov, create the lineages from the segmented images.
 
+    Parameters
+    ---------
+    params: dict
+        dictionary of parameters
+    fov_id: int
+        fov to analyze
+    specs: dict
+        dictionary of fov and peak ids and their classifications 
+
+    Returns
+    -------
+    cells: dict
+        dictionary of Cell objects
+
     Called by
     mm3_Segment.py
 
@@ -1364,7 +1378,6 @@ def plot_lineage_images(
     cells = find_cells_of_fov_and_peak(cells, fov_id, peak_id)
 
     # load subtracted and segmented data
-    # image_data_bg = load_stack_params(params, fov_id, peak_id, postfix=bgcolor)
     image_data_bg = load_unmodified_stack(
         params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=bgcolor
     )
