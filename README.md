@@ -1,10 +1,9 @@
 # napari-mm3
 
-[![License](https://img.shields.io/pypi/l/napari-mm3.svg?color=green)](https://github.com/ahirsharan/napari-mm3/raw/main/LICENSE)
+[![License](https://img.shields.io/pypi/l/napari-mm3.svg?color=green)](https://github.com/junlabucsd/napari-mm3/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/napari-mm3.svg?color=green)](https://pypi.org/project/napari-mm3)
 [![Python Version](https://img.shields.io/pypi/pyversions/napari-mm3.svg?color=green)](https://python.org)
-[![tests](https://github.com/ahirsharan/napari-mm3/workflows/tests/badge.svg)](https://github.com/ahirsharan/napari-mm3/actions)
-[![codecov](https://codecov.io/gh/ahirsharan/napari-mm3/branch/main/graph/badge.svg)](https://codecov.io/gh/ahirsharan/napari-mm3)
+[![tests](https://github.com/junlabucsd/napari-mm3/workflows/tests/badge.svg)](https://github.com/junlabucsd/napari-mm3/actions)
 [![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-mm3)](https://napari-hub.org/plugins/napari-mm3)
 
 A plugin for mother machine image analysis by the [Jun Lab](https://jun.ucsd.edu/).
