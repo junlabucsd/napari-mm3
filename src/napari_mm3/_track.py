@@ -923,7 +923,7 @@ def make_lineages_fov(params: dict, fov_id: int, specs: dict) -> dict:
     fov_id: int
         fov to analyze
     specs: dict
-        dictionary of fov and peak ids and their classifications 
+        dictionary of fov and peak ids and their classifications
 
     Returns
     -------
@@ -1257,7 +1257,14 @@ def plot_tracks(
     return fig, ax
 
 
-def plot_regions(seg_data: np.ndarray, regions: list, ax: plt.Axes, cmap: str, vmin: int = 0.5, vmax: int = 100) -> plt.Axes:
+def plot_regions(
+    seg_data: np.ndarray,
+    regions: list,
+    ax: plt.Axes,
+    cmap: str,
+    vmin: int = 0.5,
+    vmax: int = 100,
+) -> plt.Axes:
     """
     Plot segmented cells from one peak & time step
 
@@ -1344,7 +1351,9 @@ def plot_cells(
             # calculate the regions across the segmented images
             regions_by_time = [regionprops(timepoint) for timepoint in image_data_seg]
             # Color map for good label colors
-            cmap = mpl.colors.ListedColormap(sns.husl_palette(n_colors=100, h=0.5, l=0.8, s=1))
+            cmap = mpl.colors.ListedColormap(
+                sns.husl_palette(n_colors=100, h=0.5, l=0.8, s=1)
+            )
             cmap.set_under(color="black")
             ax[i] = plot_regions(image_data_seg[i], regions_by_time[i], ax[i], cmap)
 
