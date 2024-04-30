@@ -2,21 +2,21 @@ import multiprocessing
 from multiprocessing import Pool
 from pathlib import Path
 import napari
-import matplotlib.pyplot as plt
 import yaml
-import numpy as np
 import six
 import pickle
 import os
-from typing import Dict, List, Tuple
+from typing import Tuple
 
+import numpy as np
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.patches as mpatches
-
 from skimage import io
 from skimage.measure import regionprops
 from napari.utils import progress
+from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, PushButton
 
 from ._deriving_widgets import (
     MM3Container,
@@ -29,8 +29,6 @@ from ._deriving_widgets import (
     load_unmodified_stack,
     warning,
 )
-from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, PushButton
-
 from .utils import (
     Cell,
     find_complete_cells,

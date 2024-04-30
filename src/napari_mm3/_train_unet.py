@@ -1,6 +1,5 @@
 import os
 import glob
-import time
 import numpy as np
 from re import search, match
 from pathlib import Path
@@ -19,8 +18,6 @@ from pprint import pprint
 import elasticdeform
 import matplotlib.pyplot as plt
 
-import multiprocessing
-
 import napari
 from napari import Viewer
 from magicgui import magicgui
@@ -38,35 +35,25 @@ from keras.layers import (
     Conv2D,
     Conv2DTranspose,
     MaxPooling2D,
-    BatchNormalization,
-    Activation,
-    Dropout,
-    UpSampling2D,
     Concatenate,
 )
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 
 from magicgui.widgets import (
-    Container,
     FileEdit,
     CheckBox,
     PushButton,
     SpinBox,
-    FloatSlider,
 )
 
 from typing import (
-    cast,
     Tuple,
     List,
     Dict,
     Union,
-    Callable,
     Iterator,
-    Generator,
     Any,
-    Optional,
 )
 import numpy.typing as npt
 import random
