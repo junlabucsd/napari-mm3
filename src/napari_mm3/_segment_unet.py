@@ -226,37 +226,16 @@ def save_out(params, segmented_imgs, fov_id, peak_id):
     -------
     None."""
     # save out the segmented stacks
-    if params["output"] == "TIFF":
-        seg_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-            fov_id,
-            peak_id,
-            params["seg_img"],
-        )
-        tiff.imwrite(
-            params["seg_dir"] / seg_filename,
-            segmented_imgs,
-            compression=("zlib", 4),
-        )
-
-    if params["output"] == "HDF5":
-        h5f = h5py.File(params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+")
-        # put segmented channel in correct group
-        h5g = h5f["channel_%04d" % peak_id]
-        # delete the dataset if it exists (important for debug)
-        if "p%04d_%s" % (peak_id, params["seg_img"]) in h5g:
-            del h5g["p%04d_%s" % (peak_id, params["seg_img"])]
-
-        h5ds = h5g.create_dataset(
-            "p%04d_%s" % (peak_id, params["seg_img"]),
-            data=segmented_imgs,
-            chunks=(1, segmented_imgs.shape[1], segmented_imgs.shape[2]),
-            maxshape=(None, segmented_imgs.shape[1], segmented_imgs.shape[2]),
-            compression="gzip",
-            shuffle=True,
-            fletcher32=True,
-        )
-        h5f.close()
-
+    seg_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
+        fov_id,
+        peak_id,
+        params["seg_img"],
+    )
+    tiff.imwrite(
+        params["seg_dir"] / seg_filename,
+        segmented_imgs,
+        compression=("zlib", 4),
+    )
     return
 
 
@@ -682,7 +661,6 @@ class SegmentUnet(MM3Container):
         self.params["TIFF_dir"] = self.TIFF_folder
         self.params["ana_dir"] = self.analysis_folder
 
-        self.params["hdf5_dir"] = self.params["ana_dir"] / "hdf5"
         self.params["chnl_dir"] = self.params["ana_dir"] / "channels"
         self.params["empty_dir"] = self.params["ana_dir"] / "empties"
         self.params["sub_dir"] = self.params["ana_dir"] / "subtracted"

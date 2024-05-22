@@ -1,17 +1,14 @@
 import multiprocessing
 import re
-import h5py
 import os
 import yaml
 import six
 import pickle
-import glob
 import sys
 import traceback
 import tifffile as tiff
 import numpy as np
 import json
-import struct
 import nd2reader
 from typing import Union
 
@@ -382,7 +379,7 @@ def compute_xcorr(channel_masks: dict, user_spec_fovs: list, params: dict) -> No
     """
 
     # a nested dict to hold cross corrs per channel per fov.
-    crosscorrs = {}
+    crosscorrs: dict[int, dict[int, dict[str, Union[float, list[float]]]]] = {}
 
     # for each fov find cross correlations (sending to pull)
     for fov_id in progress(user_spec_fovs):
@@ -461,7 +458,7 @@ def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
 
     for channel_loc in channel_masks[fov_id]: # fov_id is the fov of the image
         channel_slice = cut_slice[image_pixel_data, channel_loc]
-        # ... do something with the slice
+        then do something with the slice
 
     NOTE: this function will try to determine what the shape of your
     image is and slice accordingly. It expects the images are in the order
@@ -560,7 +557,7 @@ def tiff_stack_slice_and_write(
         image_fov_stack.append(image_data)
 
     # concatenate the list into one big ass stack
-    image_fov_stack = np.stack(image_fov_stack, axis=0)
+    image_fov_array = np.stack(image_fov_stack, axis=0)
 
     # cut out the channels as per channel masks for this fov
     for peak, channel_loc in six.iteritems(channel_masks[fov_id]):
@@ -574,7 +571,7 @@ def tiff_stack_slice_and_write(
 
         # slice out channel.
         # The function should recognize the shape length as 4 and cut all time points
-        channel_stack = cut_slice(image_fov_stack, channel_loc)
+        channel_stack = cut_slice(image_fov_array, channel_loc)
 
         # save a different time stack for all colors
         for color_index in range(channel_stack.shape[3]):
@@ -852,7 +849,7 @@ def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> d
         )
 
         # initialize dict which holds channel masks {peak : [[y1, y2],[x1,x2]],...}
-        channel_masks_1fov = {}
+        channel_masks_1fov: dict[int, list[list[float]]] = {}
 
         # go through each label
         for label in np.unique(consensus_mask):
@@ -1364,11 +1361,11 @@ def compile(params: dict) -> None:
     compute_xcorr(channel_masks, user_spec_fovs, params)
 
 
-def load_fov(image_directory: Path, fov_id: int, filter_str: str = "") -> np.ndarray:
+def load_fov(image_directory: Path, fov_id: int, filter_str: str = "") -> Union[np.ndarray, None]:
     information("getting files")
-    found_files = image_directory.glob("*.tif")
+    found_files_paths = image_directory.glob("*.tif")
     file_string = re.compile(f"xy{fov_id:02d}.*.tif", re.IGNORECASE)
-    found_files = [f.name for f in found_files if re.search(file_string, f.name)]
+    found_files = [f.name for f in found_files_paths if re.search(file_string, f.name)]
     if filter_str:
         # found_files = [f for f in found_files if filter_str in f]
         found_files = [
@@ -1380,7 +1377,7 @@ def load_fov(image_directory: Path, fov_id: int, filter_str: str = "") -> np.nda
 
     if len(found_files) == 0:
         information("No data found for FOV " + str(fov_id))
-        return
+        return None
 
     image_fov_stack = []
 

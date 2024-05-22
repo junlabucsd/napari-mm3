@@ -4,7 +4,6 @@ import napari
 import os
 import six
 import tifffile as tiff
-import h5py
 import numpy as np
 import warnings
 

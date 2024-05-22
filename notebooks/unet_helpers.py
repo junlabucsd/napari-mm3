@@ -1,72 +1,36 @@
 import os
-import glob
-import time
 import numpy as np
-from re import search, match
-from pathlib import Path
-import itertools
 
 # image modules
 # import png # can pip this package to save pngs at any bitsize
-from scipy import ndimage as ndi  # use for binary_fill_holes
 from scipy import interpolate
 import skimage.transform as trans
 from skimage import morphology as morph  # use for remove small objects
 from skimage.filters import gaussian
 from skimage import io
-import tifffile as tiff
-from pprint import pprint
 import elasticdeform
-import matplotlib.pyplot as plt
-
-import multiprocessing
-
-import napari
-from napari import Viewer
-from magicgui import magicgui
-from magicgui.widgets import FileEdit, SpinBox, FloatSpinBox
 
 # learning modules
 import tensorflow as tf
 from tensorflow import keras
 from keras import backend as K
-from keras import models, losses
+from keras import models
 from tensorflow.python.ops import array_ops, math_ops
-from keras.models import Model
 from keras.layers import (
     Input,
     Conv2D,
     Conv2DTranspose,
     MaxPooling2D,
-    BatchNormalization,
-    Activation,
-    Dropout,
-    UpSampling2D,
     Concatenate,
-)
-from keras.optimizers import Adam
-from keras.callbacks import ModelCheckpoint, EarlyStopping
-
-from magicgui.widgets import (
-    Container,
-    FileEdit,
-    CheckBox,
-    PushButton,
-    SpinBox,
-    FloatSlider,
 )
 
 from typing import (
-    cast,
     Tuple,
     List,
     Dict,
     Union,
-    Callable,
     Iterator,
-    Generator,
     Any,
-    Optional,
 )
 import numpy.typing as npt
 import random

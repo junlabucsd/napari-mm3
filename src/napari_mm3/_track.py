@@ -158,7 +158,7 @@ def check_division(params: dict, cell: Cell, region1, region2) -> int:
 
 # take info and make string for cell id
 def create_cell_id(
-    region, t: int, peak: int, fov: int, experiment_name: str = None
+    region, t: int, peak: int, fov: int, experiment_name: str = ''
 ) -> str:
     """Make a unique cell id string for a new cell
     Parameters
@@ -200,9 +200,9 @@ def create_cell_id(
 
 def update_leaf_regions(
     regions: list,
-    current_leaf_positions: list[Tuple[str, int]],
-    leaf_region_map: dict[str, Tuple[int, int]],
-) -> dict[str, Tuple[int, int]]:
+    current_leaf_positions: list[tuple[str, float]],
+    leaf_region_map: dict[str, list[tuple[int, float]]],
+) -> dict[str, list[tuple[int, float]]]:
     """
     Loop through regions from current time step and match them to existing leaves
 
@@ -210,10 +210,10 @@ def update_leaf_regions(
     ----------
     regions: list
         list of RegionProps objects
-    current_leaf_positions: list[Tuple[leaf_id, position]]
+    current_leaf_positions: list[tuple[leaf_id, position]]
         list of (leaf_id, cell centroid) for current leaves
-    leaf_region_map: dict[str,Tuple[int,int]]
-        dict whose keys are leaves (cell IDs) and values (region number, region location)
+    leaf_region_map: dict[str,list[tuple[int,float]]]
+        dict whose keys are leaves (cell IDs) and list of values (region number, region location)
 
     Returns
     ------
@@ -223,13 +223,13 @@ def update_leaf_regions(
     # go through regions, they will come off in Y position order
     for r, region in enumerate(regions):
         # create tuple which is cell_id of closest leaf, distance
-        current_closest = (None, float("inf"))
+        current_closest = (str(''), float("inf"))
 
         # check this region against all positions of all current leaf regions,
         # find the closest one in y.
         for leaf in current_leaf_positions:
             # calculate distance between region and leaf
-            y_dist_region_to_leaf = abs(region.centroid[0] - leaf[1])
+            y_dist_region_to_leaf: float = abs(region.centroid[0] - leaf[1])
 
             # if the distance is closer than before, update
             if y_dist_region_to_leaf < current_closest[1]:
@@ -498,7 +498,7 @@ def handle_two_regions(
     cell_leaves: list[str],
     params: dict,
     pxl2um: float,
-    leaf_id: int,
+    leaf_id: str,
     t: int,
     peak_id: int,
     fov_id: int,
@@ -634,7 +634,7 @@ def prune_leaves(
 def update_region_links(
     cell_leaves: list[str],
     cells: dict[str, Cell],
-    leaf_region_map: dict[str, Tuple[int, int]],
+    leaf_region_map: dict[str, list[tuple[int, float]]],
     regions: list,
     params: dict,
     pxl2um: float,
@@ -654,7 +654,7 @@ def update_region_links(
         currently tracked cell_ids
     cells: dict[str, Cell]
         dictionary of Cell objects
-    leaf_region_map: dict[str,Tuple[int,int]]
+    leaf_region_map: dict[str,Tuple[int,float]]
         dictionary with keys = cell id, values = (region number, region centroid)
     regions: list
         list of RegionProps objects
@@ -727,7 +727,7 @@ def make_leaf_region_map(
     t: int,
     peak_id: int,
     fov_id: int,
-) -> Tuple[list, dict[str, Cell]]:
+) -> tuple[list, dict[str, Cell]]:
     """
     Map regions in current time point onto previously tracked cells
 
@@ -748,8 +748,7 @@ def make_leaf_region_map(
         dictionary of cell objects
     """
     ### create mapping between regions and leaves
-    leaf_region_map = {}
-    leaf_region_map = {leaf_id: [] for leaf_id in cell_leaves}
+    leaf_region_map: dict[str, list[tuple[int,float]]] = {leaf_id: [] for leaf_id in cell_leaves}
 
     # get the last y position of current leaves and create tuple with the id
     current_leaf_positions = [
@@ -862,8 +861,8 @@ def make_lineage_chnl_stack(params: dict, fov_and_peak_id: tuple) -> dict:
     ]  # removed coordinates='xy'
 
     # Set up data structures.
-    cells = {}  # Dict that holds all the cell objects, divided and undivided
-    cell_leaves = []  # cell ids of the current leaves of the growing lineage tree
+    cells: dict[str, Cell] = {}  # Dict that holds all the cell objects, divided and undivided
+    cell_leaves: list = []  # cell ids of the current leaves of the growing lineage tree
 
     # go through regions by timepoint and build lineages
     # timepoints start with the index of the first image
@@ -1262,8 +1261,8 @@ def plot_regions(
     regions: list,
     ax: plt.Axes,
     cmap: str,
-    vmin: int = 0.5,
-    vmax: int = 100,
+    vmin: float = 0.5,
+    vmax: float = 100,
 ) -> plt.Axes:
     """
     Plot segmented cells from one peak & time step
@@ -1711,9 +1710,6 @@ class Track(MM3Container):
 
     def set_new_cell_region_cutoff(self):
         self.new_cell_region_cutoff = self.new_cell_region_cutoff_widget.value
-
-    def set_max_growth_length(self):
-        self.max_growth_length = self.max_growth_length_widget.value
 
     def set_max_growth_length(self):
         self.max_growth_length = self.max_growth_length_widget.value
