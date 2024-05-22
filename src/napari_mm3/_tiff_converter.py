@@ -121,7 +121,7 @@ def bioformats_iter(data_path: Path, time_range, fov_list):
 
 def bioformats_import(
     data_path: Path,
-    tif_dir: str,
+    tif_dir: Path,
     image_start: int,
     image_end: int,
     vertical_crop=None,
@@ -221,7 +221,7 @@ def bioformats_import(
 
 def nd2ToTIFF(
     data_path: Path,
-    tif_dir: str,
+    tif_dir: Path,
     image_start: int,
     image_end: int,
     vertical_crop=None,
