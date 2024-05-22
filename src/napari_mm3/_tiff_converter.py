@@ -1,18 +1,14 @@
 import os
 import napari
 import copy
-import dask.array as da
 import json
 import nd2reader
 import tifffile as tiff
-import re
-import io
 import numpy as np
 
 from pathlib import Path
-from skimage import io
 from napari.utils import progress
-from magicgui.widgets import Container, FileEdit, CheckBox, PushButton, FloatSpinBox
+from magicgui.widgets import Container, FileEdit, PushButton, FloatSpinBox
 from ._deriving_widgets import FOVChooser, TimeRangeSelector, warning, information
 
 
