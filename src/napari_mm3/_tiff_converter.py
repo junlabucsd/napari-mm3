@@ -1,9 +1,10 @@
 import os
 import napari
 import copy
+import datetime
 import dask.array as da
 import json
-import nd2reader
+import nd2
 import tifffile as tiff
 import re
 import io
@@ -17,13 +18,13 @@ from ._deriving_widgets import FOVChooser, TimeRangeSelector, warning, informati
 
 
 def get_nd2_fovs(data_path):
-    with nd2reader.reader.ND2Reader(str(data_path)) as nd2f:
-        return nd2f.sizes["v"]
+    with nd2.ND2File(str(data_path)) as nd2f:
+        return nd2f.sizes["P"]
 
 
 def get_nd2_times(data_path):
-    with nd2reader.reader.ND2Reader(str(data_path)) as nd2f:
-        return nd2f.sizes["t"]
+    with nd2.ND2File(str(data_path)) as nd2f:
+        return nd2f.sizes["T"]
 
 
 def get_bioformats_times(data_path):
@@ -51,7 +52,7 @@ def get_bioformats_fovs(data_path):
     return fovs
 
 
-def nd2_iter(nd2f: nd2reader.ND2Reader, time_range, fov_list):
+def nd2_iter(nd2f: nd2.ND2File, time_range, fov_list):
     """
     Iterates over the contents of an ND2File.
 
@@ -65,22 +66,21 @@ def nd2_iter(nd2f: nd2reader.ND2Reader, time_range, fov_list):
     """
     # TODO: Move this into the UI code.
     fov_list = [fov - 1 for fov in fov_list]
-    nd2_fov_list = set(range(0, nd2f.sizes["v"]))
+    nd2_fov_list = set(range(0, nd2f.sizes["P"]))
     if fov_list == []:
         fov_list = nd2_fov_list
-    nd2_time_range = set(range(0, nd2f.sizes["t"]))
+    nd2_time_range = set(range(0, nd2f.sizes["T"]))
 
     valid_fovs = set(fov_list).intersection(nd2_fov_list)
     if valid_fovs != set(fov_list):
         information("The following FOVs were not in the nd2, and thus were omitted:")
         information(set(fov_list) - valid_fovs)
-    nd2f.iter_axes = "t"
     for fov in valid_fovs:
-        nd2f.default_coords["v"] = fov
+        im = nd2f.asarray(fov)
         for t in nd2_time_range:
             if t not in time_range:
                 continue
-            image_data = nd2f[t]
+            image_data = im[t]
             yield t, fov, image_data
 
 
@@ -253,11 +253,11 @@ def nd2ToTIFF(
     nd2file = data_path
     file_prefix = os.path.split(os.path.splitext(nd2file)[0])[1]
     information("Extracting {file_prefix} ...")
-    with nd2reader.reader.ND2Reader(str(nd2file)) as nd2f:
-        starttime = nd2f.metadata["date"]  # starttime is jd
-        planes = list(nd2f.metadata["channels"])
-        if len(planes) > 1:
-            nd2f.bundle_axes = ["c", "y", "x"]
+    with nd2.ND2File(str(nd2file)) as nd2f:
+        starttime = nd2f.text_info["date"]
+        starttime = datetime.datetime.strptime(starttime, '%m/%d/%Y %I:%M:%S %p')
+
+        planes = nd2f.sizes["C"]
 
         # Extraction range is the time points that will be taken out.
         time_range = range(image_start, image_end)
@@ -268,9 +268,9 @@ def nd2ToTIFF(
             t, fov = t_id + 1, fov_id + 1
             try:
                 milliseconds = copy.deepcopy(
-                    image_data.metadata["events"][t_id]["time"]
+                    nd2f.events()[t_id * 2]["Time [s]"]
                 )
-                acq_days = milliseconds / 1000.0 / 60.0 / 60.0 / 24.0
+                acq_days = milliseconds / 60.0 / 60.0 / 24.0
                 acq_time = starttime.timestamp() + acq_days
             except IndexError:
                 acq_time = None
@@ -320,14 +320,15 @@ def nd2ToTIFF(
                 continue
             # for just a simple crop
             elif vertical_crop:
-                nc, H, W = image_data.shape
+                print(image_data.shape)
+                _, nc, H, W = image_data.shape
                 ## convert from xy to row-column coordinates for numpy slicing
                 yhi = int((1 - vertical_crop[0]) * H)
                 ylo = int((1 - vertical_crop[1]) * H)
                 image_data = image_data[:, ylo:yhi, :]
 
             if horizontal_crop:
-                nc, H, W = image_data.shape
+                _, nc, H, W = image_data.shape
                 xlo = int(horizontal_crop[0] * W)
                 xhi = int(horizontal_crop[1] * W)
                 image_data = image_data[:, :, xlo:xhi]
@@ -463,6 +464,7 @@ class TIFFExport(Container):
 
         information("Finished TIFF export")
 
+    # TODO: Fix this one up.
     def render_nd2(self):
         viewer = self.viewer
         viewer.layers.clear()
@@ -480,12 +482,12 @@ class TIFFExport(Container):
         with nd2reader.reader.ND2Reader(str(nd2file)) as ndx:
             sizes = ndx.sizes
 
-            if "t" not in sizes:
-                sizes["t"] = 1
-            if "z" not in sizes:
-                sizes["z"] = 1
-            if "c" not in sizes:
-                sizes["c"] = 1
+            if "T" not in sizes:
+                sizes["T"] = 1
+            if "P" not in sizes:
+                sizes["P"] = 1
+            if "C" not in sizes:
+                sizes["C"] = 1
             ndx.bundle_axes = "zcyx"
             ndx.iter_axes = "t"
             n = len(ndx)

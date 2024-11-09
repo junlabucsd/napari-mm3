@@ -8,6 +8,6 @@ h5py
 scikit-learn
 scikit-image
 tensorflow
-nd2reader
+nd2
 seaborn
 elasticdeform
