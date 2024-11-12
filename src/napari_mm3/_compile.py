@@ -9,7 +9,6 @@ import traceback
 import tifffile as tiff
 import numpy as np
 import json
-import nd2reader
 from typing import Union
 
 from scipy import ndimage as ndi
@@ -1549,52 +1548,53 @@ class Compile(MM3Container):
         # images.gamma = 0.5
 
     def display_all_fovs(self):
-        viewer = self.viewer
-        viewer.layers.clear()
-        viewer.grid.enabled = True
+        pass
+        # viewer = self.viewer
+        # viewer.layers.clear()
+        # viewer.grid.enabled = True
 
-        filepath = Path(".")
-        nd2file = list(filepath.glob("*.nd2"))[0]
+        # filepath = Path(".")
+        # nd2file = list(filepath.glob("*.nd2"))[0]
 
-        if not nd2file:
-            warning(
-                f"Could not find .nd2 file to display in directory {filepath.resolve()}"
-            )
-            return
+        # if not nd2file:
+        #     warning(
+        #         f"Could not find .nd2 file to display in directory {filepath.resolve()}"
+        #     )
+        #     return
 
-        with nd2reader.reader.ND2Reader(str(nd2file)) as ndx:
-            sizes = ndx.sizes
+        # with nd2reader.reader.ND2Reader(str(nd2file)) as ndx:
+        #     sizes = ndx.sizes
 
-            if "t" not in sizes:
-                sizes["t"] = 1
-            if "z" not in sizes:
-                sizes["z"] = 1
-            if "c" not in sizes:
-                sizes["c"] = 1
-            ndx.bundle_axes = "zcyx"
-            ndx.iter_axes = "t"
-            n = len(ndx)
+        #     if "t" not in sizes:
+        #         sizes["t"] = 1
+        #     if "z" not in sizes:
+        #         sizes["z"] = 1
+        #     if "c" not in sizes:
+        #         sizes["c"] = 1
+        #     ndx.bundle_axes = "zcyx"
+        #     ndx.iter_axes = "t"
+        #     n = len(ndx)
 
-            shape = (
-                sizes["t"],
-                sizes["z"],
-                sizes["v"],
-                sizes["c"],
-                sizes["y"],
-                sizes["x"],
-            )
-            image = np.zeros(shape, dtype=np.float32)
+        #     shape = (
+        #         sizes["t"],
+        #         sizes["z"],
+        #         sizes["v"],
+        #         sizes["c"],
+        #         sizes["y"],
+        #         sizes["x"],
+        #     )
+        #     image = np.zeros(shape, dtype=np.float32)
 
-            for i in range(n):
-                image[i] = ndx.get_frame(i)
+        #     for i in range(n):
+        #         image[i] = ndx.get_frame(i)
 
-        image = np.squeeze(image)
+        # image = np.squeeze(image)
 
-        viewer.add_image(image, channel_axis=1, colormap="gray")
-        viewer.grid.shape = (-1, 3)
+        # viewer.add_image(image, channel_axis=1, colormap="gray")
+        # viewer.grid.shape = (-1, 3)
 
-        viewer.dims.current_step = (0, 0)
-        viewer.layers.link_layers()  ## allows user to set contrast limits for all FOVs at once
+        # viewer.dims.current_step = (0, 0)
+        # viewer.layers.link_layers()  ## allows user to set contrast limits for all FOVs at once
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value
