@@ -16,14 +16,6 @@ https://doi.org/10.7554/eLife.88463.1](https://elifesciences.org/reviewed-prepri
 
 This [napari] plugin was generated with [Cookiecutter] using [@napari]'s [cookiecutter-napari-plugin] template.
 
-<!--
-Don't miss the full getting started guide to set up your new package:
-https://github.com/napari/cookiecutter-napari-plugin#getting-started
-
-and review the napari docs for plugin developers:
-https://napari.org/plugins/stable/index.html
--->
-
 
 https://github.com/junlabucsd/napari-mm3/assets/40699438/1b3e6121-f5e1-475f-aca3-c6ed1b5bab3a
 
@@ -31,35 +23,29 @@ https://github.com/junlabucsd/napari-mm3/assets/40699438/1b3e6121-f5e1-475f-aca3
 
 ## Installation
 
-We describe installation with mamba, a faster version of conda which we recommend. Installation with conda is the exact same, except replace `mamba` with `conda` Run the following command:
-
+We describe installation with conda. First, clone with git and navigate inside the folder.
 ```
-mamba create -n napari-mm3 -c conda-forge conda-build tensorflow napari
-``` 
-Now, you need to install our code (please let us know if this causes problems -- it has been a pain point in the past). To do so, clone the repository:
-
-```
-git clone https://github.com/junlabucsd/napari-mm3.git
-```
-
-Then, run the following commands from within your conda environment:
-```
+git clone git@github.com:junlabucsd/napari-mm3.git
 cd napari-mm3
-pip install -e .
+```
+If you do not have ssh configured, you can replace the URL with `https://github.com/junlabucsd/napari-mm3.git`; we recommend setting up SSH.
+Now, install dependencies (this step can take a while):
+```
+conda env create -f environment.yml
+```
+By default, 'napari-mm3' will be the environment name.
+Finally, switch to the environment you've created, and install the plugin itself WITHOUT dependencies (if you miss the flag, you will likely run into trouble!!):
+```
+conda activate napari-mm3
+pip install -e . --no-dependencies
 ```
 This supplies you with the latest, most recent version of our code.
-
-If you would like to have a more stable version, simply run `pip install napari-mm3`. In general, we recommend going off of the github version.
 
 napari-MM3 can use the [python-bioformats](https://pypi.org/project/python-bioformats/) library to import various image file formats. It can be installed with pip:
 ```
 pip install python-bioformats
 ```
-If your raw images are in the .nd2 format, they will be read in with the nd2reader package. In this case, Bio-Formats is not required.
-
-NOTES:
-Not running the conda command above and trying to install things in a different way may lead to difficult issues with PyQt5. We recommend following the above commands to simplify the situation.
-Using `pip -e .` instead of `mamba develop .` is a deliberate choice, the former did not seem to register the plugin with napari.
+If your raw images are in the .nd2 format, they will be read in with the nd2 package. In this case, Bio-Formats is not required.
 
 ## Contributing
 
