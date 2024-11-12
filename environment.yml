@@ -1,0 +1,17 @@
+name: napari-mm3
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python
+  - numpy<2.0.0
+  - tensorflow
+  - napari
+  - nd2
+  - scikit-learn
+  - scikit-image
+  - h5py
+  - seaborn
+  - pip
+  - pip:
+    - elasticdeform
