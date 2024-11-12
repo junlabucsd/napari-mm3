@@ -479,7 +479,7 @@ class TIFFExport(Container):
             )
             return
 
-        with nd2reader.reader.ND2Reader(str(nd2file)) as ndx:
+        with nd2.ND2Reader(str(nd2file)) as ndx:
             sizes = ndx.sizes
 
             if "T" not in sizes:

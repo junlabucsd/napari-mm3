@@ -1,16 +1,18 @@
 from __future__ import print_function, division
+import os
+import multiprocessing
+import six
+
+import numpy as np
+from skimage import segmentation, morphology
+import tifffile as tiff
+import h5py
 import tensorflow as tf
 from tensorflow import keras
-from keras.preprocessing.image import ImageDataGenerator
 from keras import models, losses
 from tensorflow.python.ops import array_ops, math_ops
 from keras import backend as K
-
-import h5py
-import multiprocessing
-import numpy as np
 import napari
-from magicgui import magicgui
 from magicgui.widgets import (
     FileEdit,
     SpinBox,
@@ -19,14 +21,6 @@ from magicgui.widgets import (
     ComboBox,
     PushButton,
 )
-from napari.types import ImageData, LabelsData
-import os
-
-from skimage import segmentation, morphology
-from skimage.filters import median
-
-import six
-import tifffile as tiff
 
 from ._deriving_widgets import (
     FOVChooser,
@@ -35,11 +29,10 @@ from ._deriving_widgets import (
     load_specs,
     information,
     load_unmodified_stack,
-    warning,
 )
 
 # loss functions for model
-def dice_coeff(y_true, y_pred):
+def dice_coeff(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     """Dice coefficient for segmentation accuracy.
     Parameters
     ----------
@@ -63,12 +56,34 @@ def dice_coeff(y_true, y_pred):
     return score
 
 
-def dice_loss(y_true, y_pred):
+def dice_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """
+    Dice loss
+    Parameters
+    ----------
+    y_true: Tensor
+        ground truth labels
+    y_pred: Tensor
+        predicted labels
+
+    Returns
+    -------
+    loss: Tensor
+        dice loss between inputs
+    """
     loss = 1 - dice_coeff(y_true, y_pred)
     return loss
 
 
-def bce_dice_loss(y_true, y_pred):
+def bce_dice_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """
+    Combined cross entropy and dice loss
+    Parameters
+    ----------
+    y_true: Tensor
+        ground truth labels
+    y_pred: Tensor
+        predicted labels"""
     loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
 
 
@@ -87,7 +102,7 @@ def pixelwise_weighted_bce(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
 
     Returns
     -------
-    Tensor
+    loss: Tensor
         Pixel-wise weight binary cross-entropy between inputs.
 
     """
@@ -206,42 +221,21 @@ def save_out(params, segmented_imgs, fov_id, peak_id):
         Field of view ID.
     peak_id : int
         Peak ID.
-    
+
     Returns
     -------
     None."""
     # save out the segmented stacks
-    if params["output"] == "TIFF":
-        seg_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
-            fov_id,
-            peak_id,
-            params["seg_img"],
-        )
-        tiff.imwrite(
-            params["seg_dir"] / seg_filename,
-            segmented_imgs,
-            compression=("zlib", 4),
-        )
-
-    if params["output"] == "HDF5":
-        h5f = h5py.File(params["hdf5_dir"] / ("xy%03d.hdf5" % fov_id), "r+")
-        # put segmented channel in correct group
-        h5g = h5f["channel_%04d" % peak_id]
-        # delete the dataset if it exists (important for debug)
-        if "p%04d_%s" % (peak_id, params["seg_img"]) in h5g:
-            del h5g["p%04d_%s" % (peak_id, params["seg_img"])]
-
-        h5ds = h5g.create_dataset(
-            "p%04d_%s" % (peak_id, params["seg_img"]),
-            data=segmented_imgs,
-            chunks=(1, segmented_imgs.shape[1], segmented_imgs.shape[2]),
-            maxshape=(None, segmented_imgs.shape[1], segmented_imgs.shape[2]),
-            compression="gzip",
-            shuffle=True,
-            fletcher32=True,
-        )
-        h5f.close()
-
+    seg_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
+        fov_id,
+        peak_id,
+        params["seg_img"],
+    )
+    tiff.imwrite(
+        params["seg_dir"] / seg_filename,
+        segmented_imgs,
+        compression=("zlib", 4),
+    )
     return
 
 
@@ -251,7 +245,7 @@ def normalize_to_one(img_stack):
     ----------
     img_stack : np.ndarray
         Image stack.
-    
+
     Returns
     -------
     np.ndarray
@@ -278,7 +272,7 @@ def binarize_and_label(predictions, cellClassThreshold, min_object_size):
         Threshold for binarizing the predictions.
     min_object_size : int
         Minimum object size to keep.
-    
+
     Returns
     -------
     np.ndarray
@@ -323,7 +317,7 @@ def trim_and_pad(img_stack, unet_shape, pad_dict):
         Shape of the U-net.
     pad_dict : dict
         Dictionary of padding values.
-    
+
     Returns
     -------
     np.ndarray
@@ -399,9 +393,7 @@ def segment_fov_unet(
             ana_peak_ids.append(peak_id)
     ana_peak_ids.sort()  # sort for repeatability
 
-    segment_cells_unet(
-        ana_peak_ids, fov_id, unet_shape, model, params, view_result
-    )
+    segment_cells_unet(ana_peak_ids, fov_id, unet_shape, model, params, view_result)
 
     information("Finished segmentation for FOV {}.".format(fov_id))
 
@@ -432,7 +424,13 @@ def segment_cells_unet(
         # img_stack = load_stack_params(
         #     params, fov_id, peak_id, postfix=params["phase_plane"]
         # )
-        img_stack = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, params["phase_plane"])
+        img_stack = load_unmodified_stack(
+            params["ana_dir"],
+            params["experiment_name"],
+            fov_id,
+            peak_id,
+            params["phase_plane"],
+        )
 
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
@@ -497,14 +495,11 @@ def segment_peak_unet(img_stack, unet_shape, pad_dict, model, params):
 
     img_stack = trim_and_pad(img_stack, unet_shape, pad_dict)
     img_stack = np.expand_dims(img_stack, -1)  # TF expects images to be 4D
-    # set up image generator
-    image_datagen = ImageDataGenerator()
-    image_generator = image_datagen.flow(
-        x=img_stack, batch_size=batch_size, shuffle=False
-    )  # keep same order
 
-    # predict cell locations. This has multiprocessing built in but I need to mess with the parameters to see how to best utilize it. ***
-    predictions = model.predict(image_generator, **predict_args)
+    input_data = tf.data.Dataset.from_tensor_slices(img_stack)
+    input_data = input_data.batch(batch_size)
+
+    predictions = model.predict(input_data, **predict_args)
     predictions = pad_back(predictions, unet_shape, pad_dict)
 
     return predictions
@@ -666,7 +661,6 @@ class SegmentUnet(MM3Container):
         self.params["TIFF_dir"] = self.TIFF_folder
         self.params["ana_dir"] = self.analysis_folder
 
-        self.params["hdf5_dir"] = self.params["ana_dir"] / "hdf5"
         self.params["chnl_dir"] = self.params["ana_dir"] / "channels"
         self.params["empty_dir"] = self.params["ana_dir"] / "empties"
         self.params["sub_dir"] = self.params["ana_dir"] / "subtracted"
@@ -730,7 +724,13 @@ class SegmentUnet(MM3Container):
         # img_stack = load_stack_params(
         #     self.params, valid_fov, valid_peak, postfix=self.params["phase_plane"]
         # )
-        img_stack = load_unmodified_stack(self.params["ana_dir"], self.params["experiment_name"], valid_fov, valid_peak, postfix = self.params["phase_plane"])
+        img_stack = load_unmodified_stack(
+            self.params["ana_dir"],
+            self.params["experiment_name"],
+            valid_fov,
+            valid_peak,
+            postfix=self.params["phase_plane"],
+        )
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
 

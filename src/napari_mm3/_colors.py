@@ -31,13 +31,13 @@ def find_cell_intensities(
     time_table,
     fov_id,
     peak_id,
-    Cells,
+    cells,
     midline=False,
     channel_name="c2",
     seg_mode=SegmentationMode.OTSU,
 ):
     """
-    Finds fluorescenct information for cells. All the cells in Cells
+    Finds fluorescenct information for cells. All the cells in cells
     should be from one fov/peak. See the function
     organize_cells_by_channel()
     """
@@ -71,38 +71,38 @@ def find_cell_intensities(
     t0 = times_all[0]  # first time index
 
     # Loop through cells
-    for Cell in Cells.values():
+    for cell in cells.values():
         # give this cell two lists to hold new information
-        Cell.fl_tots = []  # total fluorescence per time point
-        Cell.fl_area_avgs = []  # avg fluorescence per unit area by timepoint
-        Cell.fl_vol_avgs = []  # avg fluorescence per unit volume by timepoint
+        cell.fl_tots = []  # total fluorescence per time point
+        cell.fl_area_avgs = []  # avg fluorescence per unit area by timepoint
+        cell.fl_vol_avgs = []  # avg fluorescence per unit volume by timepoint
 
         if midline:
-            Cell.mid_fl = []  # avg fluorescence of midline
+            cell.mid_fl = []  # avg fluorescence of midline
 
         # and the time points that make up this cell's life
-        for n, t in enumerate(Cell.times):
+        for n, t in enumerate(cell.times):
             # create fluorescent image only for this cell and timepoint.
             fl_image_masked = np.copy(fl_stack[t - t0])
-            fl_image_masked[seg_stack[t - t0] != Cell.labels[n]] = 0
+            fl_image_masked[seg_stack[t - t0] != cell.labels[n]] = 0
 
             # append total flourescent image
-            Cell.fl_tots.append(np.sum(fl_image_masked))
+            cell.fl_tots.append(np.sum(fl_image_masked))
             # and the average fluorescence
-            Cell.fl_area_avgs.append(np.sum(fl_image_masked) / Cell.areas[n])
-            Cell.fl_vol_avgs.append(np.sum(fl_image_masked) / Cell.volumes[n])
+            cell.fl_area_avgs.append(np.sum(fl_image_masked) / cell.areas[n])
+            cell.fl_vol_avgs.append(np.sum(fl_image_masked) / cell.volumes[n])
 
             if midline:
                 # add the midline average by first applying morphology transform
                 bin_mask = np.copy(seg_stack[t - t0])
-                bin_mask[bin_mask != Cell.labels[n]] = 0
+                bin_mask[bin_mask != cell.labels[n]] = 0
                 med_mask, _ = morphology.medial_axis(bin_mask, return_distance=True)
                 # med_mask[med_dist < np.floor(cap_radius/2)] = 0
                 # print(img_fluo[med_mask])
                 if np.shape(fl_image_masked[med_mask])[0] > 0:
-                    Cell.mid_fl.append(np.nanmean(fl_image_masked[med_mask]))
+                    cell.mid_fl.append(np.nanmean(fl_image_masked[med_mask]))
                 else:
-                    Cell.mid_fl.append(0)
+                    cell.mid_fl.append(0)
 
     # The cell objects in the original dictionary will be updated,
     # no need to return anything specifically.
@@ -112,16 +112,16 @@ def find_cell_intensities_worker(
     params,
     fov_id,
     peak_id,
-    Cells,
+    cells,
     midline=True,
     channel="c2",
     seg_mode=SegmentationMode.OTSU,
 ):
     """
-    Finds fluorescenct information for cells. All the cells in Cells
+    Finds fluorescenct information for cells. All the cells in cells
     should be from one fov/peak. See the function
     organize_cells_by_channel()
-    This version is the same as find_cell_intensities but return the Cells object for collection by the pool.
+    This version is the same as find_cell_intensities but return the cells object for collection by the pool.
     The original find_cell_intensities is kept for compatibility.
     """
     information("Processing peak {} in FOV {}".format(peak_id, fov_id))
@@ -148,7 +148,7 @@ def find_cell_intensities_worker(
     t0 = times_all[0]  # first time index
 
     # Loop through cells
-    for Cell in Cells.values():
+    for cell in cells.values():
         # give this cell two lists to hold new information
 
         fl_tots = []  # total fluorescence per time point
@@ -156,36 +156,36 @@ def find_cell_intensities_worker(
         fl_vol = []  # avg fluorescence per unit volume by timepoint
 
         if midline:
-            Cell.mid_fl = []  # avg fluorescence of midline
+            cell.mid_fl = []  # avg fluorescence of midline
 
         # and the time points that make up this cell's life
-        for n, t in enumerate(Cell.times):
+        for n, t in enumerate(cell.times):
             # create fluorescent image only for this cell and timepoint.
             fl_image_masked = np.copy(fl_stack[t - t0])
-            fl_image_masked[seg_stack[t - t0] != Cell.labels[n]] = 0
+            fl_image_masked[seg_stack[t - t0] != cell.labels[n]] = 0
 
             # append total fluorescent image
             fl_tots.append(np.sum(fl_image_masked))
             # and the average fluorescence
-            fl_area.append(np.sum(fl_image_masked) / Cell.areas[n])
-            fl_vol.append(np.sum(fl_image_masked) / Cell.volumes[n])
+            fl_area.append(np.sum(fl_image_masked) / cell.areas[n])
+            fl_vol.append(np.sum(fl_image_masked) / cell.volumes[n])
 
             if midline:
                 # add the midline average by first applying morphology transform
                 bin_mask = np.copy(seg_stack[t - t0])
-                bin_mask[bin_mask != Cell.labels[n]] = 0
+                bin_mask[bin_mask != cell.labels[n]] = 0
                 med_mask, _ = morphology.medial_axis(bin_mask, return_distance=True)
                 if np.shape(fl_image_masked[med_mask])[0] > 0:
-                    Cell.mid_fl.append(np.nanmean(fl_image_masked[med_mask]))
+                    cell.mid_fl.append(np.nanmean(fl_image_masked[med_mask]))
                 else:
-                    Cell.mid_fl.append(0)
+                    cell.mid_fl.append(0)
 
-        Cell.setattr("fl_tots_c{0}".format(channel), fl_tots)
-        Cell.setattr("fl_area_c{0}".format(channel), fl_area)
-        Cell.setattr("fl_vol_c{0}".format(channel), fl_vol)
+        cell.setattr("fl_tots_c{0}".format(channel), fl_tots)
+        cell.setattr("fl_area_c{0}".format(channel), fl_area)
+        cell.setattr("fl_vol_c{0}".format(channel), fl_vol)
 
     # return the cell object to the pool initiated by mm3_Colors.
-    return Cells
+    return cells
 
 
 # load cell file
@@ -215,7 +215,7 @@ def colors(params, fl_channel, seg_method, cellfile_path):
     #     cell_file_path = p['cell_dir'] / 'complete_cells.pkl'
 
     with open(cellfile_path, "rb") as cell_file:
-        Complete_Cells = pickle.load(cell_file)
+        complete_cells = pickle.load(cell_file)
 
     # if namespace.seg_method:
     #     seg_method = 'seg_'+str(namespace.seg_method)
@@ -240,50 +240,50 @@ def colors(params, fl_channel, seg_method, cellfile_path):
     information("Processing %d FOVs." % len(fov_id_list))
 
     # create dictionary which organizes cells by fov and peak_id
-    Cells_by_peak = organize_cells_by_channel(Complete_Cells, specs)
+    cells_by_peak = organize_cells_by_channel(complete_cells, specs)
 
     # multiprocessing
     color_multiproc = False
     if color_multiproc:
-        Cells_to_pool = []
+        cells_to_pool = []
         for fov_id in fov_id_list:
-            peak_ids = Cells_by_peak[fov_id].keys()
-            peak_id_Cells = Cells_by_peak[fov_id].values()
+            peak_ids = cells_by_peak[fov_id].keys()
+            peak_id_cells = cells_by_peak[fov_id].values()
             fov_ids = [fov_id] * len(peak_ids)
 
-            Cells_to_pool += zip(fov_ids, peak_ids, peak_id_Cells)
+            cells_to_pool += zip(fov_ids, peak_ids, peak_id_cells)
         pool = Pool(processes=params["num_analyzers"])
 
         mapfunc = partial(
             find_cell_intensities_worker, params, fl_channel, seg_method, cellfile_path
         )
-        Cells_updates = pool.starmap_async(mapfunc, Cells_to_pool)
-        # [pool.apply_async(find_cell_intensities(fov_id, peak_id, Cells, midline=True, channel=namespace.channel)) for fov_id in fov_id_list for peak_id, Cells in Cells_by_peak[fov_id].items()]
+        cells_updates = pool.starmap_async(mapfunc, cells_to_pool)
+        # [pool.apply_async(find_cell_intensities(fov_id, peak_id, cells, midline=True, channel=namespace.channel)) for fov_id in fov_id_list for peak_id, cells in cells_by_peak[fov_id].items()]
 
         pool.close()  # tells the process nothing more will be added.
         pool.join()
         update_cells = (
-            Cells_updates.get()
-        )  # the result is a list of Cells dictionary, each dict contains several cells
+            cells_updates.get()
+        )  # the result is a list of cells dictionary, each dict contains several cells
         update_cells = {
             cell_id: cell for cells in update_cells for cell_id, cell in cells.items()
         }
         for cell_id, cell in update_cells.items():
-            Complete_Cells[cell_id] = cell
+            complete_cells[cell_id] = cell
 
     # for each set of cells in one fov/peak, compute the fluorescence
     else:
         for fov_id in fov_id_list:
-            if fov_id in Cells_by_peak:
+            if fov_id in cells_by_peak:
                 information("Processing FOV {}.".format(fov_id))
-                for peak_id, Cells in Cells_by_peak[fov_id].items():
+                for peak_id, cells in cells_by_peak[fov_id].items():
                     information("Processing peak {}.".format(peak_id))
                     find_cell_intensities(
                         params,
                         time_table,
                         fov_id,
                         peak_id,
-                        Cells,
+                        cells,
                         midline=False,
                         channel_name=fl_channel,
                     )
@@ -291,7 +291,7 @@ def colors(params, fl_channel, seg_method, cellfile_path):
     # Just the complete cells, those with mother and daugther
     cell_filename = os.path.basename(cellfile_path)
     with open(params["cell_dir"] / (cell_filename[:-4] + "_fl.pkl"), "wb") as cell_file:
-        pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(complete_cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     information("Finished.")
 
@@ -301,7 +301,7 @@ class Colors(MM3Container):
         self.cellfile_widget = FileEdit(
             label="cell_file",
             value=Path("./analysis/cell_data/complete_cells.pkl"),
-            tooltip="Cell file to be analyzed",
+            tooltip="cell file to be analyzed",
         )
 
         ## allow user to choose multiple planes to analyze

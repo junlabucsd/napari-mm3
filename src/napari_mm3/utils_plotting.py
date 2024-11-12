@@ -39,11 +39,19 @@ def cells2df(Cells_dict, columns = None):
 
     # Make dataframe for plotting variables
     Cells_df = pd.DataFrame(Cells_dict).transpose() # must be transposed so data is in columns
-    # Cells_df = Cells_df.sort(columns=['fov', 'peak', 'birth_time', 'birth_label']) # sort for convinience
     Cells_df = Cells_df.sort_values(by=['fov', 'peak', 'birth_time', 'birth_label'])
     Cells_df = Cells_df[columns].apply(pd.to_numeric)
 
     return Cells_df
+
+def cells2dict(Cells):
+    '''
+    Take a dictionary of Cells and returns a dictionary of dictionaries
+    '''
+
+    Cells_dict = {cell_id : vars(cell) for cell_id, cell in six.iteritems(Cells)}
+
+    return Cells_dict
 
 ### Filtering functions ############################################################################
 def find_cells_of_birth_label(Cells, label_num=1):
@@ -170,7 +178,7 @@ def filter_by_stat(Cells, center_stat='mean', std_distance=3):
     '''
 
     # Calculate stats.
-    Cells_df = cells2df(Cells)
+    Cells_df = cells2df(cells2dict(Cells))
     stats_columns = ['sb', 'sd', 'delta', 'elong_rate', 'tau', 'septum_position']
     cell_stats = Cells_df[stats_columns].describe()
 

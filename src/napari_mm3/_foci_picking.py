@@ -194,7 +194,7 @@ class FociPicking(MM3Container):
             experiment_name=self.experiment_name,
             fov_id=self.fov_id,
             peak_id=self.peak_id,
-            seg_mode=SegmentationMode.UNET,
+            seg_mode=SegmentationMode.OTSU,
         )
         seg_stack = seg_stack[
             self.start - 1:self.stop, :, self.crop_left:self.crop_right + 1
@@ -370,7 +370,7 @@ class FociPicking(MM3Container):
             experiment_name=self.experiment_name,
             fov_id=self.fov_id,
             peak_id=self.peak_id,
-            seg_mode=SegmentationMode.UNET,
+            seg_mode=SegmentationMode.OTSU,
         )
         cur_seg_stack = seg_stack[t, :, self.crop_left:self.crop_right + 1]
         # TODO: Proper rounding.
