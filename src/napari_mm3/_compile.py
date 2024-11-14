@@ -1,6 +1,7 @@
 import multiprocessing
 import re
 import os
+import glob
 import yaml
 import six
 import pickle
@@ -11,6 +12,11 @@ import numpy as np
 import json
 from typing import Union
 
+# from skimage.io import imread This works but temporarily disabling.
+from skimage.io.collection import alphanumeric_key
+from dask import delayed
+import dask.array as da
+from glob import glob
 from scipy import ndimage as ndi
 from skimage.feature import match_template
 from multiprocessing import Pool
@@ -32,6 +38,23 @@ from ._deriving_widgets import (
 
 
 #### Helpful utility functions.
+
+
+def dask_imread(path: Path):
+    paths = list(path.parent.glob(path.name))
+    filenames = sorted(map(str, paths), key=alphanumeric_key)
+    # read the first file to get the shape and dtype
+    # ASSUMES THAT ALL FILES SHARE THE SAME SHAPE/TYPE
+    sample = tiff.imread(filenames[0])
+
+    lazy_imread = delayed(tiff.imread)  # lazy reader
+    lazy_arrays = [lazy_imread(fn) for fn in filenames]
+    dask_arrays = [
+        da.from_delayed(delayed_reader, shape=sample.shape, dtype=sample.dtype)
+        for delayed_reader in lazy_arrays
+    ]
+    # Stack into one large dask.array
+    return da.stack(dask_arrays, axis=0)
 
 
 def get_plane(filepath: str) -> Union[str, None]:
@@ -107,6 +130,7 @@ def restack_planes(found_files_c1: list, found_files_c2: list, params: dict) -> 
 
 
 ### Functions for working with TIFF metadata ###
+
 
 # get params is the major function which processes raw TIFF images
 def get_tif_params(
@@ -229,9 +253,9 @@ def get_tif_params_loop(params: dict, found_files: list) -> dict:
     for fn in analyzed_imgs.keys():
         result = analyzed_imgs[fn]
         if result.successful():
-            analyzed_imgs[
-                fn
-            ] = result.get()  # put the metadata in the dict if it's good
+            analyzed_imgs[fn] = (
+                result.get()
+            )  # put the metadata in the dict if it's good
         else:
             analyzed_imgs[fn] = False  # put a false there if it's bad
 
@@ -1360,7 +1384,9 @@ def compile(params: dict) -> None:
     compute_xcorr(channel_masks, user_spec_fovs, params)
 
 
-def load_fov(image_directory: Path, fov_id: int, filter_str: str = "") -> Union[np.ndarray, None]:
+def load_fov(
+    image_directory: Path, fov_id: int, filter_str: str = ""
+) -> Union[np.ndarray, None]:
     information("getting files")
     found_files_paths = image_directory.glob("*.tif")
     file_string = re.compile(f"xy{fov_id:02d}.*.tif", re.IGNORECASE)
@@ -1517,12 +1543,6 @@ class Compile(MM3Container):
             "TIFF_dir": self.TIFF_folder,
             "ana_dir": self.analysis_folder,
             "chnl_dir": self.analysis_folder / "channels",
-            "empty_dir": self.analysis_folder / "empties",
-            "sub_dir": self.analysis_folder / "subtracted",
-            "seg_dir": self.analysis_folder / "segmented",
-            "pred_dir": self.analysis_folder / "predictions",
-            "cell_dir": self.analysis_folder / "cell_data",
-            "track_dir": self.analysis_folder / "tracking",
             "use_jd": False,  # disabling for now because of bug with Elements output formatting
         }
         self.viewer.window._status_bar._toggle_activity_dock(True)
@@ -1533,22 +1553,23 @@ class Compile(MM3Container):
     def display_single_fov(self):
         self.viewer.layers.clear()
         self.viewer.text_overlay.visible = False
+        path = self.TIFF_folder / "*xy*.tif"
         if self.split_channels:
+            # should not be getting executred.
             image_fov_stack = load_fov(
                 self.TIFF_folder, min(self.valid_fovs), filter_str="c*01"
             )
         else:
-            image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
-        image_fov_stack = np.squeeze(
-            image_fov_stack
-        )  ## remove axes of length 1 for napari viewer
-        images = self.viewer.add_image(image_fov_stack.astype(np.float32))
+            image_fov_stack = dask_imread(path)
+        image_fov_stack = np.squeeze(image_fov_stack)
+        images = self.viewer.add_image(image_fov_stack, contrast_limits=[0, 2000])
         self.viewer.dims.current_step = (0, 0)
         images.reset_contrast_limits()
         # images.gamma = 0.5
 
     def display_all_fovs(self):
         pass
+
         # viewer = self.viewer
         # viewer.layers.clear()
         # viewer.grid.enabled = True
