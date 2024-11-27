@@ -84,13 +84,13 @@ def stack_channels(found_files: np.ndarray, params: dict) -> None:
     found_files = np.transpose(found_files)
 
     for files in found_files:
-        information('Merging files')
-        print(*files, sep='\n')
+        information("Merging files")
+        print(*files, sep="\n")
         ims = [tiff.imread(f) for f in files]
         im_out = np.stack(ims, axis=0)
 
         # need to insert regex here to catch variants
-        name_out = re.sub("c\d+", "", str(files[0]), flags = re.IGNORECASE)
+        name_out = re.sub("c\d+", "", str(files[0]), flags=re.IGNORECASE)
         # 'minisblack' necessary to ensure that it interprets image as black/white.
         tiff.imwrite(name_out, im_out, photometric="minisblack")
 
@@ -99,7 +99,7 @@ def stack_channels(found_files: np.ndarray, params: dict) -> None:
         if not old_tiff_path.exists():
             old_tiff_path.mkdir()
             information("Creating directory for original TIFFs")
-        
+
         for f in files:
             f.replace(str(f).replace(str(params["TIFF_dir"]), "original_TIFF"))
 
@@ -107,6 +107,7 @@ def stack_channels(found_files: np.ndarray, params: dict) -> None:
 
 
 ### Functions for working with TIFF metadata ###
+
 
 # get params is the major function which processes raw TIFF images
 def get_tif_params(
@@ -142,6 +143,8 @@ def get_tif_params(
                 image_metadata = get_tif_metadata_nd2(tif)
             elif params["TIFF_source"] == "BioFormats / other TIFF":
                 image_metadata = get_tif_metadata_filename(tif)
+            if image_metadata["planes"] is None:
+                image_metadata["planes"] = params["planes"]
 
         # look for channels if flagged
         if find_channels:
@@ -229,9 +232,9 @@ def get_tif_params_loop(params: dict, found_files: list) -> dict:
     for fn in analyzed_imgs.keys():
         result = analyzed_imgs[fn]
         if result.successful():
-            analyzed_imgs[
-                fn
-            ] = result.get()  # put the metadata in the dict if it's good
+            analyzed_imgs[fn] = (
+                result.get()
+            )  # put the metadata in the dict if it's good
         else:
             analyzed_imgs[fn] = False  # put a false there if it's bad
 
@@ -264,7 +267,6 @@ def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
             idata = tag.value
             break
 
-    # print(idata)
     idata = json.loads(idata)
     return idata
 
@@ -500,6 +502,10 @@ def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
             channel_loc[1][0] : channel_loc[1][1],
             :,
         ]
+    else:
+        warning(
+            f"Image shape not recognized. Expected 2, 3, or 4 dimensions, found {image_data.ndim} dimensions with shape {image_data.shape}."
+        )
 
     # slice based on appropriate slicer object.
     channel_slice = image_data[channel_slicer]
@@ -1101,6 +1107,10 @@ def fix_orientation(params: dict, image_data: np.ndarray) -> np.ndarray:
     # user parameter indicates how things should be flipped
     image_orientation = params["compile"]["image_orientation"]
 
+    image_data = np.squeeze(
+        image_data
+    )  # remove singleton dimensions to standardize shape
+
     # if this is just a phase image give in an extra layer so rest of code is fine
     flat = False  # flag for if the image is flat or multiple levels
     if len(image_data.shape) == 2:
@@ -1294,10 +1304,10 @@ def compile(params: dict) -> None:
             matched_files = [f for f in found_files if re.search(c_string, f.name)]
             if matched_files:
                 files_list.append(matched_files)
-                i+=1
+                i += 1
             elif i == 0:
                 # continue in case channels indexed from 1
-                i+=1
+                i += 1
             else:
                 break
 
@@ -1305,7 +1315,7 @@ def compile(params: dict) -> None:
         if files_array.ndim > 1:
             information("Merging TIFFs across channel")
             stack_channels(files_array, params)
-        
+
         else:
             pass
 
@@ -1369,7 +1379,9 @@ def compile(params: dict) -> None:
     compute_xcorr(channel_masks, user_spec_fovs, params)
 
 
-def load_fov(image_directory: Path, fov_id: int, filter_str: str = "") -> Union[np.ndarray, None]:
+def load_fov(
+    image_directory: Path, fov_id: int, filter_str: str = ""
+) -> Union[np.ndarray, None]:
     information("getting files")
     found_files_paths = image_directory.glob("*.tif")
     file_string = re.compile(f"xy0*{fov_id}\w*.tif", re.IGNORECASE)
@@ -1504,6 +1516,7 @@ class Compile(MM3Container):
             "TIFF_source": self.image_source,
             "output": "TIFF",
             "phase_plane": self.phase_plane,
+            "planes": self.valid_planes,
             "seconds_per_time_index": self.seconds_per_frame,
             "compile": {
                 "do_metadata": True,

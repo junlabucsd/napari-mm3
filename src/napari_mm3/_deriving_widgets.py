@@ -20,6 +20,7 @@ import sys
 import traceback
 from enum import Enum
 from napari import Viewer
+import numpy as np
 
 
 class SegmentationMode(Enum):
@@ -155,6 +156,7 @@ def get_valid_planes(TIFF_folder):
     # pull out first tiff to extract dims
     filepath = filepaths[0]
     test_file = tiff.imread(filepath)
+    test_file = np.squeeze(test_file)
     dim = test_file.ndim
     if dim == 3:
         # there are multiple planes
@@ -191,7 +193,9 @@ def get_valid_times(TIFF_folder):
     get_time_regex = re.compile(r"t(\d+)", re.IGNORECASE)
 
     try:
-        time_strings = set(get_time_regex.findall(filename)[0] for filename in filenames)
+        time_strings = set(
+            get_time_regex.findall(filename)[0] for filename in filenames
+        )
         times = list(map(int, sorted(time_strings)))
     except IndexError:
         img = load_tiff(found_files[0])
@@ -408,15 +412,15 @@ class MM3Container(Container):
             except ValueError:
                 self.found_times = False
 
-
-
     def _set_valid_planes(self):
         try:
             self.valid_planes = get_valid_planes(self.TIFF_folder)
             self.found_planes = True
         except ValueError:
             try:
-                self.valid_planes = get_valid_planes(self.analysis_folder / "subtracted")
+                self.valid_planes = get_valid_planes(
+                    self.analysis_folder / "subtracted"
+                )
                 self.found_planes = True
             except ValueError:
                 self.found_planes = False
@@ -469,8 +473,8 @@ class MM3Container(Container):
         try:
             widget_name = self.parent.name
         except AttributeError:
-            warning('Could not extract widget name to save settings.')
-            widget_name = ''
+            warning("Could not extract widget name to save settings.")
+            widget_name = ""
         history = []
         if Path("./history.json").exists():
             with open("./history.json", "r") as h:
@@ -494,7 +498,6 @@ class MM3Container(Container):
 
         with open("./history.json", "w") as h:
             json.dump(history, h, indent=2)
-
 
 
 class TimeRangeSelector(RangeEdit):
