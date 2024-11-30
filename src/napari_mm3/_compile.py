@@ -74,7 +74,8 @@ def stack_channels(found_files: np.ndarray, TIFF_dir: Path) -> None:
     Parameters
     ---------
     found_files: ndarray of filepaths for each imaging plane
-    params: dictionary of parameters
+    TIFF_dir: Path
+        Directory containing the TIFF files.
 
     Returns
     ---------
@@ -286,9 +287,14 @@ def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
     This if tiff files as exported by the mm3 function nd2ToTiff. All the metdata
     is found in that script and saved in json format to the tiff, so it is simply extracted here
 
-    Paramters:
-        tif: TIFF file object from which data will be extracted
-    Returns:
+    Paramters
+    ---------
+    tif: tiff.TiffFile
+        TIFF file object from which data will be extracted
+
+    Returns
+    -------
+    idata: dict
         dictionary of values:
             'fov': int,
             't' : int,
@@ -315,9 +321,14 @@ def get_tif_metadata_filename(tif: tiff.TiffFile) -> dict:
     """This function pulls out the metadata from a tif filename and returns it as a dictionary.
     This just gets the tiff metadata from the filename and is a backup option when the known format of the metadata is not known.
 
-    Paramters:
-        tif: TIFF file object from which data will be extracted
-    Returns:
+    Parameters
+    ---------
+    tif: tiff.TiffFile
+        TIFF file object from which data will be extracted
+
+    Returns
+    -------
+    idata: dict
         dictionary of values:
             'fov': int,
             't' : int,
@@ -357,8 +368,14 @@ def channel_xcorr(
 
     Parameters
     ----------
-    params: dict
-        dictionary of parameters
+    alignment_pad: int
+        Padding for channel alignment
+    ana_dir: Path
+        Analysis directory
+    experiment_name: str
+        Name of the experiment
+    phase_plane: str
+        Phase contrast channel identifier
     fov_id: int
         fov to analyze
     peak_id:
@@ -410,9 +427,16 @@ def compute_xcorr(
         Trap locations relative to FOV
     user_spec_fovs:
         FOVs to analyzed
-
-    params: dict
-        dictionary of parameters
+    num_analyzers: int
+        Number of analyzers to use for multiprocessing
+    alignment_pad: int
+        Padding for alignment
+    ana_dir: Path
+        Analysis directory
+    experiment_name: str
+        Name of the experiment
+    phase_plane: str
+        Phase contrast channel identifier
 
     Returns
     ---------
@@ -1079,6 +1103,24 @@ def find_channel_locs(
     a dictionary where the key is the x position of the channel in pixel and the value is a
     dictionary with the open and closed end in pixels in y.
 
+    Parameters
+    ----------
+    channel_width : int
+        The width of the channel in pixels.
+    channel_separation : int
+        The separation between channels in pixels.
+    channel_width_pad : int
+        The padding to add to the channel width.
+    channel_detection_snr : float
+        The signal to noise ratio for peak detection.
+    image_data : np.ndarray
+        The image data.
+
+    Returns
+    -------
+    chnl_loc_dict : dict
+        Dictionary with the channel locations.
+
     Called by
     get_tif_params
     """
@@ -1369,6 +1411,64 @@ def compile(
     chnl_dir: Path,
     seconds_per_time_index: int,
 ) -> None:
+    """
+    Compile function for the MM3 analysis pipeline. This function is the main entry point for the analysis pipeline.
+
+    Parameters
+    ----------
+    TIFF_dir : Path
+        Path to the directory containing the TIFF files.
+    num_analyzers : int
+        Number of threads to use for multiprocessing.
+    ana_dir : Path
+        Path to the directory where the analysis files will be saved.
+    t_start : int
+        Start time for analysis.
+    t_end : int
+        End time for analysis.
+    image_orientation : str
+        Orientation of the images ('auto', 'up', 'down').
+    channel_width : int
+        Width of the channels in pixels.
+    channel_separation : int
+        Separation between channels in pixels.
+    channel_detection_snr : float
+        Signal to noise ratio for peak detection.
+    channel_length_pad : int
+        Padding for the channel length.
+    channel_width_pad : int
+        Padding for the channel width.
+    alignment_pad : int
+        Padding for alignment.
+    do_metadata : bool
+        If True, the metadata will be loaded from the analysis directory.
+    do_time_table : bool
+        If True, the time table will be created.
+    do_channel_masks : bool
+        If True, the channel masks will be created.
+    do_slicing : bool
+        If True, the channels will be sliced.
+    do_crosscorrs : bool
+        If True, the cross-correlations will be computed.
+    experiment_name : str
+        Name of the experiment.
+    phase_plane : str
+        Phase plane channel identifier.
+    FOV : list
+        List of FOVs to analyze.
+    TIFF_source : str
+        Source of the TIFF files ('BioFormats / other TIFF').
+    use_jd : bool
+        If True, the Julian date will be used for the time table.
+    chnl_dir : Path
+        Path to the directory where the channel files will be saved.
+    seconds_per_time_index : int
+        Time interval in seconds between consecutive imaging rounds.
+
+    Returns
+    -------
+    None
+    """
     information("Loading experiment parameters.")
     user_spec_fovs = FOV
     information("Using {} threads for multiprocessing.".format(num_analyzers))
@@ -1485,6 +1585,24 @@ def compile(
 def load_fov(
     image_directory: Path, fov_id: int, filter_str: str = ""
 ) -> Union[np.ndarray, None]:
+    """
+    Load a single FOV from a directory of TIFF files.
+
+    Parameters
+    ----------
+    image_directory : Path
+        Path to the directory containing the TIFF files.
+    fov_id : int
+        FOV ID to load.
+    filter_str : str
+        Filter string to apply to the filenames.
+
+    Returns
+    -------
+    np.ndarray
+        Array of images for the specified FOV.
+    """
+
     information("getting files")
     found_files_paths = image_directory.glob("*.tif")
     file_string = re.compile(f"xy0*{fov_id}\w*.tif", re.IGNORECASE)
