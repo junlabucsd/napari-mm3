@@ -23,7 +23,7 @@ from ._deriving_widgets import (
 
 
 def subtract_phase(
-    params: dict, cropped_channel: np.ndarray, empty_channel: np.ndarray
+    alignment_pad: int, cropped_channel: np.ndarray, empty_channel: np.ndarray
 ) -> np.ndarray:
     """subtract_phase aligns and subtracts an empty phase contrast channel (trap) from a channel containing cells.
     The subtracted image returned is the same size as the image given. It may however include
@@ -32,9 +32,15 @@ def subtract_phase(
     We align the empty channel to the phase channel, then subtract.
 
     Parameters
-    image_pair : tuple of length two with; (image, empty_mean)
+    alignment_pad : int
+        Pixel size to use for padding (amount that alignment could be off)
+    cropped_channel : np.ndarray
+        The channel containing cells
+    empty_channel : np.ndarray
+        The empty phase contrast channel
 
     Returns
+    -------
     channel_subtracted : np.array
         The subtracted image
 
@@ -44,9 +50,7 @@ def subtract_phase(
 
     # this is for aligning the empty channel to the cell channel.
     ### Pad cropped channel.
-    pad_size = params["subtract"][
-        "alignment_pad"
-    ]  # pixel size to use for padding (ammount that alignment could be off)
+    pad_size = alignment_pad  # pixel size to use for padding (amount that alignment could be off)
     padded_chnl = np.pad(cropped_channel, pad_size, mode="reflect")
 
     # ### Align channel to empty using match template.
@@ -61,10 +65,10 @@ def subtract_phase(
             "Consider marking this channel as disabled in specs.yaml, or increasing the pad_size."
         )
         raise
-    # get row and colum of max correlation value in correlation array
+    # get row and column of max correlation value in correlation array
     y, x = np.unravel_index(np.argmax(match_result), match_result.shape)
 
-    # pad the empty channel according to alignment to be overlayed on padded channel.
+    # pad the empty channel according to alignment to be overlaid on padded channel.
     empty_paddings = [
         [y, padded_chnl.shape[0] - (y + empty_channel.shape[0])],
         [x, padded_chnl.shape[1] - (x + empty_channel.shape[1])],
@@ -153,14 +157,21 @@ def subtract_fluor_helper(all_args):
 
 # this function is used when one FOV doesn't have an empty
 def copy_empty_stack(
-    params: dict, empty_dir: Path, from_fov: int, to_fov: int, color="c1"
+    ana_dir: Path,
+    experiment_name: str,
+    empty_dir: Path,
+    from_fov: int,
+    to_fov: int,
+    color="c1",
 ) -> None:
     """Copy an empty stack from one FOV to another.
 
     Parameters
     ----------
-    params: dict
-        dictionary of parameters
+    ana_dir: Path
+        Path to the analysis directory
+    experiment_name: str
+        Name of the experiment
     empty_dir: Path
         Path to copy empty stack to
     from_fov: int
@@ -181,15 +192,15 @@ def copy_empty_stack(
     )
 
     avg_empty_stack = load_empty_stack(
-        params["ana_dir"],
-        params["experiment_name"],
+        ana_dir,
+        experiment_name,
         from_fov,
         postfix="empty_{}".format(color),
     )
 
     # save out data
     # make new name and save it
-    empty_filename = params["experiment_name"] + "_xy%03d_empty_%s.tif" % (
+    empty_filename = experiment_name + "_xy%03d_empty_%s.tif" % (
         to_fov,
         color,
     )
@@ -200,7 +211,10 @@ def copy_empty_stack(
 
 # Do subtraction for an fov over many timepoints
 def subtract_fov_stack(
-    params: dict,
+    ana_dir: Path,
+    experiment_name: str,
+    alignment_pad: int,
+    num_analyzers: int,
     sub_dir: Path,
     fov_id: int,
     specs: dict,
@@ -214,6 +228,14 @@ def subtract_fov_stack(
 
     Parameters
     ----------
+    ana_dir: Path
+        Path to the analysis directory
+    experiment_name: str
+        Name of the experiment
+    alignment_pad: int
+        Pixel size to use for padding (amount that alignment could be off)
+    num_analyzers: int
+        Number of analyzers
     sub_dir: Path
         directory where subtracted images will be stored
     fov_id: int
@@ -233,8 +255,8 @@ def subtract_fov_stack(
     information("Subtracting peaks for FOV %d." % fov_id)
 
     avg_empty_stack = load_empty_stack(
-        params["ana_dir"],
-        params["experiment_name"],
+        ana_dir,
+        experiment_name,
         fov_id,
         postfix="empty_{}".format(color),
     )
@@ -247,7 +269,7 @@ def subtract_fov_stack(
     ana_peak_ids = sorted(ana_peak_ids)  # sort for repeatability
     information("Subtracting %d channels for FOV %d." % (len(ana_peak_ids), fov_id))
 
-    # just break if there are to peaks to analize
+    # just break if there are to peaks to analyze
     if not ana_peak_ids:
         return False
 
@@ -255,18 +277,19 @@ def subtract_fov_stack(
     for peak_id in ana_peak_ids:
         information("Subtracting peak %d." % peak_id)
 
-        # image_data = load_stack_params(params, fov_id, peak_id, postfix=color)
         image_data = load_unmodified_stack(
-            params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=color
+            ana_dir, experiment_name, fov_id, peak_id, postfix=color
         )
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
         subtract_pairs = zip(image_data, avg_empty_stack)
-        subtract_phase_args = [(params, pair[0], pair[1]) for pair in subtract_pairs]
+        subtract_phase_args = [
+            (alignment_pad, pair[0], pair[1]) for pair in subtract_pairs
+        ]
         subtract_fl_args = [(pair[0], pair[1]) for pair in subtract_pairs]
 
         # set up multiprocessing pool to do subtraction. Should wait until finished
-        pool = Pool(processes=params["num_analyzers"])
+        pool = Pool(processes=num_analyzers)
 
         if method == "phase":
             subtracted_imgs = pool.map(
@@ -287,7 +310,7 @@ def subtract_fov_stack(
         subtracted_stack = np.stack(subtracted_imgs, axis=0)
 
         # save out the subtracted stack
-        sub_filename = params["experiment_name"] + "_xy%03d_p%04d_sub_%s.tif" % (
+        sub_filename = experiment_name + "_xy%03d_p%04d_sub_%s.tif" % (
             fov_id,
             peak_id,
             color,
@@ -310,7 +333,7 @@ def subtract_fov_stack(
 
 
 # averages a list of empty channels
-def average_empties(params: dict, imgs: list, align: bool = True) -> np.ndarray:
+def average_empties(alignment_pad: int, imgs: list, align: bool = True) -> np.ndarray:
     """
     This function averages a set of images (empty channels) and returns a single image
     of the same size. It first aligns the images to the first image before averaging.
@@ -319,7 +342,7 @@ def average_empties(params: dict, imgs: list, align: bool = True) -> np.ndarray:
     Subsequent images are then aligned to this image and the offset recorded.
     These images are padded such that they are the same size as the first (padded) image but
     with the image in the correct (aligned) place. Edge padding is again used.
-    The images are then placed in a stack and aveaged. This image is trimmed so it is the size
+    The images are then placed in a stack and averaged. This image is trimmed so it is the size
     of the original images
 
     Called by
@@ -329,8 +352,8 @@ def average_empties(params: dict, imgs: list, align: bool = True) -> np.ndarray:
     aligned_imgs = []  # list contains the aligned, padded images
 
     if align:
-        # pixel size to use for padding (ammount that alignment could be off)
-        pad_size = params["subtract"]["alignment_pad"]
+        # pixel size to use for padding (amount that alignment could be off)
+        pad_size = alignment_pad
 
         for n, img in enumerate(imgs):
             # if this is the first image, pad it and add it to the stack
@@ -366,7 +389,7 @@ def average_empties(params: dict, imgs: list, align: bool = True) -> np.ndarray:
     aligned_imgs = np.dstack(aligned_imgs)
     # get a mean image along 3rd axis
     avg_empty = np.nanmean(aligned_imgs, axis=2)
-    # trim off the padded edges (only if images were alinged, otherwise there was no padding)
+    # trim off the padded edges (only if images were aligned, otherwise there was no padding)
     if align:
         avg_empty = avg_empty[pad_size : -1 * pad_size, pad_size : -1 * pad_size]
     # change type back to unsigned 16 bit not floats
@@ -377,10 +400,12 @@ def average_empties(params: dict, imgs: list, align: bool = True) -> np.ndarray:
 
 # average empty channels from stacks, making another TIFF stack
 def average_empties_stack(
-    params: dict,
+    ana_dir: Path,
+    experiment_name: str,
     empty_dir: Path,
     fov_id: int,
     specs: dict,
+    alignment_pad: int,
     color: str = "c1",
     align: bool = True,
 ) -> bool:
@@ -388,6 +413,13 @@ def average_empties_stack(
     averages them and saves the image
 
     Parameters
+    ----------
+    ana_dir : Path
+        Path to the analysis directory
+    experiment_name : str
+        Name of the experiment
+    empty_dir : Path
+        Path to save the empty stack
     fov_id : int
         FOV number
     specs : dict
@@ -397,10 +429,12 @@ def average_empties_stack(
         Which plane to use.
     align : boolean
         Flag that is passed to the worker function average_empties, indicates
-        whether images should be aligned be for averaging (use False for fluorescent images)
+        whether images should be aligned before averaging (use False for fluorescent images)
 
     Returns
-        True if succesful.
+    -------
+    bool
+        True if successful.
         Saves empty stack to analysis folder
 
     """
@@ -426,9 +460,8 @@ def average_empties_stack(
         information("One empty channel (%d) designated for FOV %d." % (peak_id, fov_id))
 
         # load the one phase contrast as the empties
-        # avg_empty_stack = load_stack_params(params, fov_id, peak_id, postfix=color)
         avg_empty_stack = load_unmodified_stack(
-            params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=color
+            ana_dir, experiment_name, fov_id, peak_id, postfix=color
         )
 
     # but if there is more than one empty you need to align and average them per timepoint
@@ -437,15 +470,9 @@ def average_empties_stack(
         empty_stacks = []  # list which holds phase image stacks of designated empties
         for peak_id in empty_peak_ids:
             # load data and append to list
-            # image_data = load_stack_params(params, fov_id, peak_id, postfix=color)
             image_data = load_unmodified_stack(
-                params["ana_dir"],
-                params["experiment_name"],
-                fov_id,
-                peak_id,
-                postfix=color,
+                ana_dir, experiment_name, fov_id, peak_id, postfix=color
             )
-
             empty_stacks.append(image_data)
 
         information(
@@ -453,12 +480,12 @@ def average_empties_stack(
         )
 
         # go through time points and create list of averaged empties
-        avg_empty_stack = []  # list will be later concatentated into numpy array
+        avg_empty_stack = []  # list will be later concatenated into numpy array
         time_points = range(image_data.shape[0])  # index is time
         for t in time_points:
             # get images from one timepoint at a time and send to alignment and averaging
             imgs = [stack[t] for stack in empty_stacks]
-            avg_empty = average_empties(params, imgs, align=align)
+            avg_empty = average_empties(alignment_pad, imgs, align=align)
             avg_empty_stack.append(avg_empty)
 
         # concatenate list and then save out to tiff stack
@@ -466,7 +493,7 @@ def average_empties_stack(
 
     # save out data
     # make new name and save it
-    empty_filename = params["experiment_name"] + "_xy%03d_empty_%s.tif" % (
+    empty_filename = experiment_name + "_xy%03d_empty_%s.tif" % (
         fov_id,
         color,
     )
@@ -478,8 +505,11 @@ def average_empties_stack(
 
 
 def subtract(
-    params,
     ana_dir: Path,
+    experiment_name: str,
+    fovs: list,
+    alignment_pad: int,
+    num_analyzers: int,
     subtraction_plane: str,
     fluor_mode: bool,
     preview=False,
@@ -488,7 +518,6 @@ def subtract(
 
     # Load the project parameters file
     information("Loading experiment parameters.")
-    p = params
 
     viewer = napari.current_viewer()
     viewer.layers.clear()
@@ -496,9 +525,7 @@ def subtract(
     # Set the shape better here.
     viewer.grid.shape = (-1, 20)
 
-    user_spec_fovs = set(p["FOV"])
-
-    # information('Using {} threads for multiprocessing.'.format(p['num_analyzers']))
+    user_spec_fovs = set(fovs)
 
     sub_plane = subtraction_plane
     empty_dir = ana_dir / "empties"
@@ -510,7 +537,7 @@ def subtract(
         sub_dir.mkdir()
 
     # load specs file
-    specs = load_specs(params["ana_dir"])
+    specs = load_specs(ana_dir)
 
     # make list of FOVs to process (keys of specs file)
     fov_id_list = set(sorted(specs.keys()))
@@ -529,59 +556,58 @@ def subtract(
         sub_method = "fluor"
 
     ### Make average empty channels ###############################################################
-    if not p["subtract"]["do_empties"]:
-        information("Loading precalculated empties.")
-        pass  # just skip this part and go to subtraction
+    information("Calculating averaged empties for channel {}.".format(sub_plane))
 
-    else:
-        information("Calculating averaged empties for channel {}.".format(sub_plane))
+    need_empty = []  # list holds fov_ids of fov's that did not have empties
+    for fov_id in fov_id_list:
+        # send to function which will create empty stack for each fov.
+        averaging_result = average_empties_stack(
+            ana_dir,
+            experiment_name,
+            empty_dir,
+            fov_id,
+            specs,
+            alignment_pad,
+            color=sub_plane,
+            align=align,
+        )
+        # add to list for FOVs that need to be given empties from other FOVs
+        if not averaging_result:
+            need_empty.append(fov_id)
 
-        need_empty = []  # list holds fov_ids of fov's that did not have empties
-        for fov_id in fov_id_list:
-            # send to function which will create empty stack for each fov.
-            averaging_result = average_empties_stack(
-                params, empty_dir, fov_id, specs, color=sub_plane, align=align
-            )
-            # add to list for FOVs that need to be given empties from other FOvs
-            if not averaging_result:
-                need_empty.append(fov_id)
+    # deal with those problem FOVs without empties
+    have_empty = list(fov_id_list.difference(set(need_empty)))  # fovs with empties
+    if not have_empty:
+        warning("No empty channels found. Return to channel selection")
+        return
 
-        # deal with those problem FOVs without empties
-        have_empty = list(fov_id_list.difference(set(need_empty)))  # fovs with empties
-        if not have_empty:
-            warning("No empty channels found. Return to channel selection")
-            return
-
-        for fov_id in need_empty:
-            from_fov = min(
-                have_empty, key=lambda x: abs(x - fov_id)
-            )  # find closest FOV with an empty
-            copy_result = copy_empty_stack(
-                params, empty_dir, from_fov, fov_id, color=sub_plane
-            )
+    for fov_id in need_empty:
+        from_fov = min(
+            have_empty, key=lambda x: abs(x - fov_id)
+        )  # find closest FOV with an empty
+        copy_result = copy_empty_stack(
+            ana_dir, experiment_name, empty_dir, from_fov, fov_id, color=sub_plane
+        )
 
     ### Subtract ##################################################################################
-    if p["subtract"]["do_subtraction"]:
-        information("Subtracting channels for channel {}.".format(sub_plane))
-        for fov_id in fov_id_list:
-            # send to function which will create empty stack for each fov.
-            subtraction_result = subtract_fov_stack(
-                params,
-                sub_dir,
-                fov_id,
-                specs,
-                color=sub_plane,
-                method=sub_method,
-                preview=preview,
-            )
-        information("Finished subtraction.")
+    information("Subtracting channels for channel {}.".format(sub_plane))
+    for fov_id in fov_id_list:
+        # send to function which will create empty stack for each fov.
+        subtraction_result = subtract_fov_stack(
+            ana_dir,
+            experiment_name,
+            alignment_pad,
+            num_analyzers,
+            sub_dir,
+            fov_id,
+            specs,
+            color=sub_plane,
+            method=sub_method,
+            preview=preview,
+        )
+    information("Finished subtraction.")
 
-        viewer = napari.current_viewer()
-
-    # Else just end, they only wanted to do empty averaging.
-    else:
-        information("Skipping subtraction.")
-        pass
+    viewer = napari.current_viewer()
 
 
 class Subtract(MM3Container):
@@ -625,33 +651,15 @@ class Subtract(MM3Container):
 
     def run(self):
         """Overriding method. Perform mother machine analysis."""
-        params = dict()
-        params["experiment_name"] = self.experiment_name
-        params["FOV"] = self.fovs
-
-        params["subtract"] = dict()
-        params["subtract"]["do_empties"] = True
-        params["subtract"]["do_subtraction"] = True
-        params["subtract"]["alignment_pad"] = self.alignment_pad
-
-        params["num_analyzers"] = multiprocessing.cpu_count()
-
-        # useful folder shorthands for opening files
-        params["TIFF_dir"] = self.TIFF_folder
-        params["ana_dir"] = self.analysis_folder
-        params["chnl_dir"] = params["ana_dir"] / "channels"
-        params["sub_dir"] = params["ana_dir"] / "subtracted"
-        params["empty_dir"] = params["ana_dir"] / "empties"
-        params["seg_dir"] = params["ana_dir"] / "segmented"
-        params["cell_dir"] = params["ana_dir"] / "cell_data"
-        params["track_dir"] = params["ana_dir"] / "tracking"
-
         subtract(
-            params,
-            self.analysis_folder,
-            self.subtraction_plane,
-            self.fluor_mode,
-            self.output_display_widget.value,
+            ana_dir=self.analysis_folder,
+            experiment_name=self.experiment_name,
+            fovs=self.fovs,
+            alignment_pad=self.alignment_pad,
+            num_analyzers=multiprocessing.cpu_count(),
+            subtraction_plane=self.subtraction_plane,
+            fluor_mode=self.fluor_mode,
+            preview=self.output_display_widget.value,
         )
 
     def set_fovs(self, fovs):
