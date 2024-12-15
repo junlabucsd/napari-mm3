@@ -32,7 +32,6 @@ from ._deriving_widgets import (
 from .utils import (
     Cell,
     find_complete_cells,
-    find_cells_of_fov_and_peak,
     write_cells_to_json,
 )
 
@@ -52,130 +51,7 @@ def load_time_table(ana_dir: Path) -> dict:
             return pickle.load(time_table_file)
 
 
-# Creates lineage for a single channel
-def make_lineage_chnl_stack(
-    ana_dir: Path,
-    experiment_name: str,
-    fov_and_peak_id: tuple,
-    lost_cell_time: int,
-    new_cell_y_cutoff: int,
-    new_cell_region_cutoff: int,
-    max_growth_length: float,
-    min_growth_length: float,
-    max_growth_area: float,
-    min_growth_area: float,
-    pxl2um: float,
-    seg_img: str,
-    phase_plane: str,
-) -> dict:
-    """
-    Create the lineage for a set of segmented images for one channel. Start by making the regions in the first time points potential cells.
-    Go forward in time and map regions in the timepoint to the potential cells in previous time points, building the life of a cell.
-    Used basic checks such as the regions should overlap, and grow by a little and not shrink too much. If regions do not link back in time, discard them.
-    If two regions map to one previous region, check if it is a sensible division event.
-
-    Parameters
-    ----------
-    ana_dir : Path
-        Analysis directory path
-    experiment_name : str
-        Name of the experiment
-    fov_and_peak_id : tuple
-        (fov_id, peak_id)
-    lost_cell_time : int
-        Time after which a cell is considered lost
-    new_cell_y_cutoff : int
-        Y position cutoff for new cells
-    new_cell_region_cutoff : int
-        Region label cutoff for new cells
-    pxl2um : float
-        Pixel to micron conversion factor
-    seg_img : str
-        Segmentation image type
-    phase_plane : str
-        Phase plane
-
-    Returns
-    -------
-    cells : dict
-        A dictionary of all the cells from this lineage, divided and undivided
-    """
-
-    # get the specific ids from the tuple
-    fov_id, peak_id = fov_and_peak_id
-
-    # TODO: Get this to be passed in?
-    time_table = load_time_table(ana_dir)
-    # start time is the first time point for this series of TIFFs.
-    start_time_index = min(time_table[fov_id].keys())
-
-    information("Creating lineage for FOV %d, channel %d." % (fov_id, peak_id))
-
-    seg_mode = SegmentationMode.UNET if seg_img == "seg_unet" else SegmentationMode.OTSU
-    image_data_seg = load_seg_stack(
-        ana_dir=ana_dir,
-        experiment_name=experiment_name,
-        fov_id=fov_id,
-        peak_id=peak_id,
-        seg_mode=seg_mode,
-    )
-
-    # Calculate all data for all time points.
-    # this list will be length of the number of time points
-    regions_by_time = [
-        regionprops(label_image=timepoint) for timepoint in image_data_seg
-    ]  # removed coordinates='xy'
-
-    tracker = CellTracker(
-        new_cell_y_cutoff,
-        new_cell_region_cutoff,
-        lost_cell_time,
-        time_table,
-        pxl2um,
-        max_growth_length,
-        min_growth_length,
-        max_growth_area,
-        min_growth_area,
-    )
-
-    for t, regions in enumerate(regions_by_time, start=start_time_index):
-        tracker.prune_leaves(t)
-        if not tracker.cell_leaves:
-            for region in regions:
-                tracker.add_leaf_orphan(
-                    region,
-                    t,
-                    peak_id,
-                    fov_id,
-                )
-        else:
-            tracker.make_leaf_region_map(
-                regions,
-                t,
-                peak_id,
-                fov_id,
-            )
-
-    cells = tracker.cells
-
-    ## plot kymograph with lineage overlay & save it out
-    plotter = LineagePlotter(
-        ana_dir,
-        experiment_name,
-        fov_id,
-        peak_id,
-        cells,
-        start_time_index,
-        phase_plane,
-    )
-    plotter.make_lineage_plot()
-
-    # return the dictionary with all the cells
-    return cells
-
-
 class CellTracker:
-    # write a docstring for the class
     """
     Class to track cells through time.
 
@@ -669,6 +545,128 @@ class CellTracker:
         )
 
         return daughter1_id, daughter2_id, self.cells
+
+
+# Creates lineage for a single channel
+def make_lineage_chnl_stack(
+    ana_dir: Path,
+    experiment_name: str,
+    fov_and_peak_id: tuple,
+    lost_cell_time: int,
+    new_cell_y_cutoff: int,
+    new_cell_region_cutoff: int,
+    max_growth_length: float,
+    min_growth_length: float,
+    max_growth_area: float,
+    min_growth_area: float,
+    pxl2um: float,
+    seg_img: str,
+    phase_plane: str,
+) -> dict:
+    """
+    Create the lineage for a set of segmented images for one channel. Start by making the regions in the first time points potential cells.
+    Go forward in time and map regions in the timepoint to the potential cells in previous time points, building the life of a cell.
+    Used basic checks such as the regions should overlap, and grow by a little and not shrink too much. If regions do not link back in time, discard them.
+    If two regions map to one previous region, check if it is a sensible division event.
+
+    Parameters
+    ----------
+    ana_dir : Path
+        Analysis directory path
+    experiment_name : str
+        Name of the experiment
+    fov_and_peak_id : tuple
+        (fov_id, peak_id)
+    lost_cell_time : int
+        Time after which a cell is considered lost
+    new_cell_y_cutoff : int
+        Y position cutoff for new cells
+    new_cell_region_cutoff : int
+        Region label cutoff for new cells
+    pxl2um : float
+        Pixel to micron conversion factor
+    seg_img : str
+        Segmentation image type
+    phase_plane : str
+        Phase plane
+
+    Returns
+    -------
+    cells : dict
+        A dictionary of all the cells from this lineage, divided and undivided
+    """
+
+    # get the specific ids from the tuple
+    fov_id, peak_id = fov_and_peak_id
+
+    # TODO: Get this to be passed in?
+    time_table = load_time_table(ana_dir)
+    # start time is the first time point for this series of TIFFs.
+    start_time_index = min(time_table[fov_id].keys())
+
+    information("Creating lineage for FOV %d, channel %d." % (fov_id, peak_id))
+
+    seg_mode = SegmentationMode.UNET if seg_img == "seg_unet" else SegmentationMode.OTSU
+    image_data_seg = load_seg_stack(
+        ana_dir=ana_dir,
+        experiment_name=experiment_name,
+        fov_id=fov_id,
+        peak_id=peak_id,
+        seg_mode=seg_mode,
+    )
+
+    # Calculate all data for all time points.
+    # this list will be length of the number of time points
+    regions_by_time = [
+        regionprops(label_image=timepoint) for timepoint in image_data_seg
+    ]  # removed coordinates='xy'
+
+    tracker = CellTracker(
+        new_cell_y_cutoff,
+        new_cell_region_cutoff,
+        lost_cell_time,
+        time_table,
+        pxl2um,
+        max_growth_length,
+        min_growth_length,
+        max_growth_area,
+        min_growth_area,
+    )
+
+    for t, regions in enumerate(regions_by_time, start=start_time_index):
+        tracker.prune_leaves(t)
+        if not tracker.cell_leaves:
+            for region in regions:
+                tracker.add_leaf_orphan(
+                    region,
+                    t,
+                    peak_id,
+                    fov_id,
+                )
+        else:
+            tracker.make_leaf_region_map(
+                regions,
+                t,
+                peak_id,
+                fov_id,
+            )
+
+    cells = tracker.cells
+
+    ## plot kymograph with lineage overlay & save it out
+    plotter = LineagePlotter(
+        ana_dir,
+        experiment_name,
+        fov_id,
+        peak_id,
+        cells,
+        start_time_index,
+        phase_plane,
+    )
+    plotter.make_lineage_plot()
+
+    # return the dictionary with all the cells
+    return cells
 
 
 # finds lineages for all peaks in a fov
