@@ -57,6 +57,10 @@ class CellTracker:
 
     Attributes
     ----------
+    fov_id: int
+        fov to perform tracking on
+    peak_id: int
+        peak to perform tracking on
     cell_leaves : list
         list of cell leaves
     cells : dict
@@ -112,18 +116,22 @@ class CellTracker:
 
     def __init__(
         self,
-        y_cutoff,
-        region_cutoff,
-        lost_cell_time,
-        time_table,
-        pxl2um,
-        max_growth_length,
-        min_growth_length,
-        max_growth_area,
-        min_growth_area,
+        fov_id: int,
+        peak_id: int,
+        y_cutoff: int,
+        region_cutoff: int,
+        lost_cell_time: int,
+        time_table: dict,
+        pxl2um: float,
+        max_growth_length: float,
+        min_growth_length: float,
+        max_growth_area: float,
+        min_growth_area: float,
     ):
-        self.cell_leaves = []
-        self.cells = {}
+        self.cell_leaves: list[str] = []
+        self.cells: dict[str, Cell] = {}
+        self.fov_id = fov_id
+        self.peak_id = peak_id
         self.y_cutoff = y_cutoff
         self.region_cutoff = region_cutoff
         self.lost_cell_time = lost_cell_time
@@ -146,14 +154,15 @@ class CellTracker:
         self,
         region,
         t: int,
-        peak_id: int,
-        fov_id: int,
     ):
         """
         Add new leaf if it clears thresholds.
         """
         if region.centroid[0] < self.y_cutoff and region.label <= self.region_cutoff:
-            cell_id = self.create_cell_id(region, t, peak_id, fov_id)
+            cell_id = self.create_cell_id(
+                region,
+                t,
+            )
             self.cells[cell_id] = Cell(
                 self.pxl2um,
                 self.time_table,
@@ -169,8 +178,6 @@ class CellTracker:
         leaf_region_map: dict[str, list[tuple[int, float]]],
         regions: list,
         t: int,
-        peak_id: int,
-        fov_id: int,
     ):
         """
         Loop over current leaves and connect them to descendants
@@ -191,8 +198,6 @@ class CellTracker:
                     region2,
                     leaf_id,
                     t,
-                    peak_id,
-                    fov_id,
                 )
 
     def handle_two_regions(
@@ -201,8 +206,6 @@ class CellTracker:
         region2,
         leaf_id: str,
         t: int,
-        peak_id: int,
-        fov_id: int,
     ):
         """
         Classify the two regions as either a divided cell (two daughters), or one growing cell and one trash.
@@ -218,19 +221,23 @@ class CellTracker:
                 region1,
                 region2,
                 t,
-                peak_id,
-                fov_id,
-                leaf_id,
+                self.peak_id,
             )
             self.cell_leaves.remove(leaf_id)
             self.add_leaf_daughter(region1, daughter1_id)
             self.add_leaf_daughter(region2, daughter2_id)
         elif check_division_result == 1:
             self.cells[leaf_id].grow(self.time_table, region1, t)
-            self.add_leaf_orphan(region2, t, peak_id, fov_id)
+            self.add_leaf_orphan(
+                region2,
+                t,
+            )
         elif check_division_result == 2:
             self.cells[leaf_id].grow(self.time_table, region2, t)
-            self.add_leaf_orphan(region1, t, peak_id, fov_id)
+            self.add_leaf_orphan(
+                region1,
+                t,
+            )
 
     def add_leaf_daughter(self, region, id: str):
         """
@@ -243,8 +250,6 @@ class CellTracker:
         self,
         regions: list,
         t: int,
-        peak_id: int,
-        fov_id: int,
     ):
         """
         Map regions in current time point onto previously tracked cells
@@ -269,16 +274,12 @@ class CellTracker:
                     region_links,
                     regions,
                     t,
-                    peak_id,
-                    fov_id,
                 )
 
         self.update_region_links(
             leaf_region_map,
             regions,
             t,
-            peak_id,
-            fov_id,
         )
 
     def handle_discarded_regions(
@@ -286,8 +287,6 @@ class CellTracker:
         region_links: list,
         regions: list,
         t: int,
-        peak_id: int,
-        fov_id: int,
     ):
         """
         Process third+ regions down from closed end of channel. They will either be discarded or made into new cells.
@@ -299,7 +298,10 @@ class CellTracker:
                 region.centroid[0] < self.y_cutoff
                 and region.label <= self.region_cutoff
             ):
-                cell_id = self.create_cell_id(region, t, peak_id, fov_id)
+                cell_id = self.create_cell_id(
+                    region,
+                    t,
+                )
                 self.cells[cell_id] = Cell(
                     self.pxl2um,
                     self.time_table,
@@ -408,9 +410,7 @@ class CellTracker:
         # if you got this far then divide the mother
         return 3
 
-    def create_cell_id(
-        self, region, t: int, peak: int, fov: int, experiment_name: str = ""
-    ) -> str:
+    def create_cell_id(self, region, t: int, experiment_name: str = "") -> str:
         """Make a unique cell id string for a new cell
         Parameters
         ----------
@@ -433,9 +433,9 @@ class CellTracker:
         if experiment_name is None:
             cell_id = [
                 "f",
-                "%02d" % fov,
+                "%02d" % self.fov_id,
                 "p",
-                "%04d" % peak,
+                "%04d" % self.peak_id,
                 "t",
                 "%04d" % t,
                 "r",
@@ -444,7 +444,7 @@ class CellTracker:
             cell_id = "".join(cell_id)
         else:
             cell_id = "{}f{:0=2}p{:0=4}t{:0=4}r{:0=2}".format(
-                experiment_name, fov, peak, t, region.label
+                experiment_name, self.fov_id, self.peak_id, t, region.label
             )
         return cell_id
 
@@ -515,15 +515,13 @@ class CellTracker:
         region1,
         region2,
         t: int,
-        peak_id: int,
-        fov_id: int,
         leaf_id: str,
     ) -> Tuple[str, str, dict]:
         """
         Create two new cells and divide the mother
         """
-        daughter1_id = self.create_cell_id(region1, t, peak_id, fov_id)
-        daughter2_id = self.create_cell_id(region2, t, peak_id, fov_id)
+        daughter1_id = self.create_cell_id(region1, t, self.peak_id, self.fov_id)
+        daughter2_id = self.create_cell_id(region2, t, self.peak_id, self.fov_id)
         self.cells[daughter1_id] = Cell(
             self.pxl2um,
             self.time_table,
@@ -622,6 +620,8 @@ def make_lineage_chnl_stack(
     ]  # removed coordinates='xy'
 
     tracker = CellTracker(
+        fov_id,
+        peak_id,
         new_cell_y_cutoff,
         new_cell_region_cutoff,
         lost_cell_time,
@@ -640,15 +640,11 @@ def make_lineage_chnl_stack(
                 tracker.add_leaf_orphan(
                     region,
                     t,
-                    peak_id,
-                    fov_id,
                 )
         else:
             tracker.make_leaf_region_map(
                 regions,
                 t,
-                peak_id,
-                fov_id,
             )
 
     cells = tracker.cells
