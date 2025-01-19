@@ -255,7 +255,7 @@ def nd2ToTIFF(
     information("Extracting {file_prefix} ...")
     with nd2.ND2File(str(nd2file)) as nd2f:
         starttime = nd2f.text_info["date"]
-        starttime = datetime.datetime.strptime(starttime, '%m/%d/%Y %I:%M:%S %p')
+        starttime = datetime.datetime.strptime(starttime, "%m/%d/%Y %I:%M:%S %p")
 
         planes = nd2f.sizes["C"]
 
@@ -267,9 +267,7 @@ def nd2ToTIFF(
             # timepoint and fov output name (1 indexed rather than 0 indexed)
             t, fov = t_id + 1, fov_id + 1
             try:
-                milliseconds = copy.deepcopy(
-                    nd2f.events()[t_id * 2]["Time [s]"]
-                )
+                milliseconds = copy.deepcopy(nd2f.events()[t_id * 2]["Time [s]"])
                 acq_days = milliseconds / 60.0 / 60.0 / 24.0
                 acq_time = starttime.timestamp() + acq_days
             except IndexError:
@@ -320,7 +318,6 @@ def nd2ToTIFF(
                 continue
             # for just a simple crop
             elif vertical_crop:
-                print(image_data.shape)
                 _, nc, H, W = image_data.shape
                 ## convert from xy to row-column coordinates for numpy slicing
                 yhi = int((1 - vertical_crop[0]) * H)
