@@ -818,15 +818,15 @@ class SegmentUnet(MM3Container):
             experiment_name=self.experiment_name,
             image_directory=self.TIFF_folder,
             fovs=self.fovs,
-            phase_plane=self.plane_widget.value,
-            model_file=self.model_file_widget.value,
-            trained_model_image_height=self.height_widget.value,
-            trained_model_image_width=self.width_widget.value,
-            batch_size=self.batch_size_widget.value,
-            cell_class_threshold=self.cell_class_threshold_widget.value,
-            min_object_size=self.min_object_size_widget.value,
-            normalize_to_one=self.normalize_widget.value,
-            num_analyzers=multiprocessing.cpu_count(),
+            phase_plane=self.phase_plane,
+            model_file=self.model_file,
+            trained_model_image_height=self.trained_model_image_height,
+            trained_model_image_width=self.trained_model_image_width,
+            batch_size=self.batch_size,
+            cell_class_threshold=self.cell_class_threshold,
+            min_object_size=self.min_object_size,
+            normalize_to_one=self.normalize_to_one,
+            num_analyzers=self.num_analyzers,
             ana_dir=self.analysis_folder,
             seg_dir=self.analysis_folder / "segmented",
             cell_dir=self.analysis_folder / "cell_data",
@@ -899,14 +899,14 @@ class SegmentUnet(MM3Container):
             self.experiment_name,
             valid_fov,
             valid_peak,
-            postfix=self.plane_widget.value,
+            postfix=self.phase_plane,
         )
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
 
         pad_dict = get_pad_distances(unet_shape, img_height, img_width)
 
-        model_file_path = self.model_file_widget.value
+        model_file_path = self.model_file
 
         # *** Need parameter for weights
         seg_model = models.load_model(
@@ -919,21 +919,18 @@ class SegmentUnet(MM3Container):
             unet_shape,
             pad_dict,
             seg_model,
-            self.batch_size_widget.value,
+            self.batch_size,
             multiprocessing.cpu_count(),
-            self.normalize_widget.value,
+            self.normalize_to_one,
         )
 
         del seg_model
 
-        min_object_size = self.min_object_size_widget.value
-        cellClassThreshold = self.cell_class_threshold_widget.value
-
         # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
         segmented_imgs = binarize_and_label(
             predictions,
-            cellClassThreshold,
-            min_object_size,
+            self.cellClassThreshold,
+            self.min_object_size,
         )
         # segmented_imgs = predictions.astype("uint8")
         images = self.viewer.add_image(img_stack)
