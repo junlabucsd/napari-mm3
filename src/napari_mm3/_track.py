@@ -127,6 +127,7 @@ class CellTracker:
         min_growth_length: float,
         max_growth_area: float,
         min_growth_area: float,
+        experiment_name: str,
     ):
         self.cell_leaves: list[str] = []
         self.cells: dict[str, Cell] = {}
@@ -141,6 +142,7 @@ class CellTracker:
         self.min_growth_length = min_growth_length
         self.max_growth_area = max_growth_area
         self.min_growth_area = min_growth_area
+        self.experiment_name = experiment_name
 
     def prune_leaves(self, t: int):
         """
@@ -221,7 +223,7 @@ class CellTracker:
                 region1,
                 region2,
                 t,
-                self.peak_id,
+                leaf_id,
             )
             self.cell_leaves.remove(leaf_id)
             self.add_leaf_daughter(region1, daughter1_id)
@@ -410,7 +412,11 @@ class CellTracker:
         # if you got this far then divide the mother
         return 3
 
-    def create_cell_id(self, region, t: int, experiment_name: str = "") -> str:
+    def create_cell_id(
+        self,
+        region,
+        t: int,
+    ) -> str:
         """Make a unique cell id string for a new cell
         Parameters
         ----------
@@ -430,7 +436,7 @@ class CellTracker:
         cell_id: str
             string for cell ID
         """
-        if experiment_name is None:
+        if self.experiment_name is None:
             cell_id = [
                 "f",
                 "%02d" % self.fov_id,
@@ -444,7 +450,7 @@ class CellTracker:
             cell_id = "".join(cell_id)
         else:
             cell_id = "{}f{:0=2}p{:0=4}t{:0=4}r{:0=2}".format(
-                experiment_name, self.fov_id, self.peak_id, t, region.label
+                self.experiment_name, self.fov_id, self.peak_id, t, region.label
             )
         return cell_id
 
@@ -520,8 +526,14 @@ class CellTracker:
         """
         Create two new cells and divide the mother
         """
-        daughter1_id = self.create_cell_id(region1, t, self.peak_id, self.fov_id)
-        daughter2_id = self.create_cell_id(region2, t, self.peak_id, self.fov_id)
+        daughter1_id = self.create_cell_id(
+            region1,
+            t,
+        )
+        daughter2_id = self.create_cell_id(
+            region2,
+            t,
+        )
         self.cells[daughter1_id] = Cell(
             self.pxl2um,
             self.time_table,
@@ -631,6 +643,7 @@ def make_lineage_chnl_stack(
         min_growth_length,
         max_growth_area,
         min_growth_area,
+        experiment_name,
     )
 
     for t, regions in enumerate(regions_by_time, start=start_time_index):
@@ -658,6 +671,7 @@ def make_lineage_chnl_stack(
         cells,
         start_time_index,
         phase_plane,
+        seg_mode,
     )
     plotter.make_lineage_plot()
 
@@ -807,6 +821,7 @@ class LineagePlotter:
         cells: dict,
         start_time_index: int,
         phase_plane: str,
+        seg_mode: SegmentationMode,
     ):
         self.ana_dir = ana_dir
         self.experiment_name = experiment_name
@@ -815,6 +830,7 @@ class LineagePlotter:
         self.cells = cells
         self.start_time_index = start_time_index
         self.phase_plane = phase_plane
+        self.seg_mode = seg_mode
 
     def make_lineage_plot(
         self,
@@ -831,7 +847,6 @@ class LineagePlotter:
             os.makedirs(lin_dir)
 
         fig, ax = self.plot_lineage_images(
-            bgcolor=self.phase_plane,
             t_adj=self.start_time_index,
         )
         lin_filename = f"{self.experiment_name}_{self.fov_id}_{self.peak_id}.tif"
@@ -1063,7 +1078,6 @@ class LineagePlotter:
         self,
         image_data_bg: np.ndarray,
         image_data_seg: np.ndarray,
-        fgcolor: bool,
         t_adj: int,
     ) -> Tuple[plt.Figure, np.ndarray[plt.Axes]]:
         """
@@ -1075,8 +1089,6 @@ class LineagePlotter:
             phase contrast images
         image_data_seg: np.ndarray
             segmented images
-        fgcolor: bool
-            whether to plot segmented images
         t_adj: int
             time offset from time_table
 
@@ -1112,38 +1124,25 @@ class LineagePlotter:
         for i in image_indices:
             ax[i].imshow(image_data_bg[i], cmap=plt.cm.gray, aspect="equal")
 
-            if fgcolor:
-                regions_by_time = [
-                    regionprops(timepoint) for timepoint in image_data_seg
-                ]
-                cmap = mpl.colors.ListedColormap(
-                    sns.husl_palette(n_colors=100, h=0.5, l=0.8, s=1)
-                )
-                cmap.set_under(color="black")
-                ax[i] = self.plot_regions(
-                    image_data_seg[i], regions_by_time[i], ax[i], cmap
-                )
+            regions_by_time = [regionprops(timepoint) for timepoint in image_data_seg]
+            cmap = mpl.colors.ListedColormap(
+                sns.husl_palette(n_colors=100, h=0.5, l=0.8, s=1)
+            )
+            cmap.set_under(color="black")
+            ax[i] = self.plot_regions(
+                image_data_seg[i], regions_by_time[i], ax[i], cmap
+            )
 
-            ax[i].set_title(str(i + t_adj), color="white")
+            ax[i].set_title(str(i), color="white")
 
         return fig, ax
 
     def plot_lineage_images(
         self,
-        bgcolor: str = "c1",
-        fgcolor: str = "seg",
         t_adj: int = 1,
     ) -> Tuple[plt.Figure, np.ndarray[plt.Axes]]:
         """
         Plot linages over images across time points for one FOV/peak.
-        Parameters
-        ----------
-        bgcolor : str
-            Designation of background to use. Subtracted images look best if you have them.
-        fgcolor : str
-            Designation of foreground to use. This should be a segmented image.
-        t_adj : int
-            Adjust time indexing for differences between t index of image and image number
         """
 
         image_data_bg = load_unmodified_stack(
@@ -1151,24 +1150,22 @@ class LineagePlotter:
             self.experiment_name,
             self.fov_id,
             self.peak_id,
-            postfix=bgcolor,
+            postfix=self.phase_plane,
         )
 
-        if fgcolor:
-            seg_mode = (
-                SegmentationMode.OTSU
-                if fgcolor == "seg_otsu"
-                else SegmentationMode.UNET
-            )
-            image_data_seg = load_seg_stack(
-                ana_dir=self.ana_dir,
-                experiment_name=self.experiment_name,
-                fov_id=self.fov_id,
-                peak_id=self.peak_id,
-                seg_mode=seg_mode,
-            )
+        image_data_seg = load_seg_stack(
+            ana_dir=self.ana_dir,
+            experiment_name=self.experiment_name,
+            fov_id=self.fov_id,
+            peak_id=self.peak_id,
+            seg_mode=self.seg_mode,
+        )
 
-        fig, ax = self.plot_cells(image_data_bg, image_data_seg, fgcolor, t_adj)
+        fig, ax = self.plot_cells(
+            image_data_bg,
+            image_data_seg,
+            t_adj,
+        )
 
         fig, ax = self.plot_tracks(t_adj, fig, ax)
 
