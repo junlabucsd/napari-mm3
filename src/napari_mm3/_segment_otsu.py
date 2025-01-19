@@ -414,6 +414,7 @@ class SegmentOtsu(MM3Container):
         self.set_distance_threshold()
         self.set_second_opening_size()
         self.set_min_object_size()
+        self.set_view_result()
 
         try:
             self.render_preview()
@@ -498,5 +499,5 @@ class SegmentOtsu(MM3Container):
             self.distance_threshold,
             self.second_opening_size,
             self.min_object_size,
-            self.view_result_widget.value,
+            self.view_result,
         )
