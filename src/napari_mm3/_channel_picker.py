@@ -4,6 +4,7 @@ import numpy as np
 import yaml
 import tifffile as tiff
 import re
+import pathlib
 
 from napari import Viewer
 from ._deriving_widgets import (
@@ -39,7 +40,7 @@ OVERLAY_TEXT = (
 
 
 # function for loading the channel masks
-def load_channel_masks(analysis_directory):
+def load_channel_masks(analysis_directory: pathlib.Path) -> dict:
     """Load channel masks dictionary. Should be .yaml but try pickle too."""
     information("Loading channel masks dictionary.")
 
@@ -61,7 +62,7 @@ def load_channel_masks(analysis_directory):
     return channel_masks
 
 
-def load_specs(analysis_directory):
+def load_specs(analysis_directory: pathlib.Path) -> dict:
     """Load specs dictionary. Should be .yaml but try pickle too."""
     with (analysis_directory / "specs.yaml").open("r") as specs_file:
         specs = yaml.safe_load(specs_file)
@@ -73,21 +74,23 @@ def load_specs(analysis_directory):
     return specs
 
 
-def save_specs(analysis_folder, specs):
+def save_specs(analysis_folder: pathlib.Path, specs: dict):
     """Save specs dictionary to .yaml file."""
     with (analysis_folder / "specs.yaml").open("w") as specs_file:
         yaml.dump(data=specs, stream=specs_file, default_flow_style=False, tags=None)
     information("Saved channel classifications to specs file")
 
 
-def load_fov(image_directory, fov_id):
+def load_fov(image_directory: pathlib.Path, fov_id: int) -> np.ndarray:
     """Load image stack for a given FOV.
+
     Parameters
     ----------
     image_directory : pathlib.Path
         Path to the directory containing the images.
     fov_id : int
         The FOV to load.
+
     Returns
     -------
     image_fov_stack : np.ndarray
@@ -117,7 +120,9 @@ def load_fov(image_directory, fov_id):
     return np.array(image_fov_stack)
 
 
-def load_crosscorrs(analysis_directory, fov_id=None):
+def load_crosscorrs(
+    analysis_directory: pathlib.Path, fov_id: int | None = None
+) -> dict:
     """Load crosscorrelations dictionary. Should be .yaml but try pickle too.
     Parameters
     ----------
@@ -125,7 +130,7 @@ def load_crosscorrs(analysis_directory, fov_id=None):
         Path to the directory containing the analysis files.
     fov_id : int, optional
         The FOV to load. If None, return the entire dictionary.
-    
+
     Returns
     -------
     cross_corrs : dict
@@ -153,7 +158,7 @@ def display_image_stack(viewer: Viewer, image_fov_stack, plane):
         The image stack to display.
     plane : int
         The plane to display.
-    
+
     Returns
     -------
     None"""
@@ -163,8 +168,15 @@ def display_image_stack(viewer: Viewer, image_fov_stack, plane):
     images.gamma = 0.5
 
 
-def threshold_fov(fov, threshold, specs, crosscorrs, channel_masks=None):
+def threshold_fov(
+    fov: int,
+    threshold: float,
+    specs: dict,
+    crosscorrs: dict,
+    channel_masks: dict,
+) -> dict:
     """Threshold a FOV based on crosscorrelations.
+
     Parameters
     ----------
     fov : int
@@ -177,7 +189,7 @@ def threshold_fov(fov, threshold, specs, crosscorrs, channel_masks=None):
         The crosscorrelations dictionary.
     channel_masks : dict, optional
         The channel masks dictionary.
-    
+
     Returns
     -------
     specs : dict
@@ -203,14 +215,18 @@ def threshold_fov(fov, threshold, specs, crosscorrs, channel_masks=None):
 
 
 def display_rectangles(
-    viewer: napari.Viewer, coords, sorted_peaks, sorted_specs, crosscorrs
-):
+    viewer: napari.Viewer,
+    coords: list,
+    sorted_peaks: list,
+    sorted_specs: list,
+    crosscorrs: dict,
+) -> napari.layers.Shapes:
     """Display rectangles on napari viewer.
     Parameters
     ----------
     viewer : napari.Viewer
         The napari viewer.
-    coords : np.ndarray
+    coords : list
         The coordinates of the rectangles.
     sorted_peaks : list
         The sorted peaks.
@@ -218,7 +234,7 @@ def display_rectangles(
         The sorted specs (which peaks are marked to analyze, discard or use for subtraction).
     crosscorrs : dict
         The crosscorrelations dictionary.
-    
+
     Returns
     -------
     shapes_layer : napari.layers.Shapes
@@ -250,7 +266,9 @@ def display_rectangles(
     return shapes_layer
 
 
-def regenerate_fov_specs(analysis_folder, fov, threshold, overwrite=False):
+def regenerate_fov_specs(
+    analysis_folder: pathlib.Path, fov: int, threshold: float, overwrite: bool = False
+) -> dict:
     """Regenerate the specs dictionary for a FOV.
     Parameters
     ----------
@@ -352,7 +370,6 @@ class ChannelPicker(MM3Container):
         # Set up selection box dimensions
         height = image_fov_stack.shape[-2]
         width = image_fov_stack.shape[-1]
-        
 
         channel_height = height
         channel_width = width / len(self.sorted_peaks)
