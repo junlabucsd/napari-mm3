@@ -162,8 +162,10 @@ def get_valid_planes(TIFF_folder):
         # there are multiple planes
         num_channels = test_file.shape[0]
     elif dim == 2:
-        # only one plane (phase or fluorescence)
-        num_channels = 1
+        pattern = r"(c\d+)"
+        num_channels = len(
+            set([re.search(pattern, str(f), re.IGNORECASE).group(1) for f in filepaths])
+        )
     else:
         raise ValueError(f"Expected 2 or 3 dimensions but found {dim}.")
 
@@ -405,24 +407,26 @@ class MM3Container(Container):
         try:
             self.valid_times = get_valid_times(self.TIFF_folder)
             self.found_times = True
-        except ValueError:
+        except ValueError as e:
             try:
                 self.valid_times = get_valid_times(self.analysis_folder / "subtracted")
                 self.found_times = True
-            except ValueError:
+            except ValueError as e:
+                warning(f"Failed to get times: {e}")
                 self.found_times = False
 
     def _set_valid_planes(self):
         try:
             self.valid_planes = get_valid_planes(self.TIFF_folder)
             self.found_planes = True
-        except ValueError:
+        except ValueError as e:
             try:
                 self.valid_planes = get_valid_planes(
                     self.analysis_folder / "subtracted"
                 )
                 self.found_planes = True
-            except ValueError:
+            except ValueError as e:
+                warning(f"Failed to get planes: {e}")
                 self.found_planes = False
 
     def _validate_folders(self):
