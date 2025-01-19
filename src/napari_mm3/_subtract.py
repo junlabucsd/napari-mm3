@@ -648,6 +648,7 @@ class Subtract(MM3Container):
         self.set_alignment_pad()
         self.set_mode()
         self.set_subtraction_plane()
+        self.set_view_result()
 
     def run(self):
         """Overriding method. Perform mother machine analysis."""
@@ -659,7 +660,7 @@ class Subtract(MM3Container):
             num_analyzers=multiprocessing.cpu_count(),
             subtraction_plane=self.subtraction_plane,
             fluor_mode=self.fluor_mode,
-            preview=self.output_display_widget.value,
+            preview=self.view_result,
         )
 
     def set_fovs(self, fovs):
@@ -673,3 +674,6 @@ class Subtract(MM3Container):
 
     def set_mode(self):
         self.fluor_mode = self.mode_widget.value == "fluorescence"
+
+    def set_view_result(self):
+        self.view_result = self.output_display_widget.value
