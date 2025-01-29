@@ -349,7 +349,7 @@ class CellTracker:
             return False
 
         # check if area is not too small
-        if cell.lengths[-1] * self.min_growth_area > region.area:
+        if cell.areas[-1] * self.min_growth_area > region.area:
             return False
 
         # check if y position of region is within the bounding box of previous region
