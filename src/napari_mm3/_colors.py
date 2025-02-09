@@ -12,16 +12,16 @@ from skimage import morphology
 from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
 from magicgui.widgets import ComboBox, FileEdit
 
-from .utils import organize_cells_by_channel
+from .utils import organize_cells_by_channel, TIFF_FILE_FORMAT_PEAK
 
 from ._deriving_widgets import (
     load_specs,
     load_time_table,
     information,
     warning,
-    load_seg_stack,
     load_subtracted_stack,
     load_unmodified_stack,
+    load_tiff,
     SegmentationMode,
 )
 
@@ -46,21 +46,23 @@ def find_cell_intensities(
     try:
         sub_channel = "sub_" + channel_name
         # fl_stack = load_stack_params(params, fov_id, peak_id, postfix=sub_channel)
-        fl_stack = load_subtracted_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, sub_channel)
+        fl_stack = load_subtracted_stack(
+            params["ana_dir"], params["experiment_name"], fov_id, peak_id, sub_channel
+        )
         information("Loading subtracted channel to analyze.")
     except FileNotFoundError:
         warning("Could not find subtracted channel! Skipping.")
         return
 
     # seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_unet")
-    seg_stack = load_seg_stack(
-        ana_dir=params["ana_dir"],
-        experiment_name=params["experiment_name"],
-        fov_id=fov_id,
-        peak_id=peak_id,
-        seg_mode=seg_mode,
+    seg_str = "seg_otsu" if seg_mode == SegmentationMode.OTSU else "seg_unet"
+    img_filename = TIFF_FILE_FORMAT_PEAK % (
+        params["experiment_name"],
+        fov_id,
+        peak_id,
+        seg_str,
     )
-
+    seg_stack = load_tiff(params["ana_dir"] / "segmented" / img_filename)
     # determine absolute time index
     times_all = []
     for fov in time_table:
@@ -127,15 +129,14 @@ def find_cell_intensities_worker(
     information("Processing peak {} in FOV {}".format(peak_id, fov_id))
     # Load fluorescent images and segmented images for this channel
     # fl_stack = load_stack_params(params, fov_id, peak_id, postfix=channel)
-    fl_stack  = load_unmodified_stack(params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=channel)
-    # seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_otsu")
-    seg_stack = load_seg_stack(
-        ana_dir=params["ana_dir"],
-        experiment_name=params["experiment_name"],
-        fov_id=fov_id,
-        peak_id=peak_id,
-        seg_mode=seg_mode,
+    fl_stack = load_unmodified_stack(
+        params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=channel
     )
+    # seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_otsu")
+
+    seg_str = "seg_otsu" if seg_mode == SegmentationMode.OTSU else "seg_unet"
+    img_filename = TIFF_FILE_FORMAT_PEAK % (params["experiment_name"], fov_id, peak_id, seg_str)
+    seg_stack = load_tiff(params["ana_dir"] / "segmented" / img_filename)
 
     # determine absolute time index
     time_table = load_time_table(params["ana_dir"])

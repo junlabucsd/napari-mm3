@@ -47,38 +47,12 @@ def load_hdf5(hdf5_location: Path, dataset_name: str):
         return h5f[dataset_name]
 
 
-def gen_tiff_filename(prefix, fov_id: int, postfix: str, peak_id: int = None):
-    if peak_id:
-        return TIFF_FILE_FORMAT_PEAK % (prefix, fov_id, peak_id, postfix)
-    return TIFF_FILE_FORMAT_NO_PEAK % (prefix, fov_id, postfix)
-
-
-def load_seg_stack(
-    ana_dir: Path, experiment_name: str, fov_id, peak_id, seg_mode: SegmentationMode
-):
-    img_dir = ana_dir / "segmented"
-    if seg_mode == SegmentationMode.OTSU:
-        postfix = "seg_otsu"
-    elif seg_mode == SegmentationMode.UNET:
-        postfix = "seg_unet"
-    img_filename = gen_tiff_filename(
-        prefix=experiment_name,
-        fov_id=fov_id,
-        peak_id=peak_id,
-        postfix=postfix,
-    )
-
-    return load_tiff(img_dir / img_filename)
-
-
 def load_subtracted_stack(
     ana_dir: Path, experiment_name: str, fov_id, peak_id, postfix
 ):
     img_dir = ana_dir / "subtracted"
-    # switch postfix to c1/c2/c3 auto??
-    img_filename = gen_tiff_filename(
-        prefix=experiment_name, fov_id=fov_id, peak_id=peak_id, postfix=postfix
-    )
+    img_filename = TIFF_FILE_FORMAT_PEAK % (experiment_name, fov_id, peak_id, postfix)
+
     return load_tiff(img_dir / img_filename)
 
 
@@ -87,17 +61,15 @@ def load_unmodified_stack(
 ):
     img_dir = ana_dir / "channels"
     # switch postfix to c1/c2/c3 auto??
-    img_filename = gen_tiff_filename(
-        prefix=experiment_name, fov_id=fov_id, peak_id=peak_id, postfix=postfix
-    )
+    img_filename = TIFF_FILE_FORMAT_PEAK % (experiment_name, fov_id, peak_id, postfix)
+
     return load_tiff(img_dir / img_filename)
 
 
 def load_empty_stack(ana_dir: Path, experiment_name: str, fov_id, postfix):
     img_dir = ana_dir / "empties"
-    img_filename = gen_tiff_filename(
-        prefix=experiment_name, fov_id=fov_id, postfix=postfix
-    )
+    img_filename = TIFF_FILE_FORMAT_NO_PEAK % (experiment_name, fov_id, postfix)
+
     return load_tiff(img_dir / img_filename)
 
 

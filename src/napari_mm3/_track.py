@@ -25,12 +25,13 @@ from ._deriving_widgets import (
     load_specs,
     information,
     SegmentationMode,
-    load_seg_stack,
+    load_tiff,
     load_unmodified_stack,
     warning,
 )
 from .utils import (
     Cell,
+    TIFF_FILE_FORMAT_PEAK,
     find_complete_cells,
     write_cells_to_json,
 )
@@ -210,7 +211,8 @@ class CellTracker:
         t: int,
     ):
         """
-        Classify the two regions as either a divided cell (two daughters), or one growing cell and one trash.
+        Classify the two regions as either a divided cell (two daughters), 
+        or one growing cell and one trash.
         """
         check_division_result = self.check_division(
             self.cells[leaf_id],
@@ -574,9 +576,12 @@ def make_lineage_chnl_stack(
     phase_plane: str,
 ) -> dict:
     """
-    Create the lineage for a set of segmented images for one channel. Start by making the regions in the first time points potential cells.
-    Go forward in time and map regions in the timepoint to the potential cells in previous time points, building the life of a cell.
-    Used basic checks such as the regions should overlap, and grow by a little and not shrink too much. If regions do not link back in time, discard them.
+    Create the lineage for a set of segmented images for one channel. 
+    Start by making the regions in the first time points potential cells.
+    Go forward in time and map regions in the timepoint to the potential 
+    cells in previous time points, building the life of a cell.
+    Used basic checks such as the regions should overlap, and grow by a little and 
+    not shrink too much. If regions do not link back in time, discard them.
     If two regions map to one previous region, check if it is a sensible division event.
 
     Parameters
@@ -616,14 +621,9 @@ def make_lineage_chnl_stack(
 
     information("Creating lineage for FOV %d, channel %d." % (fov_id, peak_id))
 
-    seg_mode = SegmentationMode.UNET if seg_img == "seg_unet" else SegmentationMode.OTSU
-    image_data_seg = load_seg_stack(
-        ana_dir=ana_dir,
-        experiment_name=experiment_name,
-        fov_id=fov_id,
-        peak_id=peak_id,
-        seg_mode=seg_mode,
-    )
+    img_filename = TIFF_FILE_FORMAT_PEAK % (experiment_name, fov_id, peak_id, seg_img)
+    image_data_seg = load_tiff(ana_dir / "segmented" / img_filename)
+
 
     # Calculate all data for all time points.
     # this list will be length of the number of time points
@@ -1153,13 +1153,12 @@ class LineagePlotter:
             postfix=self.phase_plane,
         )
 
-        image_data_seg = load_seg_stack(
-            ana_dir=self.ana_dir,
-            experiment_name=self.experiment_name,
-            fov_id=self.fov_id,
-            peak_id=self.peak_id,
-            seg_mode=self.seg_mode,
-        )
+        seg_img="seg_otsu" if self.segmentation_method == "Otsu" else "seg_unet"
+        img_filename = TIFF_FILE_FORMAT_PEAK % (self.experiment_name, 
+                                                self.fov_id, 
+                                                self.peak_id, 
+                                                seg_img)
+        image_data_seg = load_tiff(self.ana_dir / "segmented" / img_filename)
 
         fig, ax = self.plot_cells(
             image_data_bg,

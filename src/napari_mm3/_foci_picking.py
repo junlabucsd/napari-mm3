@@ -6,13 +6,14 @@ from .utils import (
     read_cells_from_json,
     write_cells_to_json,
     write_cells_to_matlab,
+    TIFF_FILE_FORMAT_PEAK,
 )
 from magicgui.widgets import SpinBox, PushButton, FileEdit, LineEdit
 from ._deriving_widgets import (
     MM3Container,
     load_unmodified_stack,
-    load_seg_stack,
     load_specs,
+    load_tiff,
     SegmentationMode,
 )
 
@@ -52,7 +53,9 @@ def get_cell_lineage(cell_id: str, cells: Cells, cell_gens):
     return cell_lineage
 
 
-def cell_lineage_filter(complete_cell_ids: list, all_cells: Cells, generations, min_gens):
+def cell_lineage_filter(
+    complete_cell_ids: list, all_cells: Cells, generations, min_gens
+):
     for cell_id in complete_cell_ids:
         lineage = get_cell_lineage(cell_id, all_cells, cell_gens=generations)
         if len(set(lineage)) < min_gens:
@@ -65,11 +68,12 @@ class FociPicking(MM3Container):
     Note to reader:
     This is just *barely* illegible. If you find yourself here, please do a bit of cleanup work!
 
-    Ok, goal here is to make this load only AFTER a cells file is specified. 
+    Ok, goal here is to make this load only AFTER a cells file is specified.
     This implies two states:
     1. Before specified
     2. After specified.
     """
+
     def create_widgets(self):
         """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
         self.experiment_name_widget.value = "20220331_ALO7931_ALO7918_ABT"
@@ -141,10 +145,10 @@ class FociPicking(MM3Container):
             "c2",
         )
         stack_filtered = stack[
-            self.start - 1:self.stop, :, self.crop_left:self.crop_right + 1
+            self.start - 1 : self.stop, :, self.crop_left : self.crop_right + 1
         ]
         stack_fl_filtered = stack_fl[
-            self.start - 1:self.stop, :, self.crop_left:self.crop_right + 1
+            self.start - 1 : self.stop, :, self.crop_left : self.crop_right + 1
         ]
         stack_filtered = np.concatenate(stack_filtered, axis=1)
         stack_fl_filtered = np.concatenate(stack_fl_filtered, axis=1)
@@ -189,15 +193,20 @@ class FociPicking(MM3Container):
         self.viewer.layers["image"].mouse_drag_callbacks.append(self.click_callback)
 
     def vis_seg_stack(self):
-        seg_stack = load_seg_stack(
-            ana_dir=self.analysis_folder,
-            experiment_name=self.experiment_name,
-            fov_id=self.fov_id,
-            peak_id=self.peak_id,
-            seg_mode=SegmentationMode.OTSU,
+
+        seg_str = (
+            "seg_otsu" if SegmentationMode.OTSU == SegmentationMode.OTSU else "seg_unet"
         )
+        img_filename = TIFF_FILE_FORMAT_PEAK % (
+            self.experiment_name,
+            self.fov_id,
+            self.peak_id,
+            seg_str,
+        )
+        seg_stack = load_tiff(self.analysis_folder / "segmented" / img_filename)
+
         seg_stack = seg_stack[
-            self.start - 1:self.stop, :, self.crop_left:self.crop_right + 1
+            self.start - 1 : self.stop, :, self.crop_left : self.crop_right + 1
         ]
         new_seg_stack = np.full(seg_stack.shape, False)
         for cell_id in self.cur_lineage:
@@ -226,7 +235,9 @@ class FociPicking(MM3Container):
                 term_cell = self.all_cells[term_cell_id]
                 cell_time_idx = term_cell.times.index(term_time)
                 cell_label = term_cell.labels[cell_time_idx]
-                term_shift_stack[vis_time, :, :] += 9 * (seg_stack[vis_time] == cell_label)
+                term_shift_stack[vis_time, :, :] += 9 * (
+                    seg_stack[vis_time] == cell_label
+                )
 
             new_seg_stack = (
                 new_seg_stack.astype(np.int64) + init_shift_stack + term_shift_stack
@@ -286,7 +297,7 @@ class FociPicking(MM3Container):
                 face_color=TRANSPARENT,
                 edge_width=3,
             )
-        
+
     def vis_initiations(self):
         if "initiations" in self.viewer.layers:
             self.viewer.layers.remove("initiations")
@@ -365,14 +376,18 @@ class FociPicking(MM3Container):
 
     def locate_cell_at_cursor(self):
         t, x, y = self.cursor_coords()
-        seg_stack = load_seg_stack(
-            ana_dir=self.analysis_folder,
-            experiment_name=self.experiment_name,
-            fov_id=self.fov_id,
-            peak_id=self.peak_id,
-            seg_mode=SegmentationMode.OTSU,
+        seg_str = (
+            "seg_otsu" if SegmentationMode.OTSU == SegmentationMode.OTSU else "seg_unet"
         )
-        cur_seg_stack = seg_stack[t, :, self.crop_left:self.crop_right + 1]
+        img_filename = TIFF_FILE_FORMAT_PEAK % (
+            self.experiment_name,
+            self.fov_id,
+            self.peak_id,
+            seg_str,
+        )
+
+        seg_stack = load_tiff(self.analysis_folder / "segmented" / img_filename)
+        cur_seg_stack = seg_stack[t, :, self.crop_left : self.crop_right + 1]
         # TODO: Proper rounding.
         cur_label = cur_seg_stack[y, x]
         # need to cache this later!
@@ -398,7 +413,7 @@ class FociPicking(MM3Container):
             complete_cell_ids=self.mother_cells.keys(),
             all_cells=self.all_cells,
             generations=self.num_generations,
-            min_gens=self.min_generations
+            min_gens=self.min_generations,
         )
         self.cell_lineages = list(cell_lineage_iter)
         self.cell_idx = 0
@@ -579,9 +594,7 @@ class FociPicking(MM3Container):
         self.cell_generations_widget = SpinBox(
             label="generations", min=1, max=5, value=self.num_generations
         )
-        self.jump_to_cell_id_widget = LineEdit(
-            label="skip_to_cell_id"
-        )
+        self.jump_to_cell_id_widget = LineEdit(label="skip_to_cell_id")
         self.cell_label_widget = SpinBox(label="cell_label", min=1, max=5, value=1)
         self.save_to_matlab_widget = PushButton(label="save_to_matlab")
 
@@ -612,8 +625,10 @@ class FociPicking(MM3Container):
 
     def toggle_seg_visibility(self, viewer):
         if "segmentation" in self.viewer.layers:
-            self.viewer.layers["segmentation"].visible = not self.viewer.layers["segmentation"].visible
- 
+            self.viewer.layers["segmentation"].visible = not self.viewer.layers[
+                "segmentation"
+            ].visible
+
     def set_cell_file(self):
         self.cell_file_loc = self.set_cell_file_widget.value
 
