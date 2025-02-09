@@ -66,13 +66,6 @@ def load_unmodified_stack(
     return load_tiff(img_dir / img_filename)
 
 
-def load_empty_stack(ana_dir: Path, experiment_name: str, fov_id, postfix):
-    img_dir = ana_dir / "empties"
-    img_filename = TIFF_FILE_FORMAT_NO_PEAK % (experiment_name, fov_id, postfix)
-
-    return load_tiff(img_dir / img_filename)
-
-
 def load_specs(analysis_dir: Path) -> dict:
     """Load specs file which indicates which channels should be analyzed, used as empties, or ignored."""
     try:

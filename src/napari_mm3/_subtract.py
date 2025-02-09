@@ -10,6 +10,8 @@ import napari
 import six
 import h5py
 
+from .utils import TIFF_FILE_FORMAT_NO_PEAK
+
 from ._deriving_widgets import (
     MM3Container,
     FOVChooser,
@@ -18,7 +20,7 @@ from ._deriving_widgets import (
     information,
     warning,
     load_unmodified_stack,
-    load_empty_stack,
+    load_tiff,
 )
 
 
@@ -190,13 +192,13 @@ def copy_empty_stack(
     information(
         "Loading empty stack from FOV {} to save for FOV {}.".format(from_fov, to_fov)
     )
-
-    avg_empty_stack = load_empty_stack(
-        ana_dir,
+    empty_dir = ana_dir / "empties"
+    empty_filename = TIFF_FILE_FORMAT_NO_PEAK % (
         experiment_name,
         from_fov,
-        postfix="empty_{}".format(color),
+        f"empty_{color}",
     )
+    avg_empty_stack = load_tiff(empty_dir / empty_filename)
 
     # save out data
     # make new name and save it
@@ -254,12 +256,13 @@ def subtract_fov_stack(
 
     information("Subtracting peaks for FOV %d." % fov_id)
 
-    avg_empty_stack = load_empty_stack(
-        ana_dir,
+    empty_dir = ana_dir / "empties"
+    empty_filename = TIFF_FILE_FORMAT_NO_PEAK % (
         experiment_name,
         fov_id,
-        postfix="empty_{}".format(color),
+        f"empty_{color}",
     )
+    avg_empty_stack = load_tiff(empty_dir / empty_filename)
 
     # determine which peaks are to be analyzed
     ana_peak_ids = []

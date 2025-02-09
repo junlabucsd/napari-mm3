@@ -132,10 +132,14 @@ def find_cell_intensities_worker(
     fl_stack = load_unmodified_stack(
         params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=channel
     )
-    # seg_stack = load_stack_params(params, fov_id, peak_id, postfix="seg_otsu")
 
     seg_str = "seg_otsu" if seg_mode == SegmentationMode.OTSU else "seg_unet"
-    img_filename = TIFF_FILE_FORMAT_PEAK % (params["experiment_name"], fov_id, peak_id, seg_str)
+    img_filename = TIFF_FILE_FORMAT_PEAK % (
+        params["experiment_name"],
+        fov_id,
+        peak_id,
+        seg_str,
+    )
     seg_stack = load_tiff(params["ana_dir"] / "segmented" / img_filename)
 
     # determine absolute time index
