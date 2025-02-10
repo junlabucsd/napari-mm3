@@ -47,16 +47,6 @@ def load_hdf5(hdf5_location: Path, dataset_name: str):
         return h5f[dataset_name]
 
 
-def load_unmodified_stack(
-    ana_dir: Path, experiment_name: str, fov_id, peak_id, postfix
-):
-    img_dir = ana_dir / "channels"
-    # switch postfix to c1/c2/c3 auto??
-    img_filename = TIFF_FILE_FORMAT_PEAK % (experiment_name, fov_id, peak_id, postfix)
-
-    return load_tiff(img_dir / img_filename)
-
-
 def load_specs(analysis_dir: Path) -> dict:
     """
     Load specs file which indicates which channels should be analyzed, 

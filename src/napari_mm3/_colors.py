@@ -19,7 +19,6 @@ from ._deriving_widgets import (
     load_time_table,
     information,
     warning,
-    load_unmodified_stack,
     load_tiff,
     SegmentationMode,
 )
@@ -134,18 +133,23 @@ def find_cell_intensities_worker(
     information("Processing peak {} in FOV {}".format(peak_id, fov_id))
     # Load fluorescent images and segmented images for this channel
     # fl_stack = load_stack_params(params, fov_id, peak_id, postfix=channel)
-    fl_stack = load_unmodified_stack(
-        params["ana_dir"], params["experiment_name"], fov_id, peak_id, postfix=channel
+    # switch postfix to c1/c2/c3 auto??
+    fl_filename = TIFF_FILE_FORMAT_PEAK % (
+        params["experiment_name"],
+        fov_id,
+        peak_id,
+        channel,
     )
+    fl_stack = load_tiff(params["ana_dir"] / "channels" / fl_filename)
 
     seg_str = "seg_otsu" if seg_mode == SegmentationMode.OTSU else "seg_unet"
-    img_filename = TIFF_FILE_FORMAT_PEAK % (
+    seg_filename = TIFF_FILE_FORMAT_PEAK % (
         params["experiment_name"],
         fov_id,
         peak_id,
         seg_str,
     )
-    seg_stack = load_tiff(params["ana_dir"] / "segmented" / img_filename)
+    seg_stack = load_tiff(params["ana_dir"] / "segmented" / seg_filename)
 
     # determine absolute time index
     time_table = load_time_table(params["ana_dir"])

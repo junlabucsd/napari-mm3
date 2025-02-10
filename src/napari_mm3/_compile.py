@@ -27,8 +27,10 @@ from ._deriving_widgets import (
     PlanePicker,
     information,
     warning,
-    load_unmodified_stack,
+    load_tiff,
 )
+
+from .utils import TIFF_FILE_FORMAT_PEAK
 
 
 #### Helpful utility functions.
@@ -531,10 +533,9 @@ class CrossCorrelationHandler:
 
         pad_size = self.alignment_pad
         number_of_images = 20
-
-        image_data = load_unmodified_stack(
-            self.ana_dir, self.experiment_name, fov_id, peak_id, self.phase_plane
-        )
+        # switch postfix to c1/c2/c3 auto??
+        img_filename = TIFF_FILE_FORMAT_PEAK % (self.experiment_name, fov_id, peak_id, self.phase_plane)
+        image_data = load_tiff(self.ana_dir / "channels" / img_filename)
 
         if image_data.shape[0] > number_of_images:
             spacing = int(image_data.shape[0] / number_of_images)

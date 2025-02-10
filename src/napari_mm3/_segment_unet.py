@@ -22,13 +22,15 @@ from magicgui.widgets import (
     PushButton,
 )
 
+from .utils import TIFF_FILE_FORMAT_PEAK
+
 from ._deriving_widgets import (
     FOVChooser,
     MM3Container,
     PlanePicker,
     load_specs,
     information,
-    load_unmodified_stack,
+    load_tiff,
 )
 
 
@@ -498,13 +500,14 @@ def segment_cells_unet(
     """
     for peak_id in ana_peak_ids:
         information("Segmenting peak {}.".format(peak_id))
-        img_stack = load_unmodified_stack(
-            ana_dir,
+
+        img_stack_filename = TIFF_FILE_FORMAT_PEAK % (
             experiment_name,
             fov_id,
             peak_id,
             phase_plane,
         )
+        img_stack = load_tiff(ana_dir / "channels" / img_stack_filename)
 
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
@@ -894,13 +897,14 @@ class SegmentUnet(MM3Container):
             self.trained_model_image_height,
             self.trained_model_image_width,
         )
-        img_stack = load_unmodified_stack(
-            self.analysis_folder,
+        img_stack_filename = TIFF_FILE_FORMAT_PEAK % (
             self.experiment_name,
             valid_fov,
             valid_peak,
-            postfix=self.phase_plane,
+            self.phase_plane,
         )
+        img_stack = load_tiff(self.analysis_folder / "channels" / img_stack_filename)
+
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
 

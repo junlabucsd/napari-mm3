@@ -10,7 +10,7 @@ import napari
 import six
 import h5py
 
-from .utils import TIFF_FILE_FORMAT_NO_PEAK
+from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
 
 from ._deriving_widgets import (
     MM3Container,
@@ -19,7 +19,6 @@ from ._deriving_widgets import (
     load_specs,
     information,
     warning,
-    load_unmodified_stack,
     load_tiff,
 )
 
@@ -279,10 +278,14 @@ def subtract_fov_stack(
     # load images for the peak and get phase images'
     for peak_id in ana_peak_ids:
         information("Subtracting peak %d." % peak_id)
-
-        image_data = load_unmodified_stack(
-            ana_dir, experiment_name, fov_id, peak_id, postfix=color
+        image_filename = TIFF_FILE_FORMAT_PEAK % (
+            experiment_name,
+            fov_id,
+            peak_id,
+            color,
         )
+        image_data = load_tiff(ana_dir / "channels" / image_filename)
+
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
         subtract_pairs = zip(image_data, avg_empty_stack)
@@ -461,11 +464,13 @@ def average_empties_stack(
     elif len(empty_peak_ids) == 1:
         peak_id = empty_peak_ids[0]
         information("One empty channel (%d) designated for FOV %d." % (peak_id, fov_id))
-
-        # load the one phase contrast as the empties
-        avg_empty_stack = load_unmodified_stack(
-            ana_dir, experiment_name, fov_id, peak_id, postfix=color
+        avg_empty_stack_filename = TIFF_FILE_FORMAT_PEAK % (
+            experiment_name,
+            fov_id,
+            peak_id,
+            color,
         )
+        avg_empty_stack = load_tiff(ana_dir / "channels" / avg_empty_stack_filename)
 
     # but if there is more than one empty you need to align and average them per timepoint
     elif len(empty_peak_ids) > 1:
@@ -473,9 +478,13 @@ def average_empties_stack(
         empty_stacks = []  # list which holds phase image stacks of designated empties
         for peak_id in empty_peak_ids:
             # load data and append to list
-            image_data = load_unmodified_stack(
-                ana_dir, experiment_name, fov_id, peak_id, postfix=color
+            empty_stack_filename = TIFF_FILE_FORMAT_PEAK % (
+                experiment_name,
+                fov_id,
+                peak_id,
+                color,
             )
+            image_data = load_tiff(ana_dir / "channels" / empty_stack_filename)
             empty_stacks.append(image_data)
 
         information(

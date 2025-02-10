@@ -11,7 +11,6 @@ from .utils import (
 from magicgui.widgets import SpinBox, PushButton, FileEdit, LineEdit
 from ._deriving_widgets import (
     MM3Container,
-    load_unmodified_stack,
     load_specs,
     load_tiff,
     SegmentationMode,
@@ -129,21 +128,23 @@ class FociPicking(MM3Container):
         self.viewer.layers.clear()
         print(f"showing cell {self.cur_cell_id}")
 
-        # To do this properly, load all possible stacks.
-        stack = load_unmodified_stack(
-            self.analysis_folder,
+        # switch postfix to c1/c2/c3 auto??
+        stack_filename = TIFF_FILE_FORMAT_PEAK % (
             self.experiment_name,
             self.fov_id,
             self.peak_id,
             "c1",
         )
-        stack_fl = load_unmodified_stack(
-            self.analysis_folder,
+        stack = load_tiff(self.analysis_folder / "channels" / stack_filename)
+
+        stack_fl_filename = TIFF_FILE_FORMAT_PEAK % (
             self.experiment_name,
             self.fov_id,
             self.peak_id,
             "c2",
         )
+        stack_fl = load_tiff(self.analysis_folder / "channels" / stack_fl_filename)
+
         stack_filtered = stack[
             self.start - 1 : self.stop, :, self.crop_left : self.crop_right + 1
         ]
@@ -571,13 +572,15 @@ class FociPicking(MM3Container):
         self.cell_idx = 0
         self.cell_label = 1
         self.update_cell_info()
-        stack = load_unmodified_stack(
-            self.analysis_folder,
+
+        stack_filename = TIFF_FILE_FORMAT_PEAK % (
             self.experiment_name,
             self.fov_id,
             self.peak_id,
             "c1",
         )
+        stack = load_tiff(self.analysis_folder / "channels" / stack_filename)
+
         self.im_height = stack.shape[1]
         self.crop_left = 0
         self.crop_right = stack.shape[2] - 1

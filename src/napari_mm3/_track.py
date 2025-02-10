@@ -26,7 +26,6 @@ from ._deriving_widgets import (
     information,
     SegmentationMode,
     load_tiff,
-    load_unmodified_stack,
     warning,
 )
 from .utils import (
@@ -211,7 +210,7 @@ class CellTracker:
         t: int,
     ):
         """
-        Classify the two regions as either a divided cell (two daughters), 
+        Classify the two regions as either a divided cell (two daughters),
         or one growing cell and one trash.
         """
         check_division_result = self.check_division(
@@ -576,11 +575,11 @@ def make_lineage_chnl_stack(
     phase_plane: str,
 ) -> dict:
     """
-    Create the lineage for a set of segmented images for one channel. 
+    Create the lineage for a set of segmented images for one channel.
     Start by making the regions in the first time points potential cells.
-    Go forward in time and map regions in the timepoint to the potential 
+    Go forward in time and map regions in the timepoint to the potential
     cells in previous time points, building the life of a cell.
-    Used basic checks such as the regions should overlap, and grow by a little and 
+    Used basic checks such as the regions should overlap, and grow by a little and
     not shrink too much. If regions do not link back in time, discard them.
     If two regions map to one previous region, check if it is a sensible division event.
 
@@ -623,7 +622,6 @@ def make_lineage_chnl_stack(
 
     img_filename = TIFF_FILE_FORMAT_PEAK % (experiment_name, fov_id, peak_id, seg_img)
     image_data_seg = load_tiff(ana_dir / "segmented" / img_filename)
-
 
     # Calculate all data for all time points.
     # this list will be length of the number of time points
@@ -1144,20 +1142,23 @@ class LineagePlotter:
         """
         Plot linages over images across time points for one FOV/peak.
         """
-
-        image_data_bg = load_unmodified_stack(
-            self.ana_dir,
+        # switch postfix to c1/c2/c3 auto??
+        img_filename = TIFF_FILE_FORMAT_PEAK % (
             self.experiment_name,
             self.fov_id,
             self.peak_id,
-            postfix=self.phase_plane,
+            self.phase_plane,
         )
+        image_data_bg = load_tiff(self.ana_dir / "channels" / img_filename)
 
-        seg_img="seg_otsu" if self.segmentation_method == "Otsu" else "seg_unet"
-        img_filename = TIFF_FILE_FORMAT_PEAK % (self.experiment_name, 
-                                                self.fov_id, 
-                                                self.peak_id, 
-                                                seg_img)
+
+        seg_img = "seg_otsu" if self.segmentation_method == "Otsu" else "seg_unet"
+        img_filename = TIFF_FILE_FORMAT_PEAK % (
+            self.experiment_name,
+            self.fov_id,
+            self.peak_id,
+            seg_img,
+        )
         image_data_seg = load_tiff(self.ana_dir / "segmented" / img_filename)
 
         fig, ax = self.plot_cells(
