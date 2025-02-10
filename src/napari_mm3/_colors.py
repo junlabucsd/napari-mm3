@@ -19,7 +19,6 @@ from ._deriving_widgets import (
     load_time_table,
     information,
     warning,
-    load_subtracted_stack,
     load_unmodified_stack,
     load_tiff,
     SegmentationMode,
@@ -46,9 +45,15 @@ def find_cell_intensities(
     try:
         sub_channel = "sub_" + channel_name
         # fl_stack = load_stack_params(params, fov_id, peak_id, postfix=sub_channel)
-        fl_stack = load_subtracted_stack(
-            params["ana_dir"], params["experiment_name"], fov_id, peak_id, sub_channel
+
+        img_dir = params["ana_dir"] / "subtracted"
+        img_filename = TIFF_FILE_FORMAT_PEAK % (
+            params["experiment_name"],
+            fov_id,
+            peak_id,
+            sub_channel,
         )
+        fl_stack = load_tiff(img_dir / img_filename)
         information("Loading subtracted channel to analyze.")
     except FileNotFoundError:
         warning("Could not find subtracted channel! Skipping.")

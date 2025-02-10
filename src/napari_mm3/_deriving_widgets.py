@@ -8,7 +8,7 @@ from magicgui.widgets import (
     ComboBox,
 )
 from pathlib import Path
-from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
+from .utils import TIFF_FILE_FORMAT_PEAK
 import h5py
 import pickle
 import yaml
@@ -45,15 +45,6 @@ def load_tiff(tiff_location: Path):
 def load_hdf5(hdf5_location: Path, dataset_name: str):
     with h5py.File(hdf5_location, "r") as h5f:
         return h5f[dataset_name]
-
-
-def load_subtracted_stack(
-    ana_dir: Path, experiment_name: str, fov_id, peak_id, postfix
-):
-    img_dir = ana_dir / "subtracted"
-    img_filename = TIFF_FILE_FORMAT_PEAK % (experiment_name, fov_id, peak_id, postfix)
-
-    return load_tiff(img_dir / img_filename)
 
 
 def load_unmodified_stack(

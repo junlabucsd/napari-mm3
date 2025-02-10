@@ -19,9 +19,11 @@ from ._deriving_widgets import (
     FOVChooser,
     load_specs,
     information,
-    load_subtracted_stack,
+    load_tiff,
     warning,
 )
+
+from .utils import TIFF_FILE_FORMAT_PEAK
 
 
 # Do segmentation for a channel time stack
@@ -87,10 +89,13 @@ def segment_chnl_stack(
     # sub_stack = load_stack_params(
     #    params, fov_id, peak_id, postfix="sub_{}".format(params["phase_plane"])
     # )
-    postfix = f"sub_{phase_plane}"
-    sub_stack = load_subtracted_stack(
-        ana_dir, experiment_name, fov_id, peak_id, postfix
+    sub_filename = TIFF_FILE_FORMAT_PEAK % (
+        experiment_name,
+        fov_id,
+        peak_id,
+        f"sub_{phase_plane}",
     )
+    sub_stack = load_tiff(ana_dir / "subtracted" / sub_filename)
 
     # # set up multiprocessing pool to do segmentation. Will do everything before going on.
     # pool = Pool(processes=params['num_analyzers'])
@@ -453,14 +458,14 @@ class SegmentOtsu(MM3Container):
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         ## pull out first fov & peak id with cells
-        postfix = f"sub_{self.phase_plane}"
-        sub_stack = load_subtracted_stack(
-            self.analysis_folder,
+
+        sub_filename = TIFF_FILE_FORMAT_PEAK % (
             self.experiment_name,
             valid_fov,
             valid_peak,
-            postfix,
+            f"sub_{self.phase_plane}",
         )
+        sub_stack = load_tiff(self.analysis_folder / "subtracted" / sub_filename)
 
         # image by image for debug
         segmented_imgs = []
