@@ -58,7 +58,10 @@ def load_unmodified_stack(
 
 
 def load_specs(analysis_dir: Path) -> dict:
-    """Load specs file which indicates which channels should be analyzed, used as empties, or ignored."""
+    """
+    Load specs file which indicates which channels should be analyzed, 
+    used as empties, or ignored.
+    """
     try:
         with (analysis_dir / "specs.yaml").open("r") as specs_file:
             specs = yaml.safe_load(specs_file)
