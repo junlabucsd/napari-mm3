@@ -38,7 +38,8 @@ from .utils import (
 
 # load the time table
 def load_time_table(ana_dir: Path) -> dict:
-    """Load the time table.
+    """
+    Load the time table.
     This is so it can be used during Cell creation.
     """
 
@@ -54,64 +55,6 @@ def load_time_table(ana_dir: Path) -> dict:
 class CellTracker:
     """
     Class to track cells through time.
-
-    Attributes
-    ----------
-    fov_id: int
-        fov to perform tracking on
-    peak_id: int
-        peak to perform tracking on
-    cell_leaves : list
-        list of cell leaves
-    cells : dict
-        dictionary of Cell objects
-    y_cutoff : int
-        max distance from closed end of channel to allow new cells
-    region_cutoff : int
-        max region (labeled ascending from closed end of channel)
-    lost_cell_time : int
-        number of time steps after which to drop lost cells
-    time_table : dict
-        dictionary of time points
-    pxl2um : float
-        pixel to micron conversion factor
-    max_growth_length : float
-        Maximum allowed growth length ratio
-    min_growth_length : float
-        Minimum allowed growth length ratio
-    max_growth_area : float
-        Maximum allowed growth area ratio
-    min_growth_area : float
-        Minimum allowed growth area ratio
-
-
-    Methods
-    -------
-    prune_leaves(t)
-        Remove leaves for cells that have been lost for more than lost_cell_time
-    add_leaf_orphan(region, t, peak_id, fov_id)
-        Add new leaf if it clears thresholds.
-    update_region_links(leaf_region_map, regions, t, peak_id, fov_id)
-        Loop over current leaves and connect them to descendants
-    handle_two_regions(region1, region2, t, peak_id, fov_id)
-        Classify the two regions as either a divided cell (two daughters), or one growing cell and one trash.
-    add_leaf_daughter(region, id)
-        Add new leaf to tree if it clears thresholds
-    make_leaf_region_map(regions, t, peak_id, fov_id)
-        Map regions in current time point onto previously tracked cells
-    handle_discarded_regions(region_links, regions, t, peak_id, fov_id)
-        Process third+ regions down from closed end of channel. They will either be discarded or made into new cells.
-    check_growth_by_region(cell, region)
-        Checks to see if it makes sense to grow a cell by a particular region
-    check_division(cell, region1, region2)
-        Checks to see if it makes sense to divide a cell into two new cells based on two regions.
-    create_cell_id(region, t, peak, fov, experiment_name)
-        Make a unique cell id string for a new cell
-    get_two_closest_regions(region_links)
-        Retrieve two regions closest to closed end of the channel.
-    divide_cell(region1, region2, t, peak_id, fov_id, leaf_id)
-        Create two new cells and divide the mother
-
     """
 
     def __init__(
@@ -292,7 +235,8 @@ class CellTracker:
         t: int,
     ):
         """
-        Process third+ regions down from closed end of channel. They will either be discarded or made into new cells.
+        Process third+ regions down from closed end of channel. 
+        They will either be discarded or made into new cells.
         """
         discarded_regions = sorted(region_links, key=lambda x: x[1])[2:]
         for discarded_region in discarded_regions:
@@ -324,13 +268,6 @@ class CellTracker:
     ) -> bool:
         """Checks to see if it makes sense
         to grow a cell by a particular region
-
-        Parameters
-        ----------
-        cell: Cell object
-            Cell object currently tracked
-        region: RegionProps object
-            regionprops object containing area attributes
 
         Returns
         -------
@@ -418,20 +355,8 @@ class CellTracker:
         region,
         t: int,
     ) -> str:
-        """Make a unique cell id string for a new cell
-        Parameters
-        ----------
-        region: regionprops object
-            region to initialize cell from
-        t: int
-            time
-        peak: int
-            peak id
-        fov: int
-            fov id
-        experiment_name: str
-            experiment label
-
+        """
+        Make a unique cell id string for a new cell
         Returns
         -------
         cell_id: str
@@ -583,27 +508,6 @@ def make_lineage_chnl_stack(
     not shrink too much. If regions do not link back in time, discard them.
     If two regions map to one previous region, check if it is a sensible division event.
 
-    Parameters
-    ----------
-    ana_dir : Path
-        Analysis directory path
-    experiment_name : str
-        Name of the experiment
-    fov_and_peak_id : tuple
-        (fov_id, peak_id)
-    lost_cell_time : int
-        Time after which a cell is considered lost
-    new_cell_y_cutoff : int
-        Y position cutoff for new cells
-    new_cell_region_cutoff : int
-        Region label cutoff for new cells
-    pxl2um : float
-        Pixel to micron conversion factor
-    seg_img : str
-        Segmentation image type
-    phase_plane : str
-        Phase plane
-
     Returns
     -------
     cells : dict
@@ -697,29 +601,6 @@ def make_lineages_fov(
     """
     For a given fov, create the lineages from the segmented images.
 
-    Parameters
-    ---------
-    ana_dir : Path
-        Analysis directory path
-    experiment_name : str
-        Name of the experiment
-    fov_id : int
-        FOV to analyze
-    specs : dict
-        Dictionary of FOV and peak ids and their classifications
-    lost_cell_time : int
-        Time after which a cell is considered lost
-    new_cell_y_cutoff : int
-        Y position cutoff for new cells
-    new_cell_region_cutoff : int
-        Region label cutoff for new cells
-    pxl2um : float
-        Pixel to micron conversion factor
-    seg_img : str
-        Segmentation image type
-    phase_plane : str
-        Phase plane
-
     Returns
     -------
     cells : dict
@@ -804,9 +685,7 @@ def load_lineage_image(ana_dir, experiment_name, fov_id, peak_id):
         if len(crop_img[0]) == crop:
             imgs.append(crop_img)
 
-    img_stack = np.stack(imgs, axis=0)
-
-    return img_stack
+    return np.stack(imgs, axis=0)
 
 
 class LineagePlotter:
@@ -830,14 +709,9 @@ class LineagePlotter:
         self.phase_plane = phase_plane
         self.seg_mode = seg_mode
 
-    def make_lineage_plot(
-        self,
-    ):
-        """Produces a lineage image for the first valid FOV containing cells
-
-        Returns
-        -------
-        None
+    def make_lineage_plot(self):
+        """
+        Produces a lineage image for the first valid FOV containing cells
         """
 
         lin_dir = self.ana_dir / "lineages"
