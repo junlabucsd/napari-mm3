@@ -87,6 +87,16 @@ class CellTracker:
         self.min_growth_area = min_growth_area
         self.experiment_name = experiment_name
 
+    def add_cell(self, cell_id, region, t, parent_id=None):
+        self.cells[cell_id] = Cell(
+                    self.pxl2um,
+                    self.time_table,
+                    cell_id,
+                    region,
+                    t,
+                    parent_id=parent_id,
+                )
+
     def prune_leaves(self, t: int):
         """
         Remove leaves for cells that have been lost for more than lost_cell_time
@@ -108,14 +118,7 @@ class CellTracker:
                 region,
                 t,
             )
-            self.cells[cell_id] = Cell(
-                self.pxl2um,
-                self.time_table,
-                cell_id,
-                region,
-                t,
-                parent_id=None,
-            )
+            self.add_cell(cell_id, region, t, parent_id=None)
             self.cell_leaves.append(cell_id)  # add to leaves
 
     def update_region_links(
@@ -193,7 +196,7 @@ class CellTracker:
         if region.centroid[0] < self.y_cutoff and region.label <= self.region_cutoff:
             self.cell_leaves.append(id)
 
-    def make_leaf_region_map(
+    def link_regions_to_previous_cells(
         self,
         regions: list,
         t: int,
@@ -250,14 +253,7 @@ class CellTracker:
                     region,
                     t,
                 )
-                self.cells[cell_id] = Cell(
-                    self.pxl2um,
-                    self.time_table,
-                    cell_id,
-                    region,
-                    t,
-                    parent_id=None,
-                )
+                self.add_cell(cell_id, region, t, parent_id=None)
                 self.cell_leaves.append(cell_id)
             else:
                 break
@@ -415,16 +411,6 @@ class CellTracker:
     def get_two_closest_regions(self, region_links: list) -> list:
         """
         Retrieve two regions closest to closed end of the channel.
-
-        Parameters
-        ----------
-        region_links: list
-            list of all linked regions
-
-        Returns
-        -------
-        closest two regions: list
-            two regions closest to closed end of channel.
         """
         closest_two_regions = sorted(region_links, key=lambda x: x[1])[:2]
         # but sort by region order so top region is first
@@ -449,22 +435,10 @@ class CellTracker:
             region2,
             t,
         )
-        self.cells[daughter1_id] = Cell(
-            self.pxl2um,
-            self.time_table,
-            daughter1_id,
-            region1,
-            t,
-            parent_id=leaf_id,
-        )
-        self.cells[daughter2_id] = Cell(
-            self.pxl2um,
-            self.time_table,
-            daughter2_id,
-            region2,
-            t,
-            parent_id=leaf_id,
-        )
+
+        self.add_cell(daughter1_id, region1, t, parent_id=leaf_id)
+        self.add_cell(daughter2_id, region2, t, parent_id=leaf_id)
+
         self.cells[leaf_id].divide(
             self.cells[daughter1_id], self.cells[daughter2_id], t
         )
@@ -546,7 +520,7 @@ def make_lineage_chnl_stack(
                     t,
                 )
         else:
-            tracker.make_leaf_region_map(
+            tracker.link_regions_to_previous_cells(
                 regions,
                 t,
             )
