@@ -156,13 +156,24 @@ class CellTracker:
         Classify the two regions as either a divided cell (two daughters),
         or one growing cell and one trash.
         """
-        check_division_result = self.check_division(
+       
+        if self.check_growth_by_region(self.cells[leaf_id], region1):
+            self.cells[leaf_id].grow(self.time_table, region1, t)
+            self.add_leaf_orphan(
+                region2,
+                t,
+            )
+        elif self.check_growth_by_region(self.cells[leaf_id], region2):
+            self.cells[leaf_id].grow(self.time_table, region2, t)
+            self.add_leaf_orphan(
+                region1,
+                t,
+            )
+        elif self.check_division(
             self.cells[leaf_id],
             region1,
             region2,
-        )
-
-        if check_division_result == 3:
+        ):
             daughter1_id, daughter2_id, self.cells = self.divide_cell(
                 region1,
                 region2,
@@ -172,18 +183,8 @@ class CellTracker:
             self.cell_leaves.remove(leaf_id)
             self.add_leaf_daughter(region1, daughter1_id)
             self.add_leaf_daughter(region2, daughter2_id)
-        elif check_division_result == 1:
-            self.cells[leaf_id].grow(self.time_table, region1, t)
-            self.add_leaf_orphan(
-                region2,
-                t,
-            )
-        elif check_division_result == 2:
-            self.cells[leaf_id].grow(self.time_table, region2, t)
-            self.add_leaf_orphan(
-                region1,
-                t,
-            )
+            
+        
 
     def add_leaf_daughter(self, region, id: str):
         """
@@ -200,7 +201,7 @@ class CellTracker:
         """
         Map regions in current time point onto previously tracked cells
         """
-        leaf_region_map: dict[str, list[tuple[int, float]]] = {
+        leaf_region_map = {
             leaf_id: [] for leaf_id in self.cell_leaves
         }
 
@@ -304,51 +305,39 @@ class CellTracker:
         cell: Cell,
         region1,
         region2,
-    ) -> int:
+    ) -> bool:
         """Checks to see if it makes sense to divide a
         cell into two new cells based on two regions.
 
-        Return 0 if nothing should happend and regions ignored
-        Return 1 if cell should grow by region 1
-        Return 2 if cell should grow by region 2
-        Return 3 if cell should divide into the regions."""
-
-        # see if either region just could be continued growth,
-        # if that is the case then just return
-        # these shouldn't return true if the cells are divided
-        # as they would be too small
-        if self.check_growth_by_region(cell, region1):
-            return 1
-
-        if self.check_growth_by_region(cell, region2):
-            return 2
+        Return False if nothing should happend and regions ignored
+        Return True if cell should divide into the regions."""
 
         # make sure combined size of daughters is not too big
         combined_size = region1.major_axis_length + region2.major_axis_length
-        # check if length is not too much longer
-        if cell.lengths[-1] * self.max_growth_length < combined_size:
-            return 0
-        # and not too small
-        if cell.lengths[-1] * self.min_growth_length > combined_size:
-            return 0
+        max_size = cell.lengths[-1] * self.max_growth_length
+        min_size = cell.lengths[-1] * self.min_growth_length
+
+        if max_size < combined_size:
+            return False
+        if min_size > combined_size:
+            return False
 
         # centroids of regions should be in the upper and lower half of the
-        # of the mother's bounding box, respectively
+        # of the mother's bounding box
         # top region within top half of mother bounding box
-        if (
-            cell.bboxes[-1][0] > region1.centroid[0]
-            or cell.centroids[-1][0] < region1.centroid[0]
-        ):
-            return 0
+        cell_bottom, cell_top = cell.bboxes[-1][0], cell.bboxes[-1][2]
+        cell_center = cell.centroids[-1][0]
+        if cell_bottom > region1.centroid[0]:
+            return False
+        if cell_center < region1.centroid[0]:
+            return False
         # bottom region with bottom half of mother bounding box
-        if (
-            cell.centroids[-1][0] > region2.centroid[0]
-            or cell.bboxes[-1][2] < region2.centroid[0]
-        ):
-            return 0
+        if cell_center > region2.centroid[0]:
+            return False
+        if cell_top < region2.centroid[0]:
+            return False
 
-        # if you got this far then divide the mother
-        return 3
+        return True
 
     def create_cell_id(
         self,
