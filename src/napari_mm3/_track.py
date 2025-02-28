@@ -87,16 +87,6 @@ class CellTracker:
         self.min_growth_area = min_growth_area
         self.experiment_name = experiment_name
 
-    def add_cell(self, cell_id, region, t, parent_id=None):
-        self.cells[cell_id] = Cell(
-                    self.pxl2um,
-                    self.time_table,
-                    cell_id,
-                    region,
-                    t,
-                    parent_id=parent_id,
-                )
-
     def prune_leaves(self, t: int):
         """
         Remove leaves for cells that have been lost for more than lost_cell_time
@@ -159,7 +149,7 @@ class CellTracker:
         Classify the two regions as either a divided cell (two daughters),
         or one growing cell and one trash.
         """
-       
+
         if self.check_growth_by_region(self.cells[leaf_id], region1):
             self.cells[leaf_id].grow(self.time_table, region1, t)
             self.add_leaf_orphan(
@@ -186,8 +176,6 @@ class CellTracker:
             self.cell_leaves.remove(leaf_id)
             self.add_leaf_daughter(region1, daughter1_id)
             self.add_leaf_daughter(region2, daughter2_id)
-            
-        
 
     def add_leaf_daughter(self, region, id: str):
         """
@@ -204,9 +192,7 @@ class CellTracker:
         """
         Map regions in current time point onto previously tracked cells
         """
-        leaf_region_map = {
-            leaf_id: [] for leaf_id in self.cell_leaves
-        }
+        leaf_region_map = {leaf_id: [] for leaf_id in self.cell_leaves}
 
         current_leaf_positions = [
             (leaf_id, self.cells[leaf_id].centroids[-1][0])
@@ -239,7 +225,7 @@ class CellTracker:
         t: int,
     ):
         """
-        Process third+ regions down from closed end of channel. 
+        Process third+ regions down from closed end of channel.
         They will either be discarded or made into new cells.
         """
         discarded_regions = sorted(region_links, key=lambda x: x[1])[2:]
@@ -348,22 +334,27 @@ class CellTracker:
             string for cell ID
         """
         if self.experiment_name is None:
-            cell_id = [
-                "f",
-                "%02d" % self.fov_id,
-                "p",
-                "%04d" % self.peak_id,
-                "t",
-                "%04d" % t,
-                "r",
-                "%02d" % region.label,
-            ]
-            cell_id = "".join(cell_id)
+            cell_id = "f%02dp%04dt%04dr%02d" % (
+                self.fov_id,
+                self.peak_id,
+                t,
+                region.label,
+            )
         else:
             cell_id = "{}f{:0=2}p{:0=4}t{:0=4}r{:0=2}".format(
                 self.experiment_name, self.fov_id, self.peak_id, t, region.label
             )
         return cell_id
+
+    def add_cell(self, cell_id, region, t, parent_id=None):
+        self.cells[cell_id] = Cell(
+            self.pxl2um,
+            self.time_table,
+            cell_id,
+            region,
+            t,
+            parent_id=parent_id,
+        )
 
     def update_leaf_regions(
         self,
@@ -987,7 +978,6 @@ class LineagePlotter:
             self.phase_plane,
         )
         image_data_bg = load_tiff(self.ana_dir / "channels" / img_filename)
-
 
         seg_img = "seg_otsu" if self.segmentation_method == "Otsu" else "seg_unet"
         img_filename = TIFF_FILE_FORMAT_PEAK % (
