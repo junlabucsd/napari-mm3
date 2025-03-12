@@ -19,7 +19,11 @@ from ._deriving_widgets import FOVChooser, TimeRangeSelector, warning, informati
 
 def get_nd2_fovs(data_path):
     with nd2.ND2File(str(data_path)) as nd2f:
-        return nd2f.sizes["P"]
+        # allow for 1 fov with no FOV axis:
+        try:
+            return nd2f.sizes["P"]
+        except KeyError:
+            return 1
 
 
 def get_nd2_times(data_path):
@@ -55,6 +59,8 @@ def get_bioformats_fovs(data_path):
 def nd2_iter(nd2f: nd2.ND2File, time_range, fov_list):
     """
     Iterates over the contents of an ND2File.
+    If available, use fov_list/time_range. If not,
+    do the whole iamge.
 
     params:
         nd2f: The ND2Reader object to use.
@@ -64,17 +70,30 @@ def nd2_iter(nd2f: nd2.ND2File, time_range, fov_list):
         fov: the fov-index of the returned frame.
         image_data: the image at the given time/fov.
     """
-    # TODO: Move this into the UI code.
-    fov_list = [fov - 1 for fov in fov_list]
-    nd2_fov_list = set(range(0, nd2f.sizes["P"]))
-    if fov_list == []:
-        fov_list = nd2_fov_list
     nd2_time_range = set(range(0, nd2f.sizes["T"]))
 
-    valid_fovs = set(fov_list).intersection(nd2_fov_list)
+    # if only 1 fov, then just yield the single FOV.
+    if "P" not in nd2f.sizes:
+        im = nd2f.asarray()
+        for t in nd2_time_range:
+            if t not in time_range:
+                continue
+            image_data = im[t]
+            yield t, 0, image_data
+        return
+    
+    nd2_fov_list = set(range(0, nd2f.sizes["P"]))
+    # TODO: Move this into the UI code.
+    fov_list = [fov - 1 for fov in fov_list]
+    if fov_list != []:
+        valid_fovs = set(fov_list).intersection(nd2_fov_list)
+    else: 
+        valid_fovs = nd2_fov_list
+
     if valid_fovs != set(fov_list):
         information("The following FOVs were not in the nd2, and thus were omitted:")
         information(set(fov_list) - valid_fovs)
+
     for fov in valid_fovs:
         im = nd2f.asarray(fov)
         for t in nd2_time_range:
@@ -284,9 +303,11 @@ def nd2ToTIFF(
             )
 
             # add extra axis to make below slicing simpler. removed automatically if only one color
-            if len(image_data.shape) < 3:
+            if len(image_data.shape) <= 3:
                 image_data = np.expand_dims(image_data, axis=0)
-
+            # in case one channel, one fov.
+            if len(image_data.shape) == 3:
+                image_data = np.expand_dims(image_data, axis=0)
             # crop tiff if specified. Lots of flags for if there are double rows or  multiple colors
             if tworow_crop:
                 crop1_y1, crop1_y2 = tworow_crop[0][0], tworow_crop[0][1]
