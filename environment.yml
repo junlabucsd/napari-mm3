@@ -5,7 +5,7 @@ channels:
 dependencies:
   - python
   - numpy<2.0.0
-  - tensorflow
+  - tensorflow<=2.12
   - pyqt
   - napari
   - nd2
