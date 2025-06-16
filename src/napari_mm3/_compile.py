@@ -16,8 +16,9 @@ from skimage.feature import match_template
 from multiprocessing import Pool
 from pathlib import Path
 from pprint import pprint
+from scipy.ndimage import rotate
 from scipy.signal import find_peaks_cwt
-from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, ComboBox, CheckBox
+from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, ComboBox, CheckBox, Slider
 from napari import Viewer
 from napari.utils import progress
 from ._deriving_widgets import (
@@ -135,6 +136,17 @@ def stack_channels(found_files: np.ndarray, TIFF_dir: Path) -> None:
     return
 
 
+def fix_rotation(angle: float, image_data: np.ndarray) -> np.ndarray:
+    print("rotating")
+    if angle == 0:
+        return image_data
+    
+    if len(image_data.shape) == 2:
+        image_data = np.expand_dims(image_data, 0)
+
+    return rotate(image_data, angle, axes=(2,1))
+
+
 # define function for flipping the images on an FOV by FOV basis
 def fix_orientation(
     image_orientation: str, phase_plane: str, image_data: np.ndarray
@@ -216,6 +228,7 @@ class TiffParamsHandler:
         channel_detection_snr: float,
         phase_plane: str,
         image_orientation: str,
+        image_rotation: float,
     ):
         self.TIFF_dir = TIFF_dir
         self.TIFF_source = TIFF_source
@@ -225,6 +238,7 @@ class TiffParamsHandler:
         self.channel_detection_snr = channel_detection_snr
         self.phase_plane = phase_plane
         self.image_orientation = image_orientation
+        self.image_rotation = image_rotation
 
     def _get_tif_params(
         self, image_filename: str, planes: list[str], find_channels: bool = True
@@ -266,6 +280,10 @@ class TiffParamsHandler:
 
                     image_data = fix_orientation(
                         self.image_orientation, self.phase_plane, image_data
+                    )
+
+                    image_data = fix_rotation(
+                        self.image_rotation, image_data
                     )
 
                     # if the image data has more than 1 plane restrict image_data to phase,
@@ -620,6 +638,7 @@ class ChannelSlicer:
         analyzed_imgs: dict,
         phase_plane: str,
         image_orientation: str,
+        image_rotation: float,
         channel_dir: Path,
         experiment_name: str,
         ana_dir: Path,
@@ -633,6 +652,7 @@ class ChannelSlicer:
         self.analyzed_imgs = analyzed_imgs
         self.phase_plane = phase_plane
         self.image_orientation = image_orientation
+        self.image_rotation = image_rotation
         self.channel_dir = channel_dir
         self.experiment_name = experiment_name
         self.ana_dir = ana_dir
@@ -660,13 +680,6 @@ class ChannelSlicer:
         channel_masks : dict
             dictionary of consensus channel masks.
 
-        Called By
-        compile
-
-        Calls
-        _make_consensus_mask
-        get_max_chnl_dim
-        adjust_channel_mask
         """
         information("Determining initial channel masks...")
 
@@ -790,6 +803,10 @@ class ChannelSlicer:
             # channel finding was also done on images after orientation was fixed
             image_data = fix_orientation(
                 self.image_orientation, self.phase_plane, image_data
+            )
+
+            image_data = fix_rotation(
+                self.image_rotation, image_data
             )
 
             # add additional axis if the image is flat
@@ -1338,6 +1355,7 @@ def compile(
     t_start: int,
     t_end: int,
     image_orientation: str,
+    image_rotation: float,
     channel_width: int,
     channel_separation: int,
     channel_detection_snr: float,
@@ -1447,6 +1465,7 @@ def compile(
                 channel_detection_snr,
                 phase_plane,
                 image_orientation,
+                image_rotation,
             )
 
             analyzed_imgs = params_handler.get_tif_params_loop(
@@ -1472,6 +1491,7 @@ def compile(
         analyzed_imgs,
         phase_plane,
         image_orientation,
+        image_rotation,
         chnl_dir,
         experiment_name,
         ana_dir,
@@ -1529,7 +1549,9 @@ class Compile(MM3Container):
             min=1,
             max=60 * 60 * 24,
         )
-
+        self.image_rotation_widget = Slider(
+            label="image rotation", value=0, min=-90, max=90, step=1
+        )
         self.channel_orientation_widget = ComboBox(
             label="trap orientation", choices=["auto", "up", "down"]
         )
@@ -1571,6 +1593,8 @@ class Compile(MM3Container):
         self.channel_separation_widget.changed.connect(self.set_channel_separation)
         self.inspect_widget.clicked.connect(self.display_all_fovs)
         self.channel_orientation_widget.changed.connect(self.set_channel_orientation)
+        self.image_rotation_widget.changed.connect(self.set_image_rotation)
+
 
         self.append(self.fov_widget)
         self.append(self.image_source_widget)
@@ -1579,6 +1603,7 @@ class Compile(MM3Container):
         self.append(self.time_range_widget)
         self.append(self.seconds_per_frame_widget)
         self.append(self.channel_orientation_widget)
+        self.append(self.image_rotation_widget)
         self.append(self.channel_width_widget)
         self.append(self.channel_separation_widget)
         self.append(self.inspect_widget)
@@ -1592,6 +1617,7 @@ class Compile(MM3Container):
         self.set_channel_width()
         self.set_channel_separation()
         self.set_channel_orientation()
+        self.set_image_rotation()
 
         self.display_single_fov()
 
@@ -1606,6 +1632,7 @@ class Compile(MM3Container):
             t_start=self.time_range[0],
             t_end=self.time_range[1] + 1,
             image_orientation=self.channel_orientation,
+            image_rotation=self.image_rotation,
             channel_width=self.channel_width,
             channel_separation=self.channel_separation,
             channel_detection_snr=1,
@@ -1616,7 +1643,7 @@ class Compile(MM3Container):
             do_time_table=True,
             do_channel_masks=True,
             do_slicing=True,
-            do_crosscorrs=True,
+            do_crosscorrs=False,
             experiment_name=self.experiment_name,
             phase_plane=self.phase_plane,
             FOVs=self.fovs,
@@ -1636,9 +1663,7 @@ class Compile(MM3Container):
             )
         else:
             image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
-        image_fov_stack = np.squeeze(
-            image_fov_stack
-        )  ## remove axes of length 1 for napari viewer
+        image_fov_stack = np.squeeze(image_fov_stack)  ## remove axes of length 1 for napari viewer
         images = self.viewer.add_image(image_fov_stack.astype(np.float32))
         self.viewer.dims.current_step = (0, 0)
         images.reset_contrast_limits()
@@ -1726,3 +1751,7 @@ class Compile(MM3Container):
     def set_split_channels(self):
         self.split_channels = self.split_channels_widget.value
         self.display_single_fov()
+
+    def set_image_rotation(self):
+        self.image_rotation = self.image_rotation_widget.value
+        print(self.image_rotation)
