@@ -208,6 +208,12 @@ def range_string_to_indices(range_string):
             "Index range string invalid. Returning empty range until a new string is specified."
         )
         return []
+    
+class DataclassWidget(Container):
+    def __init__(self, dataclass):
+        for annotation in dataclass.annotations:
+            pass
+
 
 
 class MM3Container(Container):
