@@ -15,6 +15,7 @@ from scipy import ndimage as ndi
 from skimage.feature import match_template
 from multiprocessing import Pool
 from pathlib import Path
+from dataclasses import dataclass
 from pprint import pprint
 from scipy.ndimage import rotate
 from scipy.signal import find_peaks_cwt
@@ -33,6 +34,17 @@ from ._deriving_widgets import (
 
 from .utils import TIFF_FILE_FORMAT_PEAK
 
+
+@dataclass
+class CompileParams:
+    """Class for keeping track of an item in inventory."""
+    channel_width: int
+    channel_separation: int
+    channel_width_pad: int
+    channel_detection_snr: float
+    phase_plane: str
+    image_orientation: str
+    image_rotation: float
 
 #### Helpful utility functions.
 def get_plane(filepath: str) -> Union[str, None]:
@@ -1569,16 +1581,6 @@ class Compile(MM3Container):
             tooltip="Required. Center-to-center distance between traps in pixels.",
             min=1,
             max=10000,
-        )
-        self.xcorr_threshold_widget = FloatSpinBox(
-            label="cross correlation threshold",
-            value=0.97,
-            tooltip="Recommended. Threshold for designating channels as full /empty"
-            + "based on time correlation of trap intensity profile. "
-            + "Traps above threshold will be set as empty.",
-            step=0.01,
-            min=0,
-            max=1,
         )
 
         self.inspect_widget = PushButton(text="visualize all FOVs (from .nd2)")
