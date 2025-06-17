@@ -1302,9 +1302,7 @@ def compile(
     phase_plane: str,
     FOVs: list,
     TIFF_source: str,
-    use_jd: bool,
     chnl_dir: Path,
-    seconds_per_time_index: int,
 ) -> None:
     """
     Compile function for the MM3 analysis pipeline. This function is the main entry point for the analysis pipeline.
@@ -1561,9 +1559,7 @@ class Compile(MM3Container):
             phase_plane=self.phase_plane,
             FOVs=self.fovs,
             TIFF_source=self.image_source,
-            use_jd=False,  # disabling for now because of bug with Elements output formatting
             chnl_dir=self.analysis_folder / "channels",
-            seconds_per_time_index=self.seconds_per_frame,
         )
         information("Finished.")
 
