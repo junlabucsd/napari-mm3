@@ -1168,86 +1168,6 @@ class ChannelSlicer:
         return channel_slice
 
 
-# make a lookup time table for converting nominal time to elapsed time in seconds
-def make_time_table(
-    analyzed_imgs: dict, use_jd: bool, seconds_per_time_index: int, ana_dir: Path
-) -> dict:
-    """
-    Loops through the analyzed images and uses the jd time in the metadata to find the elapsed
-    time in seconds that each picture was taken. This is later used for more accurate elongation
-    rate calculation.
-
-    Parameters
-    ---------
-    analyzed_imgs : dict
-        The output of get_tif_params.
-    use_jd : boolean
-        If set to True, 'jd' time will be used from the image metadata to use to create time table. Otherwise the 't' index will be used, and the parameter 'seconds_per_time_index' will be used to convert to seconds.
-    seconds_per_time_index : int
-        Time interval in seconds between consecutive imaging rounds.
-    ana_dir : Path
-        Directory where the time table will be saved.
-
-    Returns
-    -------
-    time_table : dict
-        Look up dictionary with keys for the FOV and then the time point.
-    """
-    information("Making time table...")
-
-    # initialize
-    time_table: dict[int, dict[int, int]] = {}
-
-    first_time = float("inf")
-
-    # need to go through the data once to find the first time
-    for iname, idata in six.iteritems(analyzed_imgs):
-        if use_jd:
-            try:
-                if idata["jd"] < first_time:
-                    first_time = idata["jd"]
-            except:
-                if idata["t"] < first_time:
-                    first_time = idata["t"]
-        else:
-            if idata["t"] < first_time:
-                first_time = idata["t"]
-
-        # init dictionary for specific times per FOV
-        if idata["fov"] not in time_table:
-            time_table[idata["fov"]] = {}
-
-    for iname, idata in six.iteritems(analyzed_imgs):
-        if use_jd:
-            # convert jd time to elapsed time in seconds
-            try:
-                t_in_seconds = np.around(
-                    (idata["jd"] - first_time) * 24 * 60 * 60, decimals=0
-                ).astype("uint32")
-            except:
-                information(
-                    "Failed to extract time from metadata. Using user-specified interval."
-                )
-                t_in_seconds = np.around(
-                    (idata["t"] - first_time) * seconds_per_time_index,
-                    decimals=0,
-                ).astype("uint32")
-        else:
-            t_in_seconds = np.around(
-                (idata["t"] - first_time) * seconds_per_time_index, decimals=0
-            ).astype("uint32")
-
-        time_table[int(idata["fov"])][int(idata["t"])] = int(t_in_seconds)
-
-    with open(os.path.join(ana_dir, "time_table.yaml"), "w") as time_table_file:
-        yaml.dump(
-            data=time_table, stream=time_table_file, default_flow_style=False, tags=None
-        )
-    information("Time table saved.")
-
-    return time_table
-
-
 def filter_files(
     found_files: list, t_start: int, t_end: int, user_spec_fovs: list
 ) -> list:
@@ -1375,7 +1295,6 @@ def compile(
     channel_width_pad: int,
     alignment_pad: int,
     do_metadata: bool,
-    do_time_table: bool,
     do_channel_masks: bool,
     do_slicing: bool,
     do_crosscorrs: bool,
@@ -1418,8 +1337,6 @@ def compile(
         Padding for alignment.
     do_metadata : bool
         If True, the metadata will be loaded from the analysis directory.
-    do_time_table : bool
-        If True, the time table will be created.
     do_channel_masks : bool
         If True, the channel masks will be created.
     do_slicing : bool
@@ -1493,11 +1410,6 @@ def compile(
         with open(os.path.join(ana_dir, "TIFF_metadata.txt"), "w") as tiff_metadata:
             pprint(analyzed_imgs, stream=tiff_metadata)
         information("Saved metadata from analyzed images.")
-
-    if do_time_table:
-        time_table = make_time_table(
-            analyzed_imgs, use_jd, seconds_per_time_index, ana_dir
-        )
 
     slice_handler = ChannelSlicer(
         analyzed_imgs,
@@ -1642,7 +1554,6 @@ class Compile(MM3Container):
             channel_width_pad=10,
             alignment_pad=10,
             do_metadata=True,
-            do_time_table=True,
             do_channel_masks=True,
             do_slicing=True,
             do_crosscorrs=False,

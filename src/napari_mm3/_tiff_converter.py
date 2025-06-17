@@ -361,6 +361,146 @@ def nd2ToTIFF(
                 photometric="minisblack",
             )
 
+def _get_tif_metadata_nd2(self, tif: tiff.TiffFile) -> dict:
+    """This function pulls out the metadata from a tif file and returns it as a dictionary.
+    This if tiff files as exported by the mm3 function nd2ToTiff. All the metdata
+    is found in that script and saved in json format to the tiff, so it is simply extracted here
+
+    Paramters
+    ---------
+    tif: tiff.TiffFile
+        TIFF file object from which data will be extracted
+
+    Returns
+    -------
+    idata: dict
+        dictionary of values:
+            'fov': int,
+            't' : int,
+            'jdn' (float)
+            'planes' (list of strings)
+
+    """
+    # get the first page of the tiff and pull out image description
+    # this dictionary should be in the above form
+
+    for tag in tif.pages[0].tags:
+        if tag.name == "ImageDescription":
+            idata = tag.value
+            break
+
+    idata = json.loads(idata)
+    return idata
+
+# make a lookup time table for converting nominal time to elapsed time in seconds
+def make_time_table(
+    analyzed_imgs: dict, use_jd: bool, seconds_per_time_index: int, ana_dir: Path
+) -> dict:
+    """
+    Loops through the analyzed images and uses the jd time in the metadata to find the elapsed
+    time in seconds that each picture was taken. This is later used for more accurate elongation
+    rate calculation.
+
+    Parameters
+    ---------
+    analyzed_imgs : dict
+        The output of get_tif_params.
+    use_jd : boolean
+        If set to True, 'jd' time will be used from the image metadata to use to create time table. Otherwise the 't' index will be used, and the parameter 'seconds_per_time_index' will be used to convert to seconds.
+    seconds_per_time_index : int
+        Time interval in seconds between consecutive imaging rounds.
+    ana_dir : Path
+        Directory where the time table will be saved.
+
+    Returns
+    -------
+    time_table : dict
+        Look up dictionary with keys for the FOV and then the time point.
+    """
+    information("Making time table...")
+
+    # initialize
+    time_table: dict[int, dict[int, int]] = {}
+
+    first_time = float("inf")
+
+    # need to go through the data once to find the first time
+    for iname, idata in six.iteritems(analyzed_imgs):
+        if use_jd:
+            try:
+                if idata["jd"] < first_time:
+                    first_time = idata["jd"]
+            except:
+                if idata["t"] < first_time:
+                    first_time = idata["t"]
+        else:
+            if idata["t"] < first_time:
+                first_time = idata["t"]
+
+        # init dictionary for specific times per FOV
+        if idata["fov"] not in time_table:
+            time_table[idata["fov"]] = {}
+
+    for iname, idata in six.iteritems(analyzed_imgs):
+        if use_jd:
+            # convert jd time to elapsed time in seconds
+            try:
+                t_in_seconds = np.around(
+                    (idata["jd"] - first_time) * 24 * 60 * 60, decimals=0
+                ).astype("uint32")
+            except:
+                information(
+                    "Failed to extract time from metadata. Using user-specified interval."
+                )
+                t_in_seconds = np.around(
+                    (idata["t"] - first_time) * seconds_per_time_index,
+                    decimals=0,
+                ).astype("uint32")
+        else:
+            t_in_seconds = np.around(
+                (idata["t"] - first_time) * seconds_per_time_index, decimals=0
+            ).astype("uint32")
+
+        time_table[int(idata["fov"])][int(idata["t"])] = int(t_in_seconds)
+
+    with open(os.path.join(ana_dir, "time_table.yaml"), "w") as time_table_file:
+        yaml.dump(
+            data=time_table, stream=time_table_file, default_flow_style=False, tags=None
+        )
+    information("Time table saved.")
+
+    return time_table
+
+def _get_tif_metadata_filename(self, tif: tiff.TiffFile) -> dict:
+    """This function pulls out the metadata from a tif filename and returns it as a dictionary.
+    This just gets the tiff metadata from the filename and is a backup option when the known format of the metadata is not known.
+
+    Parameters
+    ---------
+    tif: tiff.TiffFile
+        TIFF file object from which data will be extracted
+
+    Returns
+    -------
+    idata: dict
+        dictionary of values:
+            'fov': int,
+            't' : int,
+            'jdn' (float)
+
+    Called by
+    get_tif_params
+
+    """
+    idata = {
+        "fov": get_fov(tif.filename),  # fov id
+        "t": get_time(tif.filename),  # time point
+        "jd": -1 * 0.0,  # absolute julian time
+        "planes": get_plane(tif.filename),
+    }
+
+    return idata
+
 
 class TIFFExport(Container):
     """No good way to make this derive MM3Widget; have to roll a custom version here."""
