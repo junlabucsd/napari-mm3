@@ -221,18 +221,8 @@ def find_channel_locs(
     a dictionary where the key is the x position of the channel in pixel and the value is a
     dictionary with the open and closed end in pixels in y.
 
-    Parameters
-    ----------
-    image_data : np.ndarray
-        The image data.
-
-    Returns
-    -------
     chnl_loc_dict : dict
         Dictionary with the channel locations.
-
-    Called by
-    get_tif_params
     """
 
     crop_wp = int(channel_width_pad + channel_width / 2)
@@ -288,6 +278,101 @@ def find_channel_locs(
     return chnl_loc_dict
 
 
+def get_tif_metadata_filename(tif: tiff.TiffFile) -> dict:
+    idata = {
+        "fov": get_fov(tif.filename),  # fov id
+        "t": get_time(tif.filename),  # time point
+        "jd": -1 * 0.0,  # absolute julian time
+        "planes": get_plane(tif.filename),
+    }
+
+    return idata
+
+def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
+    """This function pulls out the metadata from a tif file and returns it as a dictionary.
+    All the metdata is found in that script and saved in json format to the tiff, so it is simply extracted here
+
+    Returns
+    -------
+    idata: dict
+        dictionary of values:
+            'fov': int,
+            't' : int,
+            'jdn' (float)
+            'planes' (list of strings)
+
+    """
+    # get the first page of the tiff and pull out image description
+    # this dictionary should be in the above form
+
+    for tag in tif.pages[0].tags:
+        if tag.name == "ImageDescription":
+            idata = tag.value
+            break
+
+    idata = json.loads(idata)
+    return idata
+
+def analyze_image(tif, 
+                  planes: list[str],
+                  TIFF_source: str, 
+                  find_channels: bool, 
+                  phase_plane: str, 
+                  image_orientation: str, 
+                  image_rotation: float,
+                  channel_width_pad: int, 
+                  channel_width: int, 
+                  channel_detection_snr: float, 
+                  channel_separation: int):
+    image_data = tif.asarray()
+    if TIFF_source == "nd2":
+        image_metadata = get_tif_metadata_nd2(tif)
+    elif TIFF_source == "BioFormats / other TIFF":
+        image_metadata = get_tif_metadata_filename(tif)
+
+    if image_metadata["planes"] is None:
+        image_metadata["planes"] = planes
+
+    if find_channels:
+        # fix the image orientation and get the number of planes
+
+        image_data = fix_orientation(
+            image_orientation, phase_plane, image_data
+        )
+
+        image_data = fix_rotation(
+            image_rotation, image_data
+        )
+
+        # if the image data has more than 1 plane restrict image_data to phase,
+        # which should have highest mean pixel data
+        if len(image_data.shape) > 2:
+            # ph_index = np.argmax([np.mean(image_data[ci]) for ci in range(image_data.shape[0])])
+            ph_index = int(phase_plane[1:]) - 1
+            image_data = image_data[ph_index]
+
+        # get shape of single plane
+        img_shape = [image_data.shape[0], image_data.shape[1]] # type: ignore
+
+        # find channels on the processed image
+        chnl_loc_dict = find_channel_locs(
+            image_data,
+            channel_width_pad,
+            channel_width,
+            channel_detection_snr,
+            channel_separation
+        )
+
+    return {
+        "fov": image_metadata["fov"],
+        "t": image_metadata["t"],
+        "jd": image_metadata["jd"],
+        "planes": image_metadata["planes"],
+        "shape": img_shape,
+        "channels": chnl_loc_dict,
+    }
+
+
 
 ### Functions for working with TIFF metadata ###
 
@@ -318,8 +403,7 @@ class TiffParamsHandler:
     def _get_tif_params(
         self, image_filename: str, planes: list[str], find_channels: bool = True
     ) -> dict:
-        """This is a damn important function for getting the information
-        out of an image. It loads a tiff file, pulls out the image data, and the metadata,
+        """Loads a tiff file, pulls out the image data, and the metadata,
         including the location of the channels if flagged.
 
         it returns a dictionary like this for each image:
@@ -341,57 +425,24 @@ class TiffParamsHandler:
 
         try:
             with tiff.TiffFile(self.TIFF_dir / image_filename) as tif:
-                image_data = tif.asarray()
-                if self.TIFF_source == "nd2":
-                    image_metadata = self._get_tif_metadata_nd2(tif)
-                elif self.TIFF_source == "BioFormats / other TIFF":
-                    image_metadata = self._get_tif_metadata_filename(tif)
+                tif_params = analyze_image(
+                    tif, 
+                    planes, 
+                    self.TIFF_source, 
+                    find_channels, 
+                    self.phase_plane, 
+                    self.image_orientation, 
+                    self.image_rotation, 
+                    self.channel_width_pad, 
+                    self.channel_width, 
+                    self.channel_detection_snr, 
+                    self.channel_separation
+                )
 
-                if image_metadata["planes"] is None:
-                    image_metadata["planes"] = planes
+                information("Analyzed %s" % image_filename)
+                tif_params["filepath"] = self.TIFF_dir / image_filename
 
-                if find_channels:
-                    # fix the image orientation and get the number of planes
-
-                    image_data = fix_orientation(
-                        self.image_orientation, self.phase_plane, image_data
-                    )
-
-                    image_data = fix_rotation(
-                        self.image_rotation, image_data
-                    )
-
-                    # if the image data has more than 1 plane restrict image_data to phase,
-                    # which should have highest mean pixel data
-                    if len(image_data.shape) > 2:
-                        # ph_index = np.argmax([np.mean(image_data[ci]) for ci in range(image_data.shape[0])])
-                        ph_index = int(self.phase_plane[1:]) - 1
-                        image_data = image_data[ph_index]
-
-                    # get shape of single plane
-                    img_shape = [image_data.shape[0], image_data.shape[1]]
-
-                    # find channels on the processed image
-                    chnl_loc_dict = find_channel_locs(
-                        image_data,
-                        self.channel_width_pad,
-                        self.channel_width,
-                        self.channel_detection_snr,
-                        self.channel_separation
-                    )
-
-            information("Analyzed %s" % image_filename)
-
-            return {
-                "filepath": self.TIFF_dir / image_filename,
-                "fov": image_metadata["fov"],
-                "t": image_metadata["t"],
-                "jd": image_metadata["jd"],
-                "planes": image_metadata["planes"],
-                "shape": img_shape,
-                "channels": chnl_loc_dict,
-            }
-
+                return tif_params
         except:
             warning(f"Failed get_params for {image_filename}")
             information(sys.exc_info()[0])
@@ -446,68 +497,6 @@ class TiffParamsHandler:
                 analyzed_imgs[fn] = {"analyze_success": False}
 
         return analyzed_imgs
-
-    def _get_tif_metadata_nd2(self, tif: tiff.TiffFile) -> dict:
-        """This function pulls out the metadata from a tif file and returns it as a dictionary.
-        This if tiff files as exported by the mm3 function nd2ToTiff. All the metdata
-        is found in that script and saved in json format to the tiff, so it is simply extracted here
-
-        Paramters
-        ---------
-        tif: tiff.TiffFile
-            TIFF file object from which data will be extracted
-
-        Returns
-        -------
-        idata: dict
-            dictionary of values:
-                'fov': int,
-                't' : int,
-                'jdn' (float)
-                'planes' (list of strings)
-
-        """
-        # get the first page of the tiff and pull out image description
-        # this dictionary should be in the above form
-
-        for tag in tif.pages[0].tags:
-            if tag.name == "ImageDescription":
-                idata = tag.value
-                break
-
-        idata = json.loads(idata)
-        return idata
-
-    def _get_tif_metadata_filename(self, tif: tiff.TiffFile) -> dict:
-        """This function pulls out the metadata from a tif filename and returns it as a dictionary.
-        This just gets the tiff metadata from the filename and is a backup option when the known format of the metadata is not known.
-
-        Parameters
-        ---------
-        tif: tiff.TiffFile
-            TIFF file object from which data will be extracted
-
-        Returns
-        -------
-        idata: dict
-            dictionary of values:
-                'fov': int,
-                't' : int,
-                'jdn' (float)
-
-        Called by
-        get_tif_params
-
-        """
-        idata = {
-            "fov": get_fov(tif.filename),  # fov id
-            "t": get_time(tif.filename),  # time point
-            "jd": -1 * 0.0,  # absolute julian time
-            "planes": get_plane(tif.filename),
-        }
-
-        return idata
-
 
 ### class for dealing with cross-correlations, which are used to determine empty/full channels ###
 class CrossCorrelationHandler:
@@ -1133,7 +1122,8 @@ class ChannelSlicer:
             ]
         else:
             warning(
-                f"Image shape not recognized. Expected 2, 3, or 4 dimensions, found {image_data.ndim} dimensions with shape {image_data.shape}."
+                f"Image shape not recognized. Expected 2, 3, or 4 dimensions, " \
+                 "found {image_data.ndim} dimensions with shape {image_data.shape}."
             )
 
         # slice based on appropriate slicer object.
