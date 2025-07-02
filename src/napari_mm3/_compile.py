@@ -364,8 +364,7 @@ def analyze_image(
 
 
 def get_tif_params(
-    TIFF_dir,
-    image_filename: str,
+    image_path: Path,
     TIFF_source: str,
     phase_plane: str,
     image_orientation: str,
@@ -390,7 +389,7 @@ def get_tif_params(
     """
 
     try:
-        with tiff.TiffFile(TIFF_dir / image_filename) as tif:
+        with tiff.TiffFile(image_path) as tif:
             tif_params = analyze_image(
                 tif,
                 TIFF_source,
@@ -403,17 +402,17 @@ def get_tif_params(
                 channel_separation,
             )
 
-            information("Analyzed %s" % image_filename)
-            tif_params["filepath"] = TIFF_dir / image_filename
+            information("Analyzed %s" % image_path.name)
+            tif_params["filepath"] = image_path
 
             return tif_params
     except:
-        warning(f"Failed get_params for {image_filename}")
+        warning(f"Failed get_params for {image_path.name}")
         information(sys.exc_info()[0])
         information(sys.exc_info()[1])
         information(traceback.print_tb(sys.exc_info()[2]))
         return {
-            "filepath": TIFF_dir / image_filename,
+            "filepath": image_path,
             "analyze_success": False,
         }
 
@@ -421,7 +420,6 @@ def get_tif_params(
 def get_tif_params_loop(
     found_files: list,
     num_analyzers: int,
-    TIFF_dir: Path,
     TIFF_source: str,
     phase_plane: str,
     image_orientation: str,
@@ -453,7 +451,6 @@ def get_tif_params_loop(
         analyzed_imgs[fn] = pool.apply_async(
             get_tif_params,
             args=(
-                TIFF_dir,
                 fn,
                 TIFF_source,
                 phase_plane,
@@ -772,20 +769,16 @@ class ChannelSlicer:
                 image_data = tif.asarray()
 
             # channel finding was also done on images after orientation was fixed
+            phase_idx = int(find_phase_idx(image_data, self.phase_plane))
             image_data = fix_orientation(
-                image_data, self.phase_plane, self.image_orientation
+                image_data, phase_idx, self.image_orientation
             )
-
             image_data = fix_rotation(self.image_rotation, image_data)
-
             # add additional axis if the image is flat
             if len(image_data.shape) == 2:
                 image_data = np.expand_dims(image_data, 0)
-
             # change axis so it goes Y, X, Plane
             image_data = np.rollaxis(image_data, 0, 3)
-
-            # add it to list. The images should be in time order
             image_fov_stack.append(image_data)
 
         # concatenate the list into one big ass stack
@@ -1146,32 +1139,31 @@ def filter_files(
         filtered files for analysis.
 
     """
-    found_files = [filepath.name for filepath in found_files]
     found_files = sorted(found_files)  # should sort by timepoint
 
     # keep images starting at this timepoint
-    if t_start is not None:
+    if t_start:
         information("Removing images before time {}".format(t_start))
         # go through list and find first place where timepoint is equivalent to t_start
-        for n, ifile in enumerate(found_files):
+        for n, fpath in enumerate(found_files):
             string = re.compile(
                 "t{:0=3}xy|t{:0=4}xy".format(t_start, t_start), re.IGNORECASE
             )  # account for 3 and 4 digit
             # if re.search == True then a match was found
-            if re.search(string, ifile):
+            if re.search(string, fpath.name):
                 # cut off every file name prior to this one and quit the loop
                 found_files = found_files[n:]
                 break
 
     # remove images after this timepoint
-    if t_end is not None:
+    if t_end:
         information("Removing images after time {}".format(t_end))
         # go through list and find first place where timepoint is equivalent to t_end
-        for n, ifile in enumerate(found_files):
+        for n, fpath in enumerate(found_files):
             string = re.compile(
                 "t%03dxy|t%04dxy" % (t_end, t_end), re.IGNORECASE
             )  # account for 3 and 4 digit
-            if re.search(string, ifile):
+            if re.search(string, fpath.name):
                 found_files = found_files[:n]
                 break
 
@@ -1182,7 +1174,7 @@ def filter_files(
         for fov_id in user_spec_fovs:
             fov_string = re.compile("xy%02d|xy%03d" % (fov_id, fov_id), re.IGNORECASE)
             fitered_files += [
-                ifile for ifile in found_files if re.search(fov_string, ifile)
+                fpath for fpath in found_files if re.search(fov_string, fpath.name)
             ]
 
         found_files = fitered_files[:]
@@ -1344,7 +1336,6 @@ def compile(
             analyzed_imgs = get_tif_params_loop(
                 found_files,
                 num_analyzers,
-                TIFF_dir,
                 TIFF_source,
                 phase_plane,
                 image_orientation,
