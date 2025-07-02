@@ -373,130 +373,130 @@ def analyze_image(tif,
     }
 
 
+def get_tif_params(
+    TIFF_dir, 
+    image_filename: str, 
+    TIFF_source: str,
+    planes: list[str], 
+    find_channels: bool,
+    phase_plane: str,
+    image_orientation: str,
+    image_rotation: float,
+    channel_width_pad: int,
+    channel_width: int,
+    channel_detection_snr: float,
+    channel_separation: int,
+) -> dict:
+    """Loads a tiff file, pulls out the image data, and the metadata,
+    including the location of the channels if flagged.
 
-### Functions for working with TIFF metadata ###
+    it returns a dictionary like this for each image:
 
+    'filename': image_filename,
+    'fov' : image_metadata['fov'], # fov id
+    't' : image_metadata['t'], # time point
+    'jdn' : image_metadata['jdn'], # absolute julian time
+    'plane_names' : image_metadata['plane_names'] # list of plane names
+    'channels': cp_dict, # dictionary of channel locations, in the case of 
+                Unet-based channel segmentation, it's a dictionary of channel 
+                labels
+    """
 
-class TiffParamsHandler:
-    def __init__(
-        self,
-        TIFF_dir: Path,
-        TIFF_source: str,
-        channel_width: int,
-        channel_separation: int,
-        channel_width_pad: int,
-        channel_detection_snr: float,
-        phase_plane: str,
-        image_orientation: str,
-        image_rotation: float,
-    ):
-        self.TIFF_dir = TIFF_dir
-        self.TIFF_source = TIFF_source
-        self.channel_width = channel_width
-        self.channel_separation = channel_separation
-        self.channel_width_pad = channel_width_pad
-        self.channel_detection_snr = channel_detection_snr
-        self.phase_plane = phase_plane
-        self.image_orientation = image_orientation
-        self.image_rotation = image_rotation
-
-    def _get_tif_params(
-        self, image_filename: str, planes: list[str], find_channels: bool = True
-    ) -> dict:
-        """Loads a tiff file, pulls out the image data, and the metadata,
-        including the location of the channels if flagged.
-
-        it returns a dictionary like this for each image:
-
-        'filename': image_filename,
-        'fov' : image_metadata['fov'], # fov id
-        't' : image_metadata['t'], # time point
-        'jdn' : image_metadata['jdn'], # absolute julian time
-        'plane_names' : image_metadata['plane_names'] # list of plane names
-        'channels': cp_dict, # dictionary of channel locations, in the case of Unet-based channel segmentation, it's a dictionary of channel labels
-
-        Called by
-        compile
-
-        Calls
-        extract_metadata
-        find_channels
-        """
-
-        try:
-            with tiff.TiffFile(self.TIFF_dir / image_filename) as tif:
-                tif_params = analyze_image(
-                    tif, 
-                    planes, 
-                    self.TIFF_source, 
-                    find_channels, 
-                    self.phase_plane, 
-                    self.image_orientation, 
-                    self.image_rotation, 
-                    self.channel_width_pad, 
-                    self.channel_width, 
-                    self.channel_detection_snr, 
-                    self.channel_separation
-                )
-
-                information("Analyzed %s" % image_filename)
-                tif_params["filepath"] = self.TIFF_dir / image_filename
-
-                return tif_params
-        except:
-            warning(f"Failed get_params for {image_filename}")
-            information(sys.exc_info()[0])
-            information(sys.exc_info()[1])
-            information(traceback.print_tb(sys.exc_info()[2]))
-            return {
-                "filepath": self.TIFF_dir / image_filename,
-                "analyze_success": False,
-            }
-
-    def get_tif_params_loop(self, num_analyzers: int, found_files: list) -> dict:
-        """Loop over found files and extract image parameters.
-
-        Parameters
-        ----------
-        num_analyzers: int
-            Number of analyzers to use for multiprocessing.
-        found_files: list
-            List of tiff files to analyze.
-
-        Returns
-        --------
-        analyzed_imgs: dict
-            Dictionary of image metadata.
-        """
-
-        analyzed_imgs = {}
-        pool = Pool(num_analyzers)
-
-        for fn in found_files:
-            analyzed_imgs[fn] = pool.apply_async(
-                self._get_tif_params,
-                args=(
-                    fn,
-                    [],
-                    True,
-                ),
+    try:
+        with tiff.TiffFile(TIFF_dir / image_filename) as tif:
+            tif_params = analyze_image(
+                tif, 
+                planes, 
+                TIFF_source, 
+                find_channels, 
+                phase_plane, 
+                image_orientation, 
+                image_rotation, 
+                channel_width_pad, 
+                channel_width, 
+                channel_detection_snr, 
+                channel_separation
             )
 
-        information("Waiting for image analysis pool to be finished.")
+            information("Analyzed %s" % image_filename)
+            tif_params["filepath"] = TIFF_dir / image_filename
 
-        pool.close()
-        pool.join()
+            return tif_params
+    except:
+        warning(f"Failed get_params for {image_filename}")
+        information(sys.exc_info()[0])
+        information(sys.exc_info()[1])
+        information(traceback.print_tb(sys.exc_info()[2]))
+        return {
+            "filepath": TIFF_dir / image_filename,
+            "analyze_success": False,
+        }
 
-        information("Image analysis pool finished, getting results.")
+def get_tif_params_loop(
+    found_files: list, 
+    num_analyzers: int,
+    TIFF_dir: Path,
+    TIFF_source: str,
+    phase_plane: str,
+    image_orientation: str,
+    image_rotation: float,
+    channel_width_pad: int,
+    channel_width: int,
+    channel_detection_snr: float,
+    channel_separation: int
+) -> dict:
+    """Loop over found files and extract image parameters.
 
-        for fn in analyzed_imgs.keys():
-            result = analyzed_imgs[fn]
-            if result.successful():
-                analyzed_imgs[fn] = result.get()
-            else:
-                analyzed_imgs[fn] = {"analyze_success": False}
+    Parameters
+    ----------
+    num_analyzers: int
+        Number of analyzers to use for multiprocessing.
+    found_files: list
+        List of tiff files to analyze.
 
-        return analyzed_imgs
+    Returns
+    --------
+    analyzed_imgs: dict
+        Dictionary of image metadata.
+    """
+
+    analyzed_imgs = {}
+    pool = Pool(num_analyzers)
+
+    for fn in found_files:
+        analyzed_imgs[fn] = pool.apply_async(
+            get_tif_params,
+            args=(
+                TIFF_dir,
+                fn,
+                TIFF_source,
+                [], # planes = 
+                True, # find_channels = 
+                phase_plane,
+                image_orientation,
+                image_rotation,
+                channel_width_pad,
+                channel_width,
+                channel_detection_snr,
+                channel_separation
+            ),
+        )
+
+    information("Waiting for image analysis pool to be finished.")
+
+    pool.close()
+    pool.join()
+
+    information("Image analysis pool finished, getting results.")
+
+    for fn in analyzed_imgs.keys():
+        result = analyzed_imgs[fn]
+        if result.successful():
+            analyzed_imgs[fn] = result.get()
+        else:
+            analyzed_imgs[fn] = {"analyze_success": False}
+
+    return analyzed_imgs
 
 ### class for dealing with cross-correlations, which are used to determine empty/full channels ###
 class CrossCorrelationHandler:
@@ -1353,20 +1353,18 @@ def compile(
         found_files = list(TIFF_dir.glob("*.tif"))
         found_files = filter_files(found_files, t_start, t_end, FOVs)
         if len(found_files) > 0:
-            params_handler = TiffParamsHandler(
+            analyzed_imgs = get_tif_params_loop(
+                found_files,
+                num_analyzers,
                 TIFF_dir,
                 TIFF_source,
-                channel_width,
-                channel_separation,
-                channel_width_pad,
-                channel_detection_snr,
                 phase_plane,
                 image_orientation,
                 image_rotation,
-            )
-
-            analyzed_imgs = params_handler.get_tif_params_loop(
-                num_analyzers, found_files
+                channel_width_pad,
+                channel_width,
+                channel_detection_snr,
+                channel_separation
             )
         else:
             information("No files found.")
