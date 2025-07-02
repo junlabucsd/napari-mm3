@@ -282,14 +282,12 @@ def find_channel_locs(
 
 
 def get_tif_metadata_filename(tif: tiff.TiffFile) -> dict:
-    idata = {
+    return {
         "fov": get_fov(tif.filename),  # fov id
         "t": get_time(tif.filename),  # time point
         "jd": -1 * 0.0,  # absolute julian time
         "planes": get_plane(tif.filename),
     }
-
-    return idata
 
 
 def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
@@ -369,7 +367,6 @@ def get_tif_params(
     TIFF_dir,
     image_filename: str,
     TIFF_source: str,
-    planes: list[str],
     phase_plane: str,
     image_orientation: str,
     image_rotation: float,
@@ -396,7 +393,6 @@ def get_tif_params(
         with tiff.TiffFile(TIFF_dir / image_filename) as tif:
             tif_params = analyze_image(
                 tif,
-                planes,
                 TIFF_source,
                 phase_plane,
                 image_orientation,
