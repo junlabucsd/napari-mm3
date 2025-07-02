@@ -46,6 +46,9 @@ class CompileParams:
     image_orientation: str
     image_rotation: float
 
+
+## IMAGE ORDER: FOV, phase plane, time, y, x. THIS IS NON-NEGOTIABLE
+
 #### Helpful utility functions.
 def get_plane(filepath: str) -> Union[str, None]:
     """Extracts the plane / channel number (e.g. phase fluorescence etc.) from a tiff file name.
@@ -106,8 +109,6 @@ def merge_split_channels(TIFF_dir: Path) -> None:
     else:
         pass
 
-    return None
-
 
 def stack_channels(found_files: np.ndarray, TIFF_dir: Path) -> None:
     """Check if phase and fluorescence channels are separate tiffs.
@@ -145,8 +146,6 @@ def stack_channels(found_files: np.ndarray, TIFF_dir: Path) -> None:
         for f in files:
             os.rename(f, old_tiff_path / Path(f).name)
 
-    return
-
 
 def fix_rotation(angle: float, image_data: np.ndarray) -> np.ndarray:
     print("rotating")
@@ -165,25 +164,9 @@ def fix_orientation(
 ) -> np.ndarray:
     """
     Fix the orientation. The standard direction for channels to open to is down.
-
-    Parameters
-    ----------
-    image_orientation : str
-        The desired image orientation ('auto', 'up', 'down').
-    phase_plane : str
-        The phase plane channel identifier.
-    image_data : np.ndarray
-        The image data to be oriented.
-
-    Returns
-    -------
-    np.ndarray
-        The oriented image data.
     """
 
-    image_data = np.squeeze(
-        image_data
-    )  # remove singleton dimensions to standardize shape
+    image_data = np.squeeze( image_data)  # remove singleton dimensions 
 
     # if this is just a phase image give in an extra layer so rest of code is fine
     flat = False  # flag for if the image is flat or multiple levels
@@ -224,6 +207,86 @@ def fix_orientation(
         image_data = image_data[0]  # just return that first layer
 
     return image_data
+
+
+# finds the location of channels in a tif
+def find_channel_locs(
+        image_data: np.ndarray,
+        channel_width_pad: int, 
+        channel_width: int,
+        channel_detection_snr: float,
+        channel_separation: int,
+    ) -> dict:
+    """Finds the location of channels from a phase contrast image. The channels are returned in
+    a dictionary where the key is the x position of the channel in pixel and the value is a
+    dictionary with the open and closed end in pixels in y.
+
+    Parameters
+    ----------
+    image_data : np.ndarray
+        The image data.
+
+    Returns
+    -------
+    chnl_loc_dict : dict
+        Dictionary with the channel locations.
+
+    Called by
+    get_tif_params
+    """
+
+    crop_wp = int(channel_width_pad + channel_width / 2)
+    projection_x = image_data.sum(axis=0).astype(np.int32)
+    peaks = find_peaks_cwt(
+        projection_x, 
+        np.arange(channel_width - 5, channel_width + 5), 
+        min_snr=channel_detection_snr #type: ignore
+    )
+
+    # if the first or last peaks are close to the margins, ignore them.
+    image_height, image_width = image_data.shape[0], image_data.shape[1]
+    if peaks[0] < (channel_separation / 2):
+        peaks = peaks[1:]
+    if image_width - peaks[-1] < (channel_separation / 2):
+        peaks = peaks[:-1]
+
+    # assume the closed end is in the upper third and open in 
+    # the lower third, respectively. Find them.
+    projection_y = image_data.sum(axis=1)
+    proj_diff = np.diff(projection_y.astype(np.int32))
+    onethirdpoint = int(image_height / 3.0)
+    twothirdpoint = int(image_height * 2.0 / 3.0)
+    default_closed_end = proj_diff[:onethirdpoint].argmax()
+    default_open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
+    default_length = default_open_end - default_closed_end
+
+    chnl_loc_dict = {}
+    for peak in peaks:
+        chnl_loc_dict[peak] = {
+            "closed_end_px": default_closed_end,
+            "open_end_px": default_open_end,
+        }
+        channel_slice = image_data[:, peak - crop_wp : peak + crop_wp]
+        slice_projection_y = channel_slice.sum(axis=1)
+        proj_diff = np.diff(slice_projection_y.astype(np.int32))
+        slice_closed_end = proj_diff[:onethirdpoint].argmax()
+        slice_open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
+        slice_length = slice_open_end - slice_closed_end
+
+
+        image_height = image_data.shape[0]
+        if (
+            abs(slice_length - default_length) <= 15
+            and 15 <= slice_closed_end <= image_height - 15
+            and 15 <= slice_open_end <= image_height - 15
+        ):
+            chnl_loc_dict[peak] = {
+                "closed_end_px": slice_closed_end,
+                "open_end_px": slice_open_end,
+            }
+
+    return chnl_loc_dict
+
 
 
 ### Functions for working with TIFF metadata ###
@@ -309,8 +372,12 @@ class TiffParamsHandler:
                     img_shape = [image_data.shape[0], image_data.shape[1]]
 
                     # find channels on the processed image
-                    chnl_loc_dict = self._find_channel_locs(
+                    chnl_loc_dict = find_channel_locs(
                         image_data,
+                        self.channel_width_pad,
+                        self.channel_width,
+                        self.channel_detection_snr,
+                        self.channel_separation
                     )
 
             information("Analyzed %s" % image_filename)
@@ -440,93 +507,6 @@ class TiffParamsHandler:
         }
 
         return idata
-
-    # finds the location of channels in a tif
-    def _find_channel_locs(self, image_data: np.ndarray) -> dict:
-        """Finds the location of channels from a phase contrast image. The channels are returned in
-        a dictionary where the key is the x position of the channel in pixel and the value is a
-        dictionary with the open and closed end in pixels in y.
-
-        Parameters
-        ----------
-        image_data : np.ndarray
-            The image data.
-
-        Returns
-        -------
-        chnl_loc_dict : dict
-            Dictionary with the channel locations.
-
-        Called by
-        get_tif_params
-        """
-
-        def find_peaks(projection: np.ndarray, width: int, snr: float) -> list:
-            return find_peaks_cwt(
-                projection, np.arange(width - 5, width + 5), min_snr=snr
-            )
-
-        def filter_peaks(peaks: list, separation: int, image_width: int) -> list:
-            if peaks[0] < (separation / 2):
-                peaks = peaks[1:]
-            if image_width - peaks[-1] < (separation / 2):
-                peaks = peaks[:-1]
-            return peaks
-
-        def find_channel_ends(projection: np.ndarray) -> tuple:
-            proj_diff = np.diff(projection.astype(np.int32))
-            onethirdpoint = int(projection.shape[0] / 3.0)
-            twothirdpoint = int(projection.shape[0] * 2.0 / 3.0)
-            closed_end = proj_diff[:onethirdpoint].argmax()
-            open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
-            return closed_end, open_end
-
-        def is_valid_channel(
-            slice_length: int,
-            default_length: int,
-            closed_end: int,
-            open_end: int,
-            image_height: int,
-        ) -> bool:
-            return (
-                abs(slice_length - default_length) <= 15
-                and 15 <= closed_end <= image_height - 15
-                and 15 <= open_end <= image_height - 15
-            )
-
-        crop_wp = int(self.channel_width_pad + self.channel_width / 2)
-        projection_x = image_data.sum(axis=0).astype(np.int32)
-        peaks = find_peaks(projection_x, self.channel_width, self.channel_detection_snr)
-        peaks = filter_peaks(peaks, self.channel_separation, image_data.shape[1])
-
-        projection_y = image_data.sum(axis=1)
-        default_closed_end, default_open_end = find_channel_ends(projection_y)
-        default_length = default_open_end - default_closed_end
-
-        chnl_loc_dict = {}
-        for peak in peaks:
-            chnl_loc_dict[peak] = {
-                "closed_end_px": default_closed_end,
-                "open_end_px": default_open_end,
-            }
-            channel_slice = image_data[:, peak - crop_wp : peak + crop_wp]
-            slice_projection_y = channel_slice.sum(axis=1)
-            slice_closed_end, slice_open_end = find_channel_ends(slice_projection_y)
-            slice_length = slice_open_end - slice_closed_end
-
-            if is_valid_channel(
-                slice_length,
-                default_length,
-                slice_closed_end,
-                slice_open_end,
-                image_data.shape[0],
-            ):
-                chnl_loc_dict[peak] = {
-                    "closed_end_px": slice_closed_end,
-                    "open_end_px": slice_open_end,
-                }
-
-        return chnl_loc_dict
 
 
 ### class for dealing with cross-correlations, which are used to determine empty/full channels ###
