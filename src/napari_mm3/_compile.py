@@ -19,7 +19,14 @@ from dataclasses import dataclass
 from pprint import pprint
 from scipy.ndimage import rotate
 from scipy.signal import find_peaks_cwt
-from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, ComboBox, CheckBox, Slider
+from magicgui.widgets import (
+    FloatSpinBox,
+    SpinBox,
+    PushButton,
+    ComboBox,
+    CheckBox,
+    Slider,
+)
 from napari import Viewer
 from napari.utils import progress
 from ._deriving_widgets import (
@@ -38,6 +45,7 @@ from .utils import TIFF_FILE_FORMAT_PEAK
 @dataclass
 class CompileParams:
     """Class for keeping track of an item in inventory."""
+
     channel_width: int
     channel_separation: int
     channel_width_pad: int
@@ -48,6 +56,7 @@ class CompileParams:
 
 
 ## IMAGE ORDER: FOV, phase plane, time, y, x. THIS IS NON-NEGOTIABLE
+
 
 #### Helpful utility functions.
 def get_plane(filepath: str) -> Union[str, None]:
@@ -151,72 +160,67 @@ def fix_rotation(angle: float, image_data: np.ndarray) -> np.ndarray:
     print("rotating")
     if angle == 0:
         return image_data
-    
+
     if len(image_data.shape) == 2:
         image_data = np.expand_dims(image_data, 0)
 
-    return rotate(image_data, angle, axes=(2,1))
+    return rotate(image_data, angle, axes=(2, 1))
 
 
 # define function for flipping the images on an FOV by FOV basis
 def fix_orientation(
-    image_orientation: str, phase_plane: str, image_data: np.ndarray
+    image_data: np.ndarray, phase_idx: int, image_orientation: str
 ) -> np.ndarray:
     """
     Fix the orientation. The standard direction for channels to open to is down.
     """
 
-    image_data = np.squeeze( image_data)  # remove singleton dimensions 
+    image_data = np.squeeze(image_data)  # remove singleton dimensions
 
     # if this is just a phase image give in an extra layer so rest of code is fine
-    flat = False  # flag for if the image is flat or multiple levels
+    flat = False
     if len(image_data.shape) == 2:
         image_data = np.expand_dims(image_data, 0)
         flat = True
 
-    # setting image_orientation to 'auto' will use autodetection
-    if image_orientation == "auto":
-        # use 'phase_plane' to find the phase plane in image_data, assuming c1, c2, c3... naming scheme here.
-        try:
-            ph_channel = int(re.search("[0-9]", phase_plane).group(0)) - 1
-        except:
-            # Pick the plane to analyze with the highest mean px value (should be phase)
-            ph_channel = np.argmax(
-                [np.mean(image_data[ci]) for ci in range(image_data.shape[0])]
-            )
-
-        # flip based on the index of the highest average row value
-        # this should be closer to the opening
-        if (
-            np.argmax(image_data[ph_channel].mean(axis=1))
-            < image_data[ph_channel].shape[0] / 2
-        ):
-            image_data = image_data[:, ::-1, :]
-        else:
-            pass  # no need to do anything
-
-    # flip if up is chosen
-    elif image_orientation == "up":
+    if image_orientation == "up":
         return image_data[:, ::-1, :]
-
-    # do not flip the images if "down" is the specified image orientation
     elif image_orientation == "down":
         pass
+    elif image_orientation == "auto":
+        # flip based on the index of the highest average row value
+        brightest_row = np.argmax(image_data[phase_idx].mean(axis=1))
+        midline = image_data[phase_idx].shape[0] / 2
+        if brightest_row < midline:
+            image_data = image_data[:, ::-1, :]
+        else:
+            pass
 
+    # just return that first layer if it's that single phase layer.
     if flat:
-        image_data = image_data[0]  # just return that first layer
+        image_data = image_data[0]
 
     return image_data
 
 
+def find_phase_idx(image_data: np.ndarray, phase_plane: str):
+    # use 'phase_plane' to find the phase plane in image_data, assuming c1, c2, c3... naming scheme here.
+    try:
+        return int(re.search("[0-9]", phase_plane).group(0)) - 1
+    except:
+        # Pick the plane to analyze with the highest mean px value (should be phase)
+        average_channel_brightness = np.mean(image_data, axis=range(1, image_data.ndim))
+        return np.argmax(average_channel_brightness)
+
+
 # finds the location of channels in a tif
 def find_channel_locs(
-        image_data: np.ndarray,
-        channel_width_pad: int, 
-        channel_width: int,
-        channel_detection_snr: float,
-        channel_separation: int,
-    ) -> dict:
+    phase_data: np.ndarray,
+    channel_width_pad: int,
+    channel_width: int,
+    channel_detection_snr: float,
+    channel_separation: int,
+) -> dict:
     """Finds the location of channels from a phase contrast image. The channels are returned in
     a dictionary where the key is the x position of the channel in pixel and the value is a
     dictionary with the open and closed end in pixels in y.
@@ -226,23 +230,23 @@ def find_channel_locs(
     """
 
     crop_wp = int(channel_width_pad + channel_width / 2)
-    projection_x = image_data.sum(axis=0).astype(np.int32)
+    projection_x = phase_data.sum(axis=0).astype(np.int32)
     peaks = find_peaks_cwt(
-        projection_x, 
-        np.arange(channel_width - 5, channel_width + 5), 
-        min_snr=channel_detection_snr #type: ignore
+        projection_x,
+        np.arange(channel_width - 5, channel_width + 5),
+        min_snr=channel_detection_snr,  # type: ignore
     )
 
     # if the first or last peaks are close to the margins, ignore them.
-    image_height, image_width = image_data.shape[0], image_data.shape[1]
+    image_height, image_width = phase_data.shape[0], phase_data.shape[1]
     if peaks[0] < (channel_separation / 2):
         peaks = peaks[1:]
     if image_width - peaks[-1] < (channel_separation / 2):
         peaks = peaks[:-1]
 
-    # assume the closed end is in the upper third and open in 
+    # assume the closed end is in the upper third and open in
     # the lower third, respectively. Find them.
-    projection_y = image_data.sum(axis=1)
+    projection_y = phase_data.sum(axis=1)
     proj_diff = np.diff(projection_y.astype(np.int32))
     onethirdpoint = int(image_height / 3.0)
     twothirdpoint = int(image_height * 2.0 / 3.0)
@@ -256,15 +260,14 @@ def find_channel_locs(
             "closed_end_px": default_closed_end,
             "open_end_px": default_open_end,
         }
-        channel_slice = image_data[:, peak - crop_wp : peak + crop_wp]
+        channel_slice = phase_data[:, peak - crop_wp : peak + crop_wp]
         slice_projection_y = channel_slice.sum(axis=1)
         proj_diff = np.diff(slice_projection_y.astype(np.int32))
         slice_closed_end = proj_diff[:onethirdpoint].argmax()
         slice_open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
         slice_length = slice_open_end - slice_closed_end
 
-
-        image_height = image_data.shape[0]
+        image_height = phase_data.shape[0]
         if (
             abs(slice_length - default_length) <= 15
             and 15 <= slice_closed_end <= image_height - 15
@@ -288,9 +291,11 @@ def get_tif_metadata_filename(tif: tiff.TiffFile) -> dict:
 
     return idata
 
+
 def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
-    """This function pulls out the metadata from a tif file and returns it as a dictionary.
-    All the metdata is found in that script and saved in json format to the tiff, so it is simply extracted here
+    """
+    Run when TIFF files originated with an nd2.
+    All the metdata is found in Nd2ToTIFF and saved in json format to the tiff; it is simply extracted here
 
     Returns
     -------
@@ -298,13 +303,10 @@ def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
         dictionary of values:
             'fov': int,
             't' : int,
-            'jdn' (float)
             'planes' (list of strings)
 
     """
     # get the first page of the tiff and pull out image description
-    # this dictionary should be in the above form
-
     for tag in tif.pages[0].tags:
         if tag.name == "ImageDescription":
             idata = tag.value
@@ -313,72 +315,61 @@ def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
     idata = json.loads(idata)
     return idata
 
-def analyze_image(tif, 
-                  planes: list[str],
-                  TIFF_source: str, 
-                  find_channels: bool, 
-                  phase_plane: str, 
-                  image_orientation: str, 
-                  image_rotation: float,
-                  channel_width_pad: int, 
-                  channel_width: int, 
-                  channel_detection_snr: float, 
-                  channel_separation: int):
-    image_data = tif.asarray()
+
+def analyze_image(
+    tif,
+    TIFF_source: str,
+    phase_plane: str,
+    image_orientation: str,
+    image_rotation: float,
+    channel_width_pad: int,
+    channel_width: int,
+    channel_detection_snr: float,
+    channel_separation: int,
+):
     if TIFF_source == "nd2":
         image_metadata = get_tif_metadata_nd2(tif)
     elif TIFF_source == "BioFormats / other TIFF":
         image_metadata = get_tif_metadata_filename(tif)
 
-    if image_metadata["planes"] is None:
-        image_metadata["planes"] = planes
+    # fix the image orientation and get the number of planes
+    image_data = tif.asarray()
+    phase_idx = int(find_phase_idx(image_data, phase_plane))
+    image_data = fix_rotation(image_rotation, image_data)
+    image_data = fix_orientation(image_data, phase_idx, image_orientation)
 
-    if find_channels:
-        # fix the image orientation and get the number of planes
+    img_shape = [image_data.shape[0], image_data.shape[1]]  # type: ignore
 
-        image_data = fix_orientation(
-            image_orientation, phase_plane, image_data
-        )
-
-        image_data = fix_rotation(
-            image_rotation, image_data
-        )
-
-        # if the image data has more than 1 plane restrict image_data to phase,
-        # which should have highest mean pixel data
-        if len(image_data.shape) > 2:
-            # ph_index = np.argmax([np.mean(image_data[ci]) for ci in range(image_data.shape[0])])
-            ph_index = int(phase_plane[1:]) - 1
-            image_data = image_data[ph_index]
-
-        # get shape of single plane
-        img_shape = [image_data.shape[0], image_data.shape[1]] # type: ignore
-
-        # find channels on the processed image
-        chnl_loc_dict = find_channel_locs(
-            image_data,
-            channel_width_pad,
-            channel_width,
-            channel_detection_snr,
-            channel_separation
-        )
-
-    return {
+    image_metadata = {
         "fov": image_metadata["fov"],
         "t": image_metadata["t"],
-        "jd": image_metadata["jd"],
         "planes": image_metadata["planes"],
         "shape": img_shape,
-        "channels": chnl_loc_dict,
     }
+
+    # if the image data has more than 1 plane restrict image_data to phase,
+    # which should have highest mean pixel data
+    if len(image_data.shape) > 2:
+        ph_index = int(phase_plane[1:]) - 1
+        phase_data = image_data[ph_index]
+
+    # find channels on the processed image
+    image_metadata["chnl_loc_dict"] = find_channel_locs(
+        phase_data,
+        channel_width_pad,
+        channel_width,
+        channel_detection_snr,
+        channel_separation,
+    )
+
+    return image_metadata
 
 
 def get_tif_params(
-    TIFF_dir, 
-    image_filename: str, 
+    TIFF_dir,
+    image_filename: str,
     TIFF_source: str,
-    planes: list[str], 
-    find_channels: bool,
+    planes: list[str],
     phase_plane: str,
     image_orientation: str,
     image_rotation: float,
@@ -395,27 +386,25 @@ def get_tif_params(
     'filename': image_filename,
     'fov' : image_metadata['fov'], # fov id
     't' : image_metadata['t'], # time point
-    'jdn' : image_metadata['jdn'], # absolute julian time
     'plane_names' : image_metadata['plane_names'] # list of plane names
-    'channels': cp_dict, # dictionary of channel locations, in the case of 
-                Unet-based channel segmentation, it's a dictionary of channel 
+    'channels': cp_dict, # dictionary of channel locations, in the case of
+                Unet-based channel segmentation, it's a dictionary of channel
                 labels
     """
 
     try:
         with tiff.TiffFile(TIFF_dir / image_filename) as tif:
             tif_params = analyze_image(
-                tif, 
-                planes, 
-                TIFF_source, 
-                find_channels, 
-                phase_plane, 
-                image_orientation, 
-                image_rotation, 
-                channel_width_pad, 
-                channel_width, 
-                channel_detection_snr, 
-                channel_separation
+                tif,
+                planes,
+                TIFF_source,
+                phase_plane,
+                image_orientation,
+                image_rotation,
+                channel_width_pad,
+                channel_width,
+                channel_detection_snr,
+                channel_separation,
             )
 
             information("Analyzed %s" % image_filename)
@@ -432,8 +421,9 @@ def get_tif_params(
             "analyze_success": False,
         }
 
+
 def get_tif_params_loop(
-    found_files: list, 
+    found_files: list,
     num_analyzers: int,
     TIFF_dir: Path,
     TIFF_source: str,
@@ -443,7 +433,7 @@ def get_tif_params_loop(
     channel_width_pad: int,
     channel_width: int,
     channel_detection_snr: float,
-    channel_separation: int
+    channel_separation: int,
 ) -> dict:
     """Loop over found files and extract image parameters.
 
@@ -470,15 +460,13 @@ def get_tif_params_loop(
                 TIFF_dir,
                 fn,
                 TIFF_source,
-                [], # planes = 
-                True, # find_channels = 
                 phase_plane,
                 image_orientation,
                 image_rotation,
                 channel_width_pad,
                 channel_width,
                 channel_detection_snr,
-                channel_separation
+                channel_separation,
             ),
         )
 
@@ -497,6 +485,7 @@ def get_tif_params_loop(
             analyzed_imgs[fn] = {"analyze_success": False}
 
     return analyzed_imgs
+
 
 ### class for dealing with cross-correlations, which are used to determine empty/full channels ###
 class CrossCorrelationHandler:
@@ -533,7 +522,12 @@ class CrossCorrelationHandler:
         pad_size = self.alignment_pad
         number_of_images = 20
         # switch postfix to c1/c2/c3 auto??
-        img_filename = TIFF_FILE_FORMAT_PEAK % (self.experiment_name, fov_id, peak_id, self.phase_plane)
+        img_filename = TIFF_FILE_FORMAT_PEAK % (
+            self.experiment_name,
+            fov_id,
+            peak_id,
+            self.phase_plane,
+        )
         image_data = load_tiff(self.ana_dir / "channels" / img_filename)
 
         if image_data.shape[0] > number_of_images:
@@ -783,12 +777,10 @@ class ChannelSlicer:
 
             # channel finding was also done on images after orientation was fixed
             image_data = fix_orientation(
-                self.image_orientation, self.phase_plane, image_data
+                image_data, self.phase_plane, self.image_orientation
             )
 
-            image_data = fix_rotation(
-                self.image_rotation, image_data
-            )
+            image_data = fix_rotation(self.image_rotation, image_data)
 
             # add additional axis if the image is flat
             if len(image_data.shape) == 2:
@@ -1057,7 +1049,7 @@ class ChannelSlicer:
                 if v["fov"] == fov
             ]
 
-            # sort the filenames by jdn
+            # sort the filenames by time
             send_to_write = progress(sorted(send_to_write, key=lambda time: time[1]))
 
             # This is for loading the whole raw tiff stack and then slicing through it
@@ -1122,8 +1114,8 @@ class ChannelSlicer:
             ]
         else:
             warning(
-                f"Image shape not recognized. Expected 2, 3, or 4 dimensions, " \
-                 "found {image_data.ndim} dimensions with shape {image_data.shape}."
+                f"Image shape not recognized. Expected 2, 3, or 4 dimensions, "
+                "found {image_data.ndim} dimensions with shape {image_data.shape}."
             )
 
         # slice based on appropriate slicer object.
@@ -1364,7 +1356,7 @@ def compile(
                 channel_width_pad,
                 channel_width,
                 channel_detection_snr,
-                channel_separation
+                channel_separation,
             )
         else:
             information("No files found.")
@@ -1475,7 +1467,6 @@ class Compile(MM3Container):
         self.channel_orientation_widget.changed.connect(self.set_channel_orientation)
         self.image_rotation_widget.changed.connect(self.set_image_rotation)
 
-
         self.append(self.fov_widget)
         self.append(self.image_source_widget)
         self.append(self.split_channels_widget)
@@ -1540,7 +1531,7 @@ class Compile(MM3Container):
             )
         else:
             image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
-        image_fov_stack = np.squeeze(image_fov_stack)  ## remove axes of length 1 for napari viewer
+        image_fov_stack = np.squeeze(image_fov_stack)
         images = self.viewer.add_image(image_fov_stack.astype(np.float32))
         self.viewer.dims.current_step = (0, 0)
         images.reset_contrast_limits()
