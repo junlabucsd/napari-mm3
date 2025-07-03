@@ -599,6 +599,34 @@ class CrossCorrelationHandler:
         information("Wrote cross correlations files.")
 
 
+def load_channel_masks(ana_dir: Path) -> dict:
+    """Load channel masks dictionary. Should be .yaml but try pickle too.
+
+    Returns
+    -------
+    channel_masks: dict
+        dictionary of channel masks
+    """
+    information("Loading channel masks dictionary.")
+
+    # try loading from .yaml before .pkl
+    try:
+        information("Path:", ana_dir / "channel_masks.yaml")
+        with (ana_dir / "channel_masks.yaml").open("r") as cmask_file:
+            channel_masks = yaml.safe_load(cmask_file)
+    except:
+        warning("Could not load channel masks dictionary from .yaml.")
+
+        try:
+            information("Path:", ana_dir / "channel_masks.pkl")
+            with (ana_dir / "channel_masks.pkl").open("rb") as cmask_file:
+                channel_masks = pickle.load(cmask_file)
+        except ValueError:
+            warning("Could not load channel masks dictionary from .pkl.")
+
+    return channel_masks
+
+
 ### class for trimming, padding, and manipulating images
 class ChannelSlicer:
     def __init__(
@@ -726,10 +754,6 @@ class ChannelSlicer:
         # save the channel mask dictionary to a yaml and a text file
         with open(os.path.join(self.ana_dir, "channel_masks.txt"), "w") as cmask_file:
             pprint(cm_copy, stream=cmask_file)
-        with open(os.path.join(self.ana_dir, "channel_masks.yaml"), "w") as cmask_file:
-            yaml.dump(
-                data=cm_copy, stream=cmask_file, default_flow_style=False, tags=None
-            )
 
         information("Channel masks saved.")
 
@@ -770,9 +794,7 @@ class ChannelSlicer:
 
             # channel finding was also done on images after orientation was fixed
             phase_idx = int(find_phase_idx(image_data, self.phase_plane))
-            image_data = fix_orientation(
-                image_data, phase_idx, self.image_orientation
-            )
+            image_data = fix_orientation(image_data, phase_idx, self.image_orientation)
             image_data = fix_rotation(self.image_rotation, image_data)
             # add additional axis if the image is flat
             if len(image_data.shape) == 2:
@@ -981,37 +1003,6 @@ class ChannelSlicer:
         cm_copy = [list(map(int, i)) for i in cm_copy]  # make sure they are ints
 
         return cm_copy
-
-    def load_channel_masks(self) -> dict:
-        """Load channel masks dictionary. Should be .yaml but try pickle too.
-
-        Returns
-        -------
-        channel_masks: dict
-            dictionary of channel masks
-        """
-        information("Loading channel masks dictionary.")
-
-        # try loading from .yaml before .pkl
-        try:
-            information("Path:", os.path.join(self.ana_dir, "channel_masks.yaml"))
-            with open(
-                os.path.join(self.ana_dir, "channel_masks.yaml"), "r"
-            ) as cmask_file:
-                channel_masks = yaml.safe_load(cmask_file)
-        except:
-            warning("Could not load channel masks dictionary from .yaml.")
-
-            try:
-                information("Path:", os.path.join(self.ana_dir, "channel_masks.pkl"))
-                with open(
-                    os.path.join(self.ana_dir, "channel_masks.pkl"), "rb"
-                ) as cmask_file:
-                    channel_masks = pickle.load(cmask_file)
-            except ValueError:
-                warning("Could not load channel masks dictionary from .pkl.")
-
-        return channel_masks
 
     def slice_channels(self, user_spec_fovs: list):
         """Loops over FOVs and slices individual traps for analysis.
@@ -1350,8 +1341,6 @@ def compile(
             return
 
         information("Saving metadata from analyzed images...")
-        with open(os.path.join(ana_dir, "TIFF_metadata.pkl"), "wb") as tiff_metadata:
-            pickle.dump(analyzed_imgs, tiff_metadata, protocol=pickle.HIGHEST_PROTOCOL)
         with open(os.path.join(ana_dir, "TIFF_metadata.txt"), "w") as tiff_metadata:
             pprint(analyzed_imgs, stream=tiff_metadata)
         information("Saved metadata from analyzed images.")
@@ -1374,7 +1363,7 @@ def compile(
     if do_channel_masks:
         channel_masks = slice_handler.make_masks()
     else:
-        channel_masks = slice_handler.load_channel_masks()
+        channel_masks = load_channel_masks(ana_dir)
 
     if do_slicing:
         information("Saving channel slices.")
