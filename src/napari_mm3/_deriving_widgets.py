@@ -9,6 +9,7 @@ from magicgui.widgets import (
 )
 from pathlib import Path
 from .utils import TIFF_FILE_FORMAT_PEAK
+from magicgui.types import FileDialogMode
 import h5py
 import pickle
 import yaml
@@ -113,7 +114,7 @@ def get_valid_planes(TIFF_folder):
     elif dim == 2:
         pattern = r"(c\d+)"
         num_channels = len(
-            set([re.search(pattern, str(f), re.IGNORECASE).group(1) for f in filepaths])
+            set([re.search(pattern, str(f), re.IGNORECASE).group(1) for f in filepaths]) # type:ignore
         )
     else:
         raise ValueError(f"Expected 2 or 3 dimensions but found {dim}.")
@@ -239,13 +240,13 @@ class MM3Container(Container):
         self.validate_folders = validate_folders
 
         self.analysis_folder_widget = FileEdit(
-            mode="d",
+            mode=FileDialogMode.EXISTING_DIRECTORY,
             label="analysis folder",
             tooltip="Required. Location for outputting analysis. If in doubt, leave as default.",
             value=Path(".") / "analysis",
         )
         self.TIFF_folder_widget = FileEdit(
-            mode="d",
+            mode=FileDialogMode.EXISTING_DIRECTORY,
             label="TIFF folder",
             tooltip="Required. Location for the input images. If in doubt, leave as default.",
             value=Path(".") / "TIFF",
@@ -340,13 +341,13 @@ class MM3Container(Container):
             self.pop()
 
     def _set_analysis_folder(self):
-        self.analysis_folder = self.analysis_folder_widget.value
+        self.analysis_folder = Path(self.analysis_folder_widget.value) # type:ignore
 
     def _set_experiment_name(self):
-        self.experiment_name = self.experiment_name_widget.value
+        self.experiment_name = str(self.experiment_name_widget.value) # type:ignore
 
     def _set_TIFF_folder(self):
-        self.TIFF_folder = self.TIFF_folder_widget.value
+        self.TIFF_folder = Path(self.TIFF_folder_widget.value) # type:ignore
 
     def _set_valid_fovs(self):
         try:
@@ -499,7 +500,7 @@ class InteractiveSpinBox(Container):
         self.name = label
 
         self.text_widget = LineEdit(
-            value=self.value,
+            value=str(self.value),
         )
         self.increment_widget = PushButton(label="+")
         self.decrement_widget = PushButton(label="-")
@@ -538,7 +539,7 @@ class InteractiveSpinBox(Container):
         if self.use_float:
             self.text_widget.value = f"{self.value:.3f}"
         else:
-            self.text_widget.value = self.value
+            self.text_widget.value = str(self.value)
 
     def _decrement(self):
         # Update internal value, then update displayed value.
@@ -547,7 +548,7 @@ class InteractiveSpinBox(Container):
         if self.use_float:
             self.text_widget.value = f"{self.value:.3f}"
         else:
-            self.text_widget.value = self.value
+            self.text_widget.value = str(self.value)
 
 
 class FOVChooserSingle(InteractiveSpinBox):
