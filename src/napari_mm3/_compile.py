@@ -457,123 +457,96 @@ def get_tif_params_loop(
     return analyzed_imgs
 
 
-### class for dealing with cross-correlations, which are used to determine empty/full channels ###
-class CrossCorrelationHandler:
-    def __init__(
-        self, alignment_pad: int, ana_dir: Path, experiment_name: str, phase_plane: str
-    ):
-        self.alignment_pad = alignment_pad
-        self.ana_dir = ana_dir
-        self.experiment_name = experiment_name
-        self.phase_plane = phase_plane
+def channel_xcorr(img_path: Path, pad_size) -> list:
+    """
+    Function calculates the cross correlation of images in a
+    stack to the first image in the stack. 
+    The very first value should be all 1s.
 
-    def channel_xcorr(self, fov_id: int, peak_id: int) -> list:
-        """
-        Function calculates the cross correlation of images in a
-        stack to the first image in the stack. The output is an
-        array that is the length of the stack with the best cross
-        correlation between that image and the first image.
 
-        The very first value should be 1.
+    Returns
+    -------
+    xcorr_array: list
+        array of cross correlations over time
+    """
 
-        Parameters
-        ----------
-        fov_id: int
-            fov to analyze
-        peak_id:
-            peak (trap) to analyze
+    number_of_images = 20
+    # switch postfix to c1/c2/c3 auto??
+    image_data = load_tiff(img_path)
 
-        Returns
-        -------
-        xcorr_array: list
-            array of cross correlations over time
-        """
-
-        pad_size = self.alignment_pad
-        number_of_images = 20
-        # switch postfix to c1/c2/c3 auto??
-        img_filename = TIFF_FILE_FORMAT_PEAK % (
-            self.experiment_name,
-            fov_id,
-            peak_id,
-            self.phase_plane,
-        )
-        image_data = load_tiff(self.ana_dir / "channels" / img_filename)
-
+    if image_data.shape[0] > number_of_images:
+        spacing = int(image_data.shape[0] / number_of_images)
+        image_data = image_data[::spacing, :, :]
         if image_data.shape[0] > number_of_images:
-            spacing = int(image_data.shape[0] / number_of_images)
-            image_data = image_data[::spacing, :, :]
-            if image_data.shape[0] > number_of_images:
-                image_data = image_data[:number_of_images, :, :]
+            image_data = image_data[:number_of_images, :, :]
 
-        first_img = np.pad(image_data[0, :, :], pad_size, mode="reflect")
+    first_img = np.pad(image_data[0, :, :], pad_size, mode="reflect")
 
-        xcorr_array = []
-        for img in image_data:
-            xcorr_array.append(np.max(match_template(first_img, img)))
+    xcorr_array = []
+    for img in image_data:
+        xcorr_array.append(np.max(match_template(first_img, img)))
 
-        return xcorr_array
+    return xcorr_array
 
-    def compute_xcorr(
-        self, channel_masks: dict, user_spec_fovs: list, num_analyzers: int
-    ) -> None:
-        """Loop over FOVs and compute time autocorrelation for each channel
-        Calls channel_xcorr
 
-        Parameters
-        ----------
-        channel_masks: dict
-            Trap locations relative to FOV
-        user_spec_fovs:
-            FOVs to analyzed
-        num_analyzers: int
-            Number of analyzers to use for multiprocessing
+def compute_xcorr(
+    analysis_dir: Path,
+    experiment_name: str,
+    phase_plane: str,
+    channel_masks: dict,  # Trap locations relative to FOV
+    user_spec_fovs: list,  # user specified fovs
+    num_analyzers: int,
+    alignment_pad: int,
+) -> dict:
+    """
+    Compute time autocorrelation for each channel
+    """
 
-        Returns
-        ---------
-        None
-        """
+    crosscorrs = {}
 
-        crosscorrs: dict[int, dict[int, dict[str, Union[float, list[float]]]]] = {}
+    for fov_id in progress(user_spec_fovs):
+        information("Calculating cross correlations for FOV %d." % fov_id)
+        crosscorrs[fov_id] = {}
+        pool = Pool(num_analyzers)
 
-        for fov_id in progress(user_spec_fovs):
-            information("Calculating cross correlations for FOV %d." % fov_id)
-            crosscorrs[fov_id] = {}
-            pool = Pool(num_analyzers)
-
-            for peak_id in sorted(channel_masks[fov_id].keys()):
-                information("Calculating cross correlations for peak %d." % peak_id)
-                crosscorrs[fov_id][peak_id] = pool.apply_async(  # type:ignore
-                    self.channel_xcorr,
-                    args=(fov_id, peak_id),
-                )
-
-            information(
-                "Waiting for cross correlation pool to finish for FOV %d." % fov_id
+        for peak_id in sorted(channel_masks[fov_id].keys()):
+            information("Calculating cross correlations for peak %d." % peak_id)
+            # currently broken:
+            # channel_xcorr(ana_dir, experiment_name, fov_id: int, peak_id: int, phase_plane, pad_size) -> list:
+            img_filename = TIFF_FILE_FORMAT_PEAK % (
+                experiment_name,
+                fov_id,
+                peak_id,
+                phase_plane,
+            )
+            img_path = analysis_dir / "channels" / img_filename
+            crosscorrs[fov_id][peak_id] = pool.apply_async(  # type:ignore
+                channel_xcorr, args=(img_path, alignment_pad)
             )
 
-            pool.close()  # tells the process nothing more will be added.
-            pool.join()  # blocks script until everything has been processed and workers exit
+        information("Waiting for cross correlation pool to finish for FOV %d." % fov_id)
 
-            information("Finished cross correlations for FOV %d." % fov_id)
+        pool.close()  # tells the process nothing more will be added.
+        pool.join()  # blocks script until everything has been processed and workers exit
 
-        for fov_id, peaks in crosscorrs.items():
-            for peak_id, result in peaks.items():
-                if result.successful():  # type:ignore
-                    crosscorrs[fov_id][peak_id] = {
-                        "ccs": result.get(),  # type: ignore
-                        "cc_avg": np.average(result.get()),  # type:ignore
-                    }
+        information("Finished cross correlations for FOV %d." % fov_id)
 
-                else:
-                    crosscorrs[fov_id][peak_id] = False  # type:ignore
+    for fov_id, peaks in crosscorrs.items():
+        for peak_id, result in peaks.items():
+            if result.successful():  # type:ignore
+                crosscorrs[fov_id][peak_id] = {
+                    "ccs": result.get(),  # type: ignore
+                    "cc_avg": np.average(result.get()),  # type:ignore
+                }
 
-        information("Writing cross correlations file.")
-        with open(os.path.join(self.ana_dir, "crosscorrs.pkl"), "wb") as xcorrs_file:
-            pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(os.path.join(self.ana_dir, "crosscorrs.txt"), "w") as xcorrs_file:
-            pprint(crosscorrs, stream=xcorrs_file)
-        information("Wrote cross correlations files.")
+            else:
+                crosscorrs[fov_id][peak_id] = False  # type:ignore
+
+    information("Writing cross correlations file.")
+    with open(analysis_dir / "crosscorrs.pkl", "wb") as xcorrs_file:
+        pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    return crosscorrs
 
 
 def load_channel_masks(ana_dir: Path) -> dict:
@@ -642,19 +615,16 @@ def make_consensus_mask(
         if img_v["fov"] != fov:
             continue
 
-        # for each channel in each image make a single mask
         img_chnl_mask = np.zeros([image_rows, image_cols])
 
         # and add the channel mask to it
         for chnl_peak, peak_ends in img_v["channels"].items():
-            # pull out the peak location and top and bottom location
-            # and expand by padding (more padding done later for width)
+            # expand by padding (more padding done later for width)
             x1 = max(chnl_peak - crop_wp, 0)
             x2 = min(chnl_peak + crop_wp, image_cols)
             y1 = max(peak_ends["closed_end_px"] - chan_lp, 0)
             y2 = min(peak_ends["open_end_px"] + chan_lp, image_rows)
 
-            # add it to the mask for this image
             img_chnl_mask[y1:y2, x1:x2] = 1
 
         # add it to the consensus mask
@@ -1019,7 +989,6 @@ def tiff_stack_slice_and_write(
 
 def slice_channels(
     channel_masks: dict,
-    user_spec_fovs: list,
     experiment_name: str,
     channel_dir: Path,
     analyzed_imgs: dict,
@@ -1037,11 +1006,6 @@ def slice_channels(
 
     # do it by FOV. Not set up for multiprocessing
     for fov in channel_masks.keys():
-
-        # skip fov if not in the group
-        if user_spec_fovs and (fov not in user_spec_fovs):
-            continue
-
         information("Loading images for FOV %03d." % fov)
 
         # get filenames just for this fov along with the julian date of acquisition
@@ -1191,9 +1155,6 @@ def compile(
     """
     Compile function for the MM3 analysis pipeline. This function is the main entry point for the analysis pipeline.
     """
-    information("Loading experiment parameters.")
-    information("Using {} threads for multiprocessing.".format(num_analyzers))
-
     if not os.path.exists(analysis_dir):
         os.makedirs(analysis_dir)
 
@@ -1203,71 +1164,73 @@ def compile(
     if TIFF_source == "BioFormats / other TIFF":
         merge_split_channels(TIFF_dir)
 
-    if not do_metadata:
-        information("Loading image parameters dictionary.")
-        with open(
-            os.path.join(analysis_dir, "TIFF_metadata.pkl"), "rb"
-        ) as tiff_metadata:
-            analyzed_imgs = pickle.load(tiff_metadata)
-    else:
+    if do_metadata:
         information("Finding image parameters.")
         found_files = list(TIFF_dir.glob("*.tif"))
         found_files = filter_files(found_files, t_start, t_end, FOVs)
-        if len(found_files) > 0:
-            analyzed_imgs = get_tif_params_loop(
-                found_files,
-                num_analyzers,
-                TIFF_source,
-                phase_plane,
-                image_orientation,
-                image_rotation,
-                channel_width_pad,
-                channel_width,
-                channel_detection_snr,
-                channel_separation,
-            )
-        else:
-            information("No files found.")
+        if len(found_files) == 0:
             return
+        img_params = get_tif_params_loop(
+            found_files,
+            num_analyzers,
+            TIFF_source,
+            phase_plane,
+            image_orientation,
+            image_rotation,
+            channel_width_pad,
+            channel_width,
+            channel_detection_snr,
+            channel_separation,
+        )
+        information("Saving image parameters.")
+        with open(analysis_dir / "TIFF_metadata.txt", "w") as tiff_metadata:
+            pprint(img_params, stream=tiff_metadata)
+    else:
+        information("Loading image parameters dictionary.")
+        # switch this to reading from the txt file.
+        with open(analysis_dir / "TIFF_metadata.pkl", "rb") as tiff_metadata:
+            analyzed_imgs_unfiltered = pickle.load(tiff_metadata)
 
-        information("Saving metadata from analyzed images...")
-        with open(analysis_dir/ "TIFF_metadata.txt", "w") as tiff_metadata:
-            pprint(analyzed_imgs, stream=tiff_metadata)
-        information("Saved metadata from analyzed images.")
+        # now, remove all irrelevant images by fov and timestamp.
+        img_params = {}
+        for k, v in analyzed_imgs_unfiltered.items():
+            if not (v["FOV"] in FOVs):
+                continue
+            if not (t_start <= v["t"] <= t_end):
+                continue
+            img_params[k] = v
 
     if do_channel_masks:
         channel_masks = make_masks(
-            analyzed_imgs,
-            channel_width_pad,
-            channel_width,
-            channel_length_pad,
+            img_params, channel_width_pad, channel_width, channel_length_pad
         )
         # save the channel mask dictionary to a yaml and a text file
         with open(analysis_dir / "channel_masks.txt", "w") as cmask_file:
             pprint(channel_masks, stream=cmask_file)
-
     else:
         channel_masks = load_channel_masks(analysis_dir)
 
     if do_slicing:
-        information("Saving channel slices.")
-
         slice_channels(
             channel_masks,
-            FOVs,
             experiment_name,
             chnl_dir,
-            analyzed_imgs,
+            img_params,
             phase_plane,
             image_orientation,
             image_rotation,
         )
 
     if do_crosscorrs:
-        cross_corr_handler = CrossCorrelationHandler(
-            alignment_pad, analysis_dir, experiment_name, phase_plane
+        compute_xcorr(
+            analysis_dir,
+            experiment_name,
+            phase_plane,
+            channel_masks,
+            FOVs,
+            num_analyzers,
+            alignment_pad,
         )
-        cross_corr_handler.compute_xcorr(channel_masks, FOVs, num_analyzers)
 
 
 class Compile(MM3Container):
