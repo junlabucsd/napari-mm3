@@ -92,7 +92,7 @@ def merge_split_channels(TIFF_dir: Path) -> None:
         else:
             break
 
-    files_array = np.array(files_list).squeeze() # type:ignore
+    files_array = np.array(files_list).squeeze()  # type:ignore
     if files_array.ndim > 1:
         information("Merging TIFFs across channel")
         stack_channels(files_array, TIFF_dir)
@@ -183,7 +183,7 @@ def fix_orientation(
 def find_phase_idx(image_data: np.ndarray, phase_plane: str):
     # use 'phase_plane' to find the phase plane in image_data, assuming c1, c2, c3... naming scheme here.
     try:
-        return int(re.search("[0-9]", phase_plane).group(0)) - 1 # type:ignore
+        return int(re.search("[0-9]", phase_plane).group(0)) - 1  # type:ignore
     except:
         # Pick the plane to analyze with the highest mean px value (should be phase)
         average_channel_brightness = np.mean(image_data, axis=range(1, image_data.ndim))
@@ -557,8 +557,8 @@ class CrossCorrelationHandler:
 
             information("Finished cross correlations for FOV %d." % fov_id)
 
-        for fov_id, peaks in six.iteritems(crosscorrs):
-            for peak_id, result in six.iteritems(peaks):
+        for fov_id, peaks in crosscorrs.items():
+            for peak_id, result in peaks.items():
                 if result.successful():  # type:ignore
                     crosscorrs[fov_id][peak_id] = {
                         "ccs": result.get(),  # type: ignore
@@ -646,7 +646,7 @@ def make_consensus_mask(
         img_chnl_mask = np.zeros([image_rows, image_cols])
 
         # and add the channel mask to it
-        for chnl_peak, peak_ends in six.iteritems(img_v["channels"]):
+        for chnl_peak, peak_ends in img_v["channels"].items():
             # pull out the peak location and top and bottom location
             # and expand by padding (more padding done later for width)
             x1 = max(chnl_peak - crop_wp, 0)
@@ -784,9 +784,6 @@ def adjust_channel_mask(
 
 def make_masks(
     analyzed_imgs: dict,
-    ana_dir: Path,
-    t_start: Optional[int] = None,
-    t_end: Optional[int] = None,
     channel_width_pad: int = 0,
     channel_width: int = 0,
     channel_length_pad: int = 0,
@@ -809,20 +806,6 @@ def make_masks(
 
     """
     information("Determining initial channel masks...")
-
-    # only calculate channels masks from images before t_end in case it is specified
-    if t_start:
-        analyzed_imgs = {
-            fn: i_metadata
-            for fn, i_metadata in six.iteritems(analyzed_imgs)
-            if i_metadata["t"] >= t_start
-        }
-    if t_end:
-        analyzed_imgs = {
-            fn: i_metadata
-            for fn, i_metadata in six.iteritems(analyzed_imgs)
-            if i_metadata["t"] <= t_end
-        }
 
     # declare temp variables from parameters.
     crop_wp = int(channel_width_pad + channel_width / 2)
@@ -881,10 +864,6 @@ def make_masks(
             cm_copy[fov][peak] = adjust_channel_mask(
                 chnl_mask, cm_copy[fov][peak], max_len, max_wid, image_cols
             )
-
-    # save the channel mask dictionary to a yaml and a text file
-    with open(os.path.join(ana_dir, "channel_masks.txt"), "w") as cmask_file:
-        pprint(cm_copy, stream=cmask_file)
 
     information("Channel masks saved.")
     return cm_copy
@@ -965,7 +944,7 @@ def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
 
 def tiff_stack_slice_and_write(
     images_to_write: list,
-    channel_masks,
+    channel_masks_fov: dict,
     experiment_name: str,
     channel_dir: Path,
     analyzed_imgs: dict,
@@ -1018,7 +997,7 @@ def tiff_stack_slice_and_write(
     image_fov_array = np.stack(image_fov_stack, axis=0)
 
     # cut out the channels as per channel masks for this fov
-    for peak, channel_loc in six.iteritems(channel_masks[fov_id]):
+    for peak, channel_loc in six.iteritems(channel_masks_fov):
         information("Slicing and saving channel peak %d." % peak)
 
         # slice out channel.
@@ -1060,23 +1039,23 @@ def slice_channels(
     for fov in channel_masks.keys():
 
         # skip fov if not in the group
-        if user_spec_fovs and fov not in user_spec_fovs:
+        if user_spec_fovs and (fov not in user_spec_fovs):
             continue
 
         information("Loading images for FOV %03d." % fov)
 
         # get filenames just for this fov along with the julian date of acquisition
         send_to_write = [
-            [k, v["t"]] for k, v in six.iteritems(analyzed_imgs) if v["fov"] == fov
+            [k, v["t"]] for k, v in analyzed_imgs.items() if v["fov"] == fov
         ]
 
         # sort the filenames by time
-        send_to_write = progress(sorted(send_to_write, key=lambda time: time[1]))
+        send_to_write = sorted(send_to_write, key=lambda time: time[1])
 
         # This is for loading the whole raw tiff stack and then slicing through it
         tiff_stack_slice_and_write(
             send_to_write,  # type:ignore
-            channel_masks,
+            channel_masks[fov],
             experiment_name,
             channel_dir,
             analyzed_imgs,
@@ -1252,22 +1231,21 @@ def compile(
             return
 
         information("Saving metadata from analyzed images...")
-        with open(
-            os.path.join(analysis_dir, "TIFF_metadata.txt"), "w"
-        ) as tiff_metadata:
+        with open(analysis_dir/ "TIFF_metadata.txt", "w") as tiff_metadata:
             pprint(analyzed_imgs, stream=tiff_metadata)
         information("Saved metadata from analyzed images.")
 
     if do_channel_masks:
         channel_masks = make_masks(
             analyzed_imgs,
-            analysis_dir,
-            t_start,
-            t_end,
             channel_width_pad,
             channel_width,
             channel_length_pad,
         )
+        # save the channel mask dictionary to a yaml and a text file
+        with open(analysis_dir / "channel_masks.txt", "w") as cmask_file:
+            pprint(channel_masks, stream=cmask_file)
+
     else:
         channel_masks = load_channel_masks(analysis_dir)
 
@@ -1422,10 +1400,10 @@ class Compile(MM3Container):
             )
         else:
             image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
-        image_fov_stack = np.squeeze(image_fov_stack) # type:ignore
+        image_fov_stack = np.squeeze(image_fov_stack)  # type:ignore
         images = self.viewer.add_image(image_fov_stack.astype(np.float32))
         self.viewer.dims.current_step = (0, 0)
-        images.reset_contrast_limits() # type:ignore
+        images.reset_contrast_limits()  # type:ignore
         # images.gamma = 0.5
 
     def display_all_fovs(self):
