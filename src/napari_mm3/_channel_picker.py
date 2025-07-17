@@ -149,19 +149,7 @@ def load_crosscorrs(
 
 
 def display_image_stack(viewer: Viewer, image_fov_stack, plane):
-    """Display an image stack in napari.
-    Parameters
-    ----------
-    viewer : napari.Viewer
-        The napari viewer.
-    image_fov_stack : np.ndarray
-        The image stack to display.
-    plane : int
-        The plane to display.
-
-    Returns
-    -------
-    None"""
+    """Display an image stack in napari."""
     images = viewer.add_image(np.array(image_fov_stack))
     viewer.dims.current_step = (0, plane, 0, 0)
     images.reset_contrast_limits()
@@ -176,20 +164,6 @@ def threshold_fov(
     channel_masks: dict,
 ) -> dict:
     """Threshold a FOV based on crosscorrelations.
-
-    Parameters
-    ----------
-    fov : int
-        The FOV to threshold.
-    threshold : float
-        The threshold to use.
-    specs : dict
-        The specs dictionary.
-    crosscorrs : dict
-        The crosscorrelations dictionary.
-    channel_masks : dict, optional
-        The channel masks dictionary.
-
     Returns
     -------
     specs : dict
@@ -218,28 +192,9 @@ def display_rectangles(
     viewer: napari.Viewer,
     coords: list,
     sorted_peaks: list,
-    sorted_specs: list,
+    peak_annotations: list,
     crosscorrs: dict,
 ) -> napari.layers.Shapes:
-    """Display rectangles on napari viewer.
-    Parameters
-    ----------
-    viewer : napari.Viewer
-        The napari viewer.
-    coords : list
-        The coordinates of the rectangles.
-    sorted_peaks : list
-        The sorted peaks.
-    sorted_specs : list
-        The sorted specs (which peaks are marked to analyze, discard or use for subtraction).
-    crosscorrs : dict
-        The crosscorrelations dictionary.
-
-    Returns
-    -------
-    shapes_layer : napari.layers.Shapes
-        The shapes layer containing the peak specifications
-    """
     # Set up crosscorrelation text
     properties = {"peaks": sorted_peaks, "crosscorrs": crosscorrs.values()}
     text_parameters = {
@@ -250,7 +205,7 @@ def display_rectangles(
         "color": "white",
     }
 
-    curr_colors = [SPEC_TO_COLOR[n] for n in sorted_specs]
+    curr_colors = [SPEC_TO_COLOR[n] for n in peak_annotations]
 
     # Add channel boxes.
     shapes_layer = viewer.add_shapes(
@@ -267,19 +222,13 @@ def display_rectangles(
 
 
 def regenerate_fov_specs(
-    analysis_folder: pathlib.Path, fov: int, threshold: float, overwrite: bool = False
+    analysis_folder: pathlib.Path, 
+    fov: int, 
+    threshold: float, 
+    overwrite: bool = False # whether to start anew or overwrite existing specs.
 ) -> dict:
     """Regenerate the specs dictionary for a FOV.
-    Parameters
-    ----------
-    analysis_folder : pathlib.Path
-        The path to the analysis folder.
-    fov : int
-        The FOV to regenerate.
-    threshold : float
-        The threshold to use.
-    overwrite : bool, optional
-        Whether to overwrite the existing specs dictionary.
+
     Returns
     -------
     specs : dict
