@@ -219,26 +219,8 @@ def save_out(
     segmented_imgs: np.ndarray,
     fov_id: int,
     peak_id: int,
-):
-    """Saves out the segmented images in the correct format.
-    Parameters
-    ----------
-    experiment_name : str
-        Name of the experiment.
-    seg_img : str
-        Segmentation image name.
-    seg_dir : str
-        Directory to save segmented images.
-    segmented_imgs : np.ndarray
-        Array of segmented images.
-    fov_id : int
-        Field of view ID.
-    peak_id : int
-        Peak ID.
-
-    Returns
-    -------
-    None."""
+) ->  None:
+    """Saves out the segmented images."""
     # save out the segmented stacks
     seg_filename = experiment_name + "_xy%03d_p%04d_%s.tif" % (
         fov_id,
@@ -253,17 +235,9 @@ def save_out(
     return
 
 
-def normalize(img_stack):
-    """Normalizes the image stack to [0, 1] by subtracting the minimum and dividing by the range.
-    Parameters
-    ----------
-    img_stack : np.ndarray
-        Image stack.
-
-    Returns
-    -------
-    np.ndarray
-        Normalized image stack.
+def normalize(img_stack: np.ndarray) -> np.ndarray:
+    """
+    Normalizes the image stack to [0, 1] by subtracting the minimum and dividing by the range.
     """
     # permute to take advantage of numpy slicing
     img_stack = np.transpose(
@@ -276,21 +250,8 @@ def normalize(img_stack):
 
 ## post-processing of u-net output
 # binarize, remove small objects, clear border, and label
-def binarize_and_label(predictions, cellClassThreshold, min_object_size):
+def binarize_and_label(predictions, cellClassThreshold, min_object_size) -> np.ndarray:
     """Binarizes the predictions, removes small objects, clears the border, and labels the objects.
-    Parameters
-    ----------
-    predictions : np.ndarray
-        Predictions from the U-net.
-    cellClassThreshold : float
-        Threshold for binarizing the predictions.
-    min_object_size : int
-        Minimum object size to keep.
-
-    Returns
-    -------
-    np.ndarray
-        cleaned segmented images.
     """
 
     predictions[predictions >= cellClassThreshold] = 1
@@ -456,47 +417,11 @@ def segment_cells_unet(
     min_object_size: int,
     num_analyzers: int,
     normalize_to_one: bool,
-    view_result: bool = False,
+    display_result: bool = False,
 ) -> None:
     """
-    Segments cells using U-net model.
+    Segments cells using U-net model, filtering by a threshold a mininimum object size.
 
-    Parameters
-    ----------
-    ana_peak_ids : list
-        List of peak IDs to segment.
-    fov_id : int
-        FOV ID.
-    unet_shape : tuple
-        Shape of the U-net model.
-    model : keras.Model
-        U-net model.
-    experiment_name : str
-        Name of the experiment.
-    phase_plane : str
-        Phase plane.
-    ana_dir : str
-        Analysis directory.
-    seg_dir : str
-        Segmentation directory.
-    seg_img : str
-        Segmentation image name.
-    batch_size : int
-        Batch size for prediction.
-    cell_class_threshold : float
-        Threshold for cell classification.
-    min_object_size : int
-        Minimum object size to keep.
-    num_analyzers : int
-        Number of analyzers.
-    normalize_to_one : bool
-        Whether to normalize the image stack to [0, 1].
-    view_result : bool, optional
-        Whether to display the segmentation results. Defaults to False.
-
-    Returns
-    -------
-    None
     """
     for peak_id in ana_peak_ids:
         information("Segmenting peak {}.".format(peak_id))
@@ -532,7 +457,7 @@ def segment_cells_unet(
             min_object_size=min_object_size,
         )
 
-        if view_result:
+        if display_result:
             viewer = napari.current_viewer()
             viewer.grid.enabled = True
             viewer.grid.shape = (-1, 20)
@@ -561,28 +486,6 @@ def segment_peak_unet(
 ) -> np.ndarray:
     """
     Segments a peak using U-net model.
-
-    Parameters
-    ----------
-    img_stack : np.ndarray
-        Image stack for the peak.
-    unet_shape : tuple
-        Shape of the U-net model.
-    pad_dict : dict
-        Dictionary containing padding information.
-    model : keras.Model
-        U-net model.
-    batch_size : int
-        Batch size for prediction.
-    num_analyzers : int
-        Number of analyzers.
-    normalize_to_one : bool
-        Whether to normalize the image stack to [0, 1].
-
-    Returns
-    -------
-    np.ndarray
-        Predictions of the U-net model for the peak.
     """
     # arguments to predict
     predict_args = dict(use_multiprocessing=True, workers=num_analyzers, verbose=1)
@@ -620,49 +523,7 @@ def segmentUNet(
     cell_dir: str,
     custom_objects: dict,
     view_result: bool,
-):
-    """
-    Parameters
-    ----------
-    experiment_name : str
-        Name of the experiment.
-    image_directory : str
-        Directory of the images.
-    fovs : list
-        List of FOVs to process.
-    phase_plane : str
-        Phase plane.
-    model_file : str
-        Path to the model file.
-    trained_model_image_height : int
-        Height of the trained model image.
-    trained_model_image_width : int
-        Width of the trained model image.
-    batch_size : int
-        Batch size for prediction.
-    cell_class_threshold : float
-        Threshold for cell classification.
-    min_object_size : int
-        Minimum object size to keep.
-    normalize_to_one : bool
-        Whether to normalize the image stack to [0, 1].
-    num_analyzers : int
-        Number of analyzers.
-    ana_dir : str
-        Analysis directory.
-    seg_dir : str
-        Segmentation directory.
-    cell_dir : str
-        Cell data directory.
-    custom_objects : dict
-        Custom objects for model loading.
-    view_result : bool
-        Whether to display the segmentation results.
-
-    Returns
-    -------
-    None
-    """
+) -> None:
     information("Loading experiment parameters.")
 
     information("Using {} threads for multiprocessing.".format(num_analyzers))
@@ -690,7 +551,7 @@ def segmentUNet(
 
     information("Processing %d FOVs." % len(fov_id_list))
 
-    ### Do Segmentation by FOV and then peak #######################################################
+    ### Do Segmentation by FOV and then peak ######
     information("Segmenting channels using U-net.")
 
     # load model to pass to algorithm
