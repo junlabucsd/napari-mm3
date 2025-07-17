@@ -29,24 +29,6 @@ def subtract_phase(
     """subtract_phase aligns and subtracts an empty phase contrast channel (trap) from a channel containing cells.
     The subtracted image returned is the same size as the image given. It may however include
     data points around the edge that are meaningless but not marked.
-
-    We align the empty channel to the phase channel, then subtract.
-
-    Parameters
-    alignment_pad : int
-        Pixel size to use for padding (amount that alignment could be off)
-    cropped_channel : np.ndarray
-        The channel containing cells
-    empty_channel : np.ndarray
-        The empty phase contrast channel
-
-    Returns
-    -------
-    channel_subtracted : np.array
-        The subtracted image
-
-    Called by
-    subtract_fov_stack
     """
 
     # this is for aligning the empty channel to the cell channel.
@@ -106,9 +88,6 @@ def subtract_fluor(
     Returns
     channel_subtracted : np.array
         The subtracted image.
-
-    Called by
-    subtract_fov_stack
     """
 
     # check frame size of cropped channel and background, always keep crop channel size the same
@@ -165,26 +144,9 @@ def copy_empty_stack(
     to_fov: int,
     color="c1",
 ) -> None:
-    """Copy an empty stack from one FOV to another.
+    """
+    Copy an empty stack from one FOV to another.
 
-    Parameters
-    ----------
-    ana_dir: Path
-        Path to the analysis directory
-    experiment_name: str
-        Name of the experiment
-    empty_dir: Path
-        Path to copy empty stack to
-    from_fov: int
-        fov to copy from
-    to_fov: int
-        fov to copy to
-    color: str
-        imaging plane
-
-    Returns
-    -------
-    None
     """
 
     # load empty stack from one FOV
@@ -226,31 +188,6 @@ def subtract_fov_stack(
     """
     For a given FOV, loads the precomputed empty stack and does subtraction on
     all peaks in the FOV designated to be analyzed
-
-    Parameters
-    ----------
-    ana_dir: Path
-        Path to the analysis directory
-    experiment_name: str
-        Name of the experiment
-    alignment_pad: int
-        Pixel size to use for padding (amount that alignment could be off)
-    num_analyzers: int
-        Number of analyzers
-    sub_dir: Path
-        directory where subtracted images will be stored
-    fov_id: int
-        fov to analyze
-    specs: dict
-        dictionary indicating whether a peak should be analyzed,
-        used as a subtraction template, or ignored
-    color : string, 'c1', 'c2', etc.
-        This is the channel to subtraction. will be appended to the word empty.
-    method: str
-        image type to be analyzed ("phase" or "fluorescence")
-    preview: bool
-        whether to display output in napari viewer
-
     """
 
     information("Subtracting peaks for FOV %d." % fov_id)
@@ -410,7 +347,7 @@ def average_empties_stack(
     experiment_name: str,
     empty_dir: Path,
     fov_id: int,
-    specs: dict,
+    specs: dict, # specifies if a channel is analyzed (1), ignored (-1), or reference empty (0)
     alignment_pad: int,
     color: str = "c1",
     align: bool = True,
@@ -418,31 +355,7 @@ def average_empties_stack(
     """Takes the fov file name and the peak names of the designated empties,
     averages them and saves the image
 
-    Parameters
-    ----------
-    ana_dir : Path
-        Path to the analysis directory
-    experiment_name : str
-        Name of the experiment
-    empty_dir : Path
-        Path to save the empty stack
-    fov_id : int
-        FOV number
-    specs : dict
-        specifies whether a channel should be analyzed (1), used for making
-        an average empty (0), or ignored (-1).
-    color : string
-        Which plane to use.
-    align : boolean
-        Flag that is passed to the worker function average_empties, indicates
-        whether images should be aligned before averaging (use False for fluorescent images)
-
-    Returns
-    -------
-    bool
-        True if successful.
-        Saves empty stack to analysis folder
-
+    Saves empty stack to analysis folder, True upon success.
     """
 
     information("Creating average empty channel for FOV %d." % fov_id)
