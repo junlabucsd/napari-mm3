@@ -31,7 +31,7 @@ def segment_chnl_stack(
     ana_dir,
     experiment_name,
     phase_plane,
-    seg_dir,
+    seg_dir, # The directory where the segmented images will be saved.
     num_analyzers,
     fov_id,
     peak_id,
@@ -40,42 +40,11 @@ def segment_chnl_stack(
     distance_threshold,
     second_opening_size,
     min_object_size,
-    view_result: bool = False,
-):
+    display_result: bool = False,
+) -> bool:
     """
     For a given fov and peak (channel), do segmentation for all images in the
     subtracted .tif stack.
-
-    # add docstring here
-
-    Parameters
-    ----------
-    ana_dir : str
-        The directory where the analysis data is stored.
-    experiment_name : str
-        The name of the experiment.
-    phase_plane : str
-        The phase plane to be used.
-    seg_dir : str
-        The directory where the segmented images will be saved.
-    num_analyzers : int
-        The number of analyzers.
-    fov_id : int
-        The field of view id.
-    peak_id : int
-        The peak id.
-    OTSU_threshold : float
-        The OTSU threshold.
-    first_opening_size : int
-        The first opening size.
-    distance_threshold : int
-        The distance threshold.
-    second_opening_size : int
-        The second opening size.
-    min_object_size : int
-        The minimum object size.
-    view_result : bool, optional
-        Whether to display the output, by default False
 
     Returns
     -------
@@ -134,7 +103,7 @@ def segment_chnl_stack(
         segmented_imgs,
         compression="zlib",
     )
-    if view_result:
+    if display_result:
         viewer = napari.current_viewer()
 
         viewer.grid.enabled = True
@@ -162,24 +131,8 @@ def segment_image(
     second_opening_size,
     min_object_size,
     image,
-):
+) -> np.ndarray:
     """Segments a subtracted image and returns a labeled image
-
-    Parameters
-    ----------
-    OTSU_threshold : float
-        The OTSU threshold.
-    first_opening_size : int
-        The first opening size.
-    distance_threshold : int
-        The distance threshold.
-    second_opening_size : int
-        The second opening size.
-    min_object_size : int
-        The minimum object size.
-    image : ndarray
-        a ndarray which is an image. This should be the subtracted image
-
     Returns
     -------
     labeled_image : a ndarray which is also an image. Labeled values, which
@@ -279,37 +232,6 @@ def segmentOTSU(
 ):
     """
     Segments all channels in all FOVs using the OTSU method.
-
-    Parameters
-    ----------
-    ana_dir : str
-        The directory where the analysis data is stored.
-    experiment_name : str
-        The name of the experiment.
-    phase_plane : str
-        The phase plane to be used.
-    seg_dir : str
-        The directory where the segmented images will be saved.
-    num_analyzers : int
-        The number of analyzers.
-    FOV : list
-        A list of FOVs to process. If None, all FOVs will be processed.
-    OTSU_threshold : float
-        The OTSU threshold.
-    first_opening_size : int
-        The first opening size.
-    distance_threshold : int
-        The distance threshold.
-    second_opening_size : int
-        The second opening size.
-    min_object_size : int
-        The minimum object size.
-    view_result : bool, optional
-        Whether to display the output, by default False
-
-    Returns
-    -------
-    None
     """
 
     information("Loading experiment parameters.")
