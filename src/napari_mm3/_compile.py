@@ -89,42 +89,42 @@ def get_time(filepath: str) -> Union[np.int_, None]:
         return None
 
 
-def restack_planes(found_files_c1: list, found_files_c2: list, params: dict) -> None:
+def stack_channels(found_files: np.ndarray, params: dict) -> None:
     """Check if phase and fluorescence channels are separate tiffs.
     If so, restack them as one tiff file and save out to TIFF_dir.
-    Move the original files to a new directory TIFF_unstacked.
+    Move the original files to a new directory original_TIFF.
 
     Parameters
     ---------
-    found_files_c1: list of files for 1st imaging plane
-    found_files_c1: list of files for 2nd imaging plane
+    found_files: ndarray of filepaths for each imaging plane
+    params: dictionary of parameters
 
     Returns
     ---------
     None
     """
 
-    found_files_c1 = sorted(found_files_c1)
-    found_files_c2 = sorted(found_files_c2)
+    found_files = np.transpose(found_files)
 
-    for f1, f2 in zip(found_files_c1, found_files_c2):
-        information("Merging images " + str(f1) + " and " + str(f2))
-        im1 = tiff.imread(f1)
-        im2 = tiff.imread(f2)
-        im_out = np.stack((im1, im2), axis=0)
+    for files in found_files:
+        information("Merging files")
+        print(*files, sep="\n")
+        ims = [tiff.imread(f) for f in files]
+        im_out = np.stack(ims, axis=0)
 
         # need to insert regex here to catch variants
-        name_out = re.sub("c*01", "", re.IGNORECASE)
+        name_out = re.sub("c\d+", "", str(files[0]), flags=re.IGNORECASE)
         # 'minisblack' necessary to ensure that it interprets image as black/white.
         tiff.imwrite(name_out, im_out, photometric="minisblack")
 
-        ## make a new directory rather than just deleting the old images
-        old_tiff_path = params["TIFF_dir"].parent / "TIFF_unstacked"
+        ## make a new directory for the old images
+        old_tiff_path = params["TIFF_dir"].parent / "original_TIFF"
         if not old_tiff_path.exists():
             old_tiff_path.mkdir()
             information("Creating directory for original TIFFs")
-        f1.replace(str(f1).replace(str(params["TIFF_dir"]), "TIFF_unstacked"))
-        f2.replace(str(f2).replace(str(params["TIFF_dir"]), "TIFF_unstacked"))
+
+        for f in files:
+            f.replace(str(f).replace(str(params["TIFF_dir"]), "original_TIFF"))
 
     return
 
@@ -166,6 +166,8 @@ def get_tif_params(
                 image_metadata = get_tif_metadata_nd2(tif)
             elif params["TIFF_source"] == "BioFormats / other TIFF":
                 image_metadata = get_tif_metadata_filename(tif)
+            if image_metadata["planes"] is None:
+                image_metadata["planes"] = params["planes"]
 
         # look for channels if flagged
         if find_channels:
@@ -288,7 +290,6 @@ def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
             idata = tag.value
             break
 
-    # print(idata)
     idata = json.loads(idata)
     return idata
 
@@ -314,7 +315,7 @@ def get_tif_metadata_filename(tif: tiff.TiffFile) -> dict:
         "t": get_time(tif.filename),  # time point
         "jd": -1 * 0.0,  # absolute julian time
         "planes": get_plane(tif.filename),
-    }  # y position on stage [um]
+    }
 
     return idata
 
@@ -524,6 +525,10 @@ def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
             channel_loc[1][0] : channel_loc[1][1],
             :,
         ]
+    else:
+        warning(
+            f"Image shape not recognized. Expected 2, 3, or 4 dimensions, found {image_data.ndim} dimensions with shape {image_data.shape}."
+        )
 
     # slice based on appropriate slicer object.
     channel_slice = image_data[channel_slicer]
@@ -1125,6 +1130,10 @@ def fix_orientation(params: dict, image_data: np.ndarray) -> np.ndarray:
     # user parameter indicates how things should be flipped
     image_orientation = params["compile"]["image_orientation"]
 
+    image_data = np.squeeze(
+        image_data
+    )  # remove singleton dimensions to standardize shape
+
     # if this is just a phase image give in an extra layer so rest of code is fine
     flat = False  # flag for if the image is flat or multiple levels
     if len(image_data.shape) == 2:
@@ -1307,20 +1316,29 @@ def compile(params: dict) -> None:
 
     ## need to stack phase and fl plane if not exported from .nd2
     if params["TIFF_source"] == "BioFormats / other TIFF":
-        information("Checking if phase & fluorescence planes are separated")
+        information("Checking if imaging channels are separated")
         found_files = list(params["TIFF_dir"].glob("*.tif"))
         found_files = sorted(found_files)  # sort by timepoint
 
-        string_c1 = re.compile("c(0)*1", re.IGNORECASE)
-        string_c2 = re.compile("c(0)*2", re.IGNORECASE)
+        files_list = []
+        i = 0
+        while True:
+            c_string = re.compile(f"c(0)*{i}[._]", re.IGNORECASE)
+            matched_files = [f for f in found_files if re.search(c_string, f.name)]
+            if matched_files:
+                files_list.append(matched_files)
+                i += 1
+            elif i == 0:
+                # continue in case channels indexed from 1
+                i += 1
+            else:
+                break
 
-        found_files_c1 = [f for f in found_files if re.search(string_c1, f.name)]
-        found_files_c2 = [f for f in found_files if re.search(string_c2, f.name)]
+        files_array = np.array(files_list).squeeze()
+        if files_array.ndim > 1:
+            information("Merging TIFFs across channel")
+            stack_channels(files_array, params)
 
-        ## if there is a second plane, stack and save them out
-        if found_files_c2:
-            information("Restacking TIFFs")
-            restack_planes(found_files_c1, found_files_c2, params)
         else:
             pass
 
@@ -1389,10 +1407,9 @@ def load_fov(
 ) -> Union[np.ndarray, None]:
     information("getting files")
     found_files_paths = image_directory.glob("*.tif")
-    file_string = re.compile(f"xy{fov_id:02d}.*.tif", re.IGNORECASE)
+    file_string = re.compile(f"xy0*{fov_id}\w*.tif", re.IGNORECASE)
     found_files = [f.name for f in found_files_paths if re.search(file_string, f.name)]
     if filter_str:
-        # found_files = [f for f in found_files if filter_str in f]
         found_files = [
             f for f in found_files if re.search(filter_str, f, re.IGNORECASE)
         ]
@@ -1522,6 +1539,7 @@ class Compile(MM3Container):
             "TIFF_source": self.image_source,
             "output": "TIFF",
             "phase_plane": self.phase_plane,
+            "planes": self.valid_planes,
             "seconds_per_time_index": self.seconds_per_frame,
             "compile": {
                 "do_metadata": True,
