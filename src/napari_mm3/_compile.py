@@ -1,16 +1,12 @@
-import json
 import multiprocessing
 import os
 import pickle
 import re
-import sys
-import traceback
 from multiprocessing import Pool
 from pathlib import Path
 from pprint import pprint
 from typing import Optional, Union
 
-import matplotlib.pyplot as plt
 import numpy as np
 import six
 import tifffile as tiff
@@ -147,9 +143,7 @@ def fix_rotation(angle: float, image_data: np.ndarray) -> np.ndarray:
 
 
 # define function for flipping the images on an FOV by FOV basis
-def fix_orientation(
-    image_data: np.ndarray, phase_idx: int, image_orientation: str
-) -> np.ndarray:
+def fix_orientation(image_data: np.ndarray, phase_idx: int, image_orientation: str) -> np.ndarray:
     """
     Fix the orientation. The standard direction for channels to open to is down.
     """
@@ -186,7 +180,7 @@ def find_phase_idx(image_data: np.ndarray, phase_plane: str):
     # use 'phase_plane' to find the phase plane in image_data, assuming c1, c2, c3... naming scheme here.
     try:
         return int(re.search("[0-9]", phase_plane).group(0)) - 1  # type:ignore
-    except:
+    except:  # noqa: E722
         # Pick the plane to analyze with the highest mean px value (should be phase)
         average_channel_brightness = np.mean(image_data, axis=range(1, image_data.ndim))
         return np.argmax(average_channel_brightness)
@@ -258,6 +252,7 @@ def find_channel_locs(
             }
 
     return chnl_loc_dict
+
 
 def channel_xcorr(img_path: Path, pad_size) -> list:
     """
@@ -362,7 +357,7 @@ def load_channel_masks(ana_dir: Path) -> dict:
         information("Path:", ana_dir / "channel_masks.yaml")
         with (ana_dir / "channel_masks.yaml").open("r") as cmask_file:
             channel_masks = yaml.safe_load(cmask_file)
-    except:
+    except:  # noqa: E722
         warning("Could not load channel masks dictionary from .yaml.")
 
         try:
@@ -491,13 +486,9 @@ def adjust_channel_mask(
         wid_diff = max_wid - (chnl_mask_corners[1][1] - chnl_mask_corners[1][0])
         if wid_diff % 2 == 0:
             consensus_chnl_mask[1][0] = max(chnl_mask_corners[1][0] - wid_diff / 2, 0)
-            consensus_chnl_mask[1][1] = min(
-                chnl_mask_corners[1][1] + wid_diff / 2, image_cols - 1
-            )
+            consensus_chnl_mask[1][1] = min(chnl_mask_corners[1][1] + wid_diff / 2, image_cols - 1)
         else:
-            consensus_chnl_mask[1][0] = max(
-                chnl_mask_corners[1][0] - (wid_diff - 1) / 2, 0
-            )
+            consensus_chnl_mask[1][0] = max(chnl_mask_corners[1][0] - (wid_diff - 1) / 2, 0)
             consensus_chnl_mask[1][1] = min(
                 chnl_mask_corners[1][1] + (wid_diff + 1) / 2, image_cols - 1
             )
@@ -507,6 +498,7 @@ def adjust_channel_mask(
     ]  # make sure they are ints
 
     return consensus_chnl_mask
+
 
 def make_masks(
     phase_image: np.ndarray,
@@ -539,9 +531,7 @@ def make_masks(
     # this important for later updates to the masks, which should be the same
     max_len, max_wid = 0, 0
 
-    consensus_mask = make_consensus_mask(
-        phase_image, chnl_timeseries, crop_wp, chan_lp
-    )
+    consensus_mask = make_consensus_mask(phase_image, chnl_timeseries, crop_wp, chan_lp)
 
     # initialize dict which holds channel masks {peak : [[y1, y2],[x1,x2]],...}
     channel_masks = {}
@@ -583,7 +573,7 @@ def tiff_stack_slice_and_write(
         # The function should recognize the shape length as 4 and cut all time points
         print(f"{images_to_write.shape=}")
         images_to_write = np.array(images_to_write)
-        channel_stack = images_to_write[ 
+        channel_stack = images_to_write[
             ...,
             channel_corners[0][0] : channel_corners[0][1],
             channel_corners[1][0] : channel_corners[1][1],
@@ -597,7 +587,6 @@ def tiff_stack_slice_and_write(
         channel_stack = channel_stack.squeeze()
         print(f"{channel_stack.shape=}")
         for color_index in range(channel_stack.shape[1]):
-
             print(f"{channel_stack.shape=}")
             # save stack
             # this is the filename for the channel
@@ -610,9 +599,8 @@ def tiff_stack_slice_and_write(
                 compression=("zlib", 4),  # type: ignore
             )
 
-def load_fov(
-    image_directory: Path, fov_id: int, filter_str: str = ""
-) -> Union[np.ndarray, None]:
+
+def load_fov(image_directory: Path, fov_id: int, filter_str: str = "") -> Union[np.ndarray, None]:
     """
     Load a single FOV from a directory of TIFF files.
     """
@@ -622,9 +610,7 @@ def load_fov(
     file_string = re.compile(rf"xy0*{fov_id}\w*.tif", re.IGNORECASE)
     found_files = [f.name for f in found_files_paths if re.search(file_string, f.name)]
     if filter_str:
-        found_files = [
-            f for f in found_files if re.search(filter_str, f, re.IGNORECASE)
-        ]
+        found_files = [f for f in found_files if re.search(filter_str, f, re.IGNORECASE)]
 
     information("sorting files")
     found_files = sorted(found_files)  # should sort by timepoint
@@ -780,9 +766,7 @@ class Compile(MM3Container):
             label="separate image plane files",
             tooltip="Check this box if you have separate tiffs for phase / fluorescence channels. Used for display only.",
         )
-        self.phase_plane_widget = PlanePicker(
-            self.valid_planes, label="phase plane channel"
-        )
+        self.phase_plane_widget = PlanePicker(self.valid_planes, label="phase plane channel")
         self.time_range_widget = TimeRangeSelector(self.valid_times)
         self.seconds_per_frame_widget = SpinBox(
             value=150,
@@ -882,9 +866,7 @@ class Compile(MM3Container):
         self.viewer.layers.clear()
         self.viewer.text_overlay.visible = False
         if self.split_channels:
-            image_fov_stack = load_fov(
-                self.TIFF_folder, min(self.valid_fovs), filter_str="c0*1"
-            )
+            image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs), filter_str="c0*1")
         else:
             image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
         image_fov_stack = np.squeeze(image_fov_stack)  # type:ignore
@@ -950,9 +932,7 @@ class Compile(MM3Container):
 
     # NOTE! This is different from the other functions in that it requires a parameter.
     def set_fovs(self, new_fovs):
-        self.fovs = list(
-            set(new_fovs)
-        )  # set(new_fovs).intersection(set(self.valid_fovs))
+        self.fovs = list(set(new_fovs))  # set(new_fovs).intersection(set(self.valid_fovs))
 
     def set_range(self):
         self.time_range = (
@@ -982,7 +962,9 @@ class Compile(MM3Container):
 
 
 if __name__ == "__main__":
-    cur_dir = Path("/Users/michaelsandler/Documents/others-data/napari_testing_data/napari-mm3-test")
+    cur_dir = Path(
+        "/Users/michaelsandler/Documents/others-data/napari_testing_data/napari-mm3-test"
+    )
     compile(
         TIFF_dir=cur_dir / "TIFF",
         num_analyzers=30,
