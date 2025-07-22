@@ -127,7 +127,6 @@ def subtract_fluor(
     # just zero out anything less than 0.
     channel_subtracted[channel_subtracted < 0] = 0
     channel_subtracted = channel_subtracted.astype("uint16")  # change back to 16bit
-
     return channel_subtracted
 
 
@@ -222,23 +221,20 @@ def subtract_fov_stack(
             color,
         )
         image_data = load_tiff(ana_dir / "channels" / image_filename)
-
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
-        subtract_pairs = zip(image_data, avg_empty_stack)
-        subtract_phase_args = [
-            (alignment_pad, pair[0], pair[1]) for pair in subtract_pairs
-        ]
-        subtract_fl_args = [(pair[0], pair[1]) for pair in subtract_pairs]
-
-        # set up multiprocessing pool to do subtraction. Should wait until finished
+        # # set up multiprocessing pool to do subtraction. Should wait until finished
         pool = Pool(processes=num_analyzers)
-
+        subtract_pairs = zip(image_data, avg_empty_stack)
         if method == "phase":
+            subtract_phase_args = [
+                (alignment_pad, pair[0], pair[1]) for pair in subtract_pairs
+            ]
             subtracted_imgs = pool.map(
                 subtract_phase_helper, subtract_phase_args, chunksize=10
             )
         elif method == "fluor":
+            subtract_fl_args = [(pair[0], pair[1]) for pair in subtract_pairs]
             subtracted_imgs = pool.map(
                 subtract_fluor_helper, subtract_fl_args, chunksize=10
             )
@@ -247,9 +243,7 @@ def subtract_fov_stack(
         pool.join()  # blocks script until everything has been processed and workers exit
 
         # linear loop for debug
-        # subtracted_imgs = [subtract_phase(subtract_pair) for subtract_pair in subtract_pairs]
-
-        # stack them up along a time axis
+        # # stack them up along a time axis
         subtracted_stack = np.stack(subtracted_imgs, axis=0)
 
         # save out the subtracted stack
@@ -347,7 +341,7 @@ def average_empties_stack(
     experiment_name: str,
     empty_dir: Path,
     fov_id: int,
-    specs: dict, # specifies if a channel is analyzed (1), ignored (-1), or reference empty (0)
+    specs: dict,  # specifies if a channel is analyzed (1), ignored (-1), or reference empty (0)
     alignment_pad: int,
     color: str = "c1",
     align: bool = True,
