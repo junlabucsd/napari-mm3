@@ -22,14 +22,17 @@ from magicgui.widgets import (
     PushButton,
 )
 
+from .utils import TIFF_FILE_FORMAT_PEAK
+
 from ._deriving_widgets import (
     FOVChooser,
     MM3Container,
     PlanePicker,
     load_specs,
     information,
-    load_unmodified_stack,
+    load_tiff,
 )
+
 
 # loss functions for model
 def dice_coeff(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
@@ -209,47 +212,32 @@ def get_pad_distances(unet_shape, img_height, img_width):
     return pad_dict
 
 
-def save_out(params, segmented_imgs, fov_id, peak_id):
-    """Saves out the segmented images in the correct format.
-    Parameters
-    ----------
-    params : dict
-        Dictionary of parameters.
-    segmented_imgs : np.ndarray
-        Array of segmented images.
-    fov_id : int
-        Field of view ID.
-    peak_id : int
-        Peak ID.
-
-    Returns
-    -------
-    None."""
+def save_out(
+    experiment_name: str,
+    seg_img: str,
+    seg_dir: str,
+    segmented_imgs: np.ndarray,
+    fov_id: int,
+    peak_id: int,
+) ->  None:
+    """Saves out the segmented images."""
     # save out the segmented stacks
-    seg_filename = params["experiment_name"] + "_xy%03d_p%04d_%s.tif" % (
+    seg_filename = experiment_name + "_xy%03d_p%04d_%s.tif" % (
         fov_id,
         peak_id,
-        params["seg_img"],
+        seg_img,
     )
     tiff.imwrite(
-        params["seg_dir"] / seg_filename,
+        seg_dir / seg_filename,
         segmented_imgs,
         compression=("zlib", 4),
     )
     return
 
 
-def normalize_to_one(img_stack):
-    """Normalizes the image stack to [0, 1] by subtracting the minimum and dividing by the range.
-    Parameters
-    ----------
-    img_stack : np.ndarray
-        Image stack.
-
-    Returns
-    -------
-    np.ndarray
-        Normalized image stack.
+def normalize(img_stack: np.ndarray) -> np.ndarray:
+    """
+    Normalizes the image stack to [0, 1] by subtracting the minimum and dividing by the range.
     """
     # permute to take advantage of numpy slicing
     img_stack = np.transpose(
@@ -262,21 +250,8 @@ def normalize_to_one(img_stack):
 
 ## post-processing of u-net output
 # binarize, remove small objects, clear border, and label
-def binarize_and_label(predictions, cellClassThreshold, min_object_size):
+def binarize_and_label(predictions, cellClassThreshold, min_object_size) -> np.ndarray:
     """Binarizes the predictions, removes small objects, clears the border, and labels the objects.
-    Parameters
-    ----------
-    predictions : np.ndarray
-        Predictions from the U-net.
-    cellClassThreshold : float
-        Threshold for binarizing the predictions.
-    min_object_size : int
-        Minimum object size to keep.
-
-    Returns
-    -------
-    np.ndarray
-        cleaned segmented images.
     """
 
     predictions[predictions >= cellClassThreshold] = 1
@@ -356,7 +331,22 @@ def pad_back(predictions, unet_shape, pad_dict):
 
 
 def segment_fov_unet(
-    fov_id: int, specs: dict, model, params: dict, color=None, view_result: bool = False
+    fov_id: int,
+    specs: dict,
+    model,
+    experiment_name: str,
+    phase_plane: str,
+    ana_dir: str,
+    seg_dir: str,
+    seg_img,
+    trained_model_image_height,
+    trained_model_image_width,
+    batch_size,
+    cell_class_threshold,
+    min_object_size,
+    num_analyzers,
+    normalize_to_one,
+    view_result: bool = False,
 ):
     """
     Segments the channels from one fov using the U-net CNN model.
@@ -370,14 +360,10 @@ def segment_fov_unet(
 
     information("Segmenting FOV {} with U-net.".format(fov_id))
 
-    if color is None:
-        color = params["phase_plane"]
+    color = phase_plane
 
     # load segmentation parameters
-    unet_shape = (
-        params["segment"]["trained_model_image_height"],
-        params["segment"]["trained_model_image_width"],
-    )
+    unet_shape = (trained_model_image_height, trained_model_image_width)
 
     ### determine stitching of images.
     # need channel shape, specifically the width. load first for example
@@ -393,7 +379,23 @@ def segment_fov_unet(
             ana_peak_ids.append(peak_id)
     ana_peak_ids.sort()  # sort for repeatability
 
-    segment_cells_unet(ana_peak_ids, fov_id, unet_shape, model, params, view_result)
+    segment_cells_unet(
+        ana_peak_ids,
+        fov_id,
+        unet_shape,
+        model,
+        experiment_name,
+        phase_plane,
+        ana_dir,
+        seg_dir,
+        seg_img,
+        batch_size,
+        cell_class_threshold,
+        min_object_size,
+        num_analyzers,
+        normalize_to_one,
+        view_result,
+    )
 
     information("Finished segmentation for FOV {}.".format(fov_id))
 
@@ -401,36 +403,36 @@ def segment_fov_unet(
 
 
 def segment_cells_unet(
-    ana_peak_ids, fov_id, unet_shape, model, params, view_result: bool = False
-):
+    ana_peak_ids: list,
+    fov_id: int,
+    unet_shape: tuple,
+    model: keras.Model,
+    experiment_name: str,
+    phase_plane: str,
+    ana_dir: str,
+    seg_dir: str,
+    seg_img: str,
+    batch_size: int,
+    cell_class_threshold: float,
+    min_object_size: int,
+    num_analyzers: int,
+    normalize_to_one: bool,
+    display_result: bool = False,
+) -> None:
     """
-    Segments cells using U-net model.
+    Segments cells using U-net model, filtering by a threshold a mininimum object size.
 
-    Args:
-        ana_peak_ids (list): List of peak IDs to segment.
-        fov_id (str): FOV ID.
-        pad_dict (dict): Dictionary containing padding information.
-        unet_shape (tuple): Shape of the U-net model.
-        model: U-net model.
-        params (dict): Parameters for cell segmentation.
-        view_result (bool, optional): Whether to display the segmentation results. Defaults to False.
     """
-    # params
-    cellClassThreshold = params["segment"]["cell_class_threshold"]
-    min_object_size = params["segment"]["min_object_size"]
-
     for peak_id in ana_peak_ids:
         information("Segmenting peak {}.".format(peak_id))
-        # img_stack = load_stack_params(
-        #     params, fov_id, peak_id, postfix=params["phase_plane"]
-        # )
-        img_stack = load_unmodified_stack(
-            params["ana_dir"],
-            params["experiment_name"],
+
+        img_stack_filename = TIFF_FILE_FORMAT_PEAK % (
+            experiment_name,
             fov_id,
             peak_id,
-            params["phase_plane"],
+            phase_plane,
         )
+        img_stack = load_tiff(ana_dir / "channels" / img_stack_filename)
 
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
@@ -438,16 +440,24 @@ def segment_cells_unet(
         pad_dict = get_pad_distances(unet_shape, img_height, img_width)
 
         # do the segmentation
-        predictions = segment_peak_unet(img_stack, unet_shape, pad_dict, model, params)
+        predictions = segment_peak_unet(
+            img_stack,
+            unet_shape,
+            pad_dict,
+            model,
+            batch_size,
+            num_analyzers,
+            normalize_to_one,
+        )
 
         # binarized and label
         segmented_imgs = binarize_and_label(
             predictions,
-            cellClassThreshold=cellClassThreshold,
+            cellClassThreshold=cell_class_threshold,
             min_object_size=min_object_size,
         )
 
-        if view_result:
+        if display_result:
             viewer = napari.current_viewer()
             viewer.grid.enabled = True
             viewer.grid.shape = (-1, 20)
@@ -462,36 +472,26 @@ def segment_cells_unet(
         segmented_imgs = segmented_imgs.astype("uint8")
 
         # save the segmented images
-        save_out(params, segmented_imgs, fov_id, peak_id)
+        save_out(experiment_name, seg_img, seg_dir, segmented_imgs, fov_id, peak_id)
 
 
-def segment_peak_unet(img_stack, unet_shape, pad_dict, model, params):
+def segment_peak_unet(
+    img_stack: np.ndarray,
+    unet_shape: tuple,
+    pad_dict: dict,
+    model: keras.Model,
+    batch_size: int,
+    num_analyzers: int,
+    normalize_to_one: bool,
+) -> np.ndarray:
     """
     Segments a peak using U-net model.
-
-    Args:
-        img_stack: Image stack for the peak.
-        unet_shape (tuple): Shape of the U-net model.
-        pad_dict (dict): Dictionary containing padding information.
-        model: U-net model.
-        params (dict): Parameters for cell segmentation.
-
-    Returns:
-        numpy.ndarray: Predictions of the U-net model for the peak.
     """
     # arguments to predict
-    predict_args = dict(
-        use_multiprocessing=True, workers=params["num_analyzers"], verbose=1
-    )
+    predict_args = dict(use_multiprocessing=True, workers=num_analyzers, verbose=1)
 
-    # linearized version for debugging
-    # predict_args = dict(use_multiprocessing=False,
-    #                     verbose=1)
-
-    batch_size = params["segment"]["batch_size"]
-
-    if params["segment"]["normalize_to_one"]:
-        img_stack = normalize_to_one(img_stack)
+    if normalize_to_one:
+        img_stack = normalize(img_stack)
 
     img_stack = trim_and_pad(img_stack, unet_shape, pad_dict)
     img_stack = np.expand_dims(img_stack, -1)  # TF expects images to be 4D
@@ -505,58 +505,60 @@ def segment_peak_unet(img_stack, unet_shape, pad_dict, model, params):
     return predictions
 
 
-def segmentUNet(params, custom_objects, view_result):
-    """
-    Segments cells using U-net model.
-
-    Args:
-        params (dict): Experiment parameters.
-        custom_objects (dict): Custom objects for model loading.
-        view_result (bool): Whether to display the segmentation results.
-    """
+def segmentUNet(
+    experiment_name: str,
+    image_directory: str,
+    fovs: list,
+    phase_plane: str,
+    model_file: str,
+    trained_model_image_height: int,
+    trained_model_image_width: int,
+    batch_size: int,
+    cell_class_threshold: float,
+    min_object_size: int,
+    normalize_to_one: bool,
+    num_analyzers: int,
+    ana_dir: str,
+    seg_dir: str,
+    cell_dir: str,
+    custom_objects: dict,
+    view_result: bool,
+) -> None:
     information("Loading experiment parameters.")
-    p = params
 
-    user_spec_fovs = params["FOV"]
-
-    information("Using {} threads for multiprocessing.".format(p["num_analyzers"]))
+    information("Using {} threads for multiprocessing.".format(num_analyzers))
 
     # create segmentation and cell data folder if they don't exist
-    if not os.path.exists(p["seg_dir"]):
-        os.makedirs(p["seg_dir"])
-    if not os.path.exists(p["cell_dir"]):
-        os.makedirs(p["cell_dir"])
+    if not os.path.exists(seg_dir):
+        os.makedirs(seg_dir)
+    if not os.path.exists(cell_dir):
+        os.makedirs(cell_dir)
 
     # set segmentation image name for saving and loading segmented images
-    p["seg_img"] = "seg_unet"
-    p["pred_img"] = "pred_unet"
+    seg_img = "seg_unet"
+    pred_img = "pred_unet"
 
     # load specs file
-    specs = load_specs(params["ana_dir"])
+    specs = load_specs(ana_dir)
     # print(specs) # for debugging
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
 
     # remove fovs if the user specified so
-    if user_spec_fovs:
-        fov_id_list[:] = [fov for fov in fov_id_list if fov in user_spec_fovs]
+    if fovs:
+        fov_id_list[:] = [fov for fov in fov_id_list if fov in fovs]
 
     information("Processing %d FOVs." % len(fov_id_list))
 
-    ### Do Segmentation by FOV and then peak #######################################################
+    ### Do Segmentation by FOV and then peak ######
     information("Segmenting channels using U-net.")
 
     # load model to pass to algorithm
     information("Loading model...")
 
-    model_file_path = p["segment"]["model_file"]
-
     # *** Need parameter for weights
-    seg_model = models.load_model(
-        model_file_path,
-        custom_objects=custom_objects,
-    )
+    seg_model = models.load_model(model_file, custom_objects=custom_objects)
     information("Model loaded.")
 
     for fov_id in fov_id_list:
@@ -564,9 +566,19 @@ def segmentUNet(params, custom_objects, view_result):
             fov_id,
             specs,
             seg_model,
-            params,
-            color=p["phase_plane"],
-            view_result=view_result,
+            experiment_name,
+            phase_plane,
+            ana_dir,
+            seg_dir,
+            seg_img,
+            trained_model_image_height,
+            trained_model_image_width,
+            batch_size,
+            cell_class_threshold,
+            min_object_size,
+            num_analyzers,
+            normalize_to_one,
+            view_result,
         )
 
     del seg_model
@@ -632,46 +644,29 @@ class SegmentUnet(MM3Container):
         self.preview_widget.clicked.connect(self.render_preview)
         self.display_widget.clicked.connect(self.set_view_result)
         self.model_source_widget.changed.connect(self.set_model_source)
+        self.model_file_widget.changed.connect(self.set_model_file)
+        self.min_object_size_widget.changed.connect(self.set_min_object_size)
+        self.batch_size_widget.changed.connect(self.set_batch_size)
+        self.cell_class_threshold_widget.changed.connect(self.set_cell_class_threshold)
+        self.normalize_widget.changed.connect(self.set_normalize_to_one)
+        self.height_widget.changed.connect(self.set_trained_model_image_height)
+        self.width_widget.changed.connect(self.set_trained_model_image_width)
 
         self.set_fovs(self.valid_fovs)
         self.set_view_result()
         self.set_model_source()
-
-    def set_params(self):
-        self.params = dict()
-        self.params["experiment_name"] = self.experiment_name
-        self.params["image_directory"] = self.TIFF_folder
-        self.params["FOV"] = self.fovs
-        self.params["output"] = "TIFF"
-        self.params["phase_plane"] = self.plane_widget.value
-        self.params["subtract"] = dict()
-        self.params["segment"] = dict()
-        self.params["segment"]["model_file"] = self.model_file_widget.value
-        self.params["segment"]["trained_model_image_height"] = self.height_widget.value
-        self.params["segment"]["trained_model_image_width"] = self.width_widget.value
-        self.params["segment"]["batch_size"] = self.batch_size_widget.value
-        self.params["segment"][
-            "cell_class_threshold"
-        ] = self.cell_class_threshold_widget.value
-        self.params["segment"]["min_object_size"] = self.min_object_size_widget.value
-        self.params["segment"]["normalize_to_one"] = self.normalize_widget.value
-        self.params["num_analyzers"] = multiprocessing.cpu_count()
-
-        # useful folder shorthands for opening files
-        self.params["TIFF_dir"] = self.TIFF_folder
-        self.params["ana_dir"] = self.analysis_folder
-
-        self.params["chnl_dir"] = self.params["ana_dir"] / "channels"
-        self.params["empty_dir"] = self.params["ana_dir"] / "empties"
-        self.params["sub_dir"] = self.params["ana_dir"] / "subtracted"
-        self.params["seg_dir"] = self.params["ana_dir"] / "segmented"
-        self.params["pred_dir"] = self.params["ana_dir"] / "predictions"
-        self.params["cell_dir"] = self.params["ana_dir"] / "cell_data"
-        self.params["track_dir"] = self.params["ana_dir"] / "tracking"
+        self.set_phase_plane()
+        self.set_model_file()
+        self.set_trained_model_image_height()
+        self.set_trained_model_image_width()
+        self.set_batch_size()
+        self.set_cell_class_threshold()
+        self.set_min_object_size()
+        self.set_normalize_to_one()
+        self.set_num_analyzers()
 
     def run(self):
         """Overriding method. Perform mother machine analysis."""
-        self.set_params()
         self.viewer.layers.clear()
 
         if self.model_source == "Pixelwise weighted":
@@ -683,7 +678,25 @@ class SegmentUnet(MM3Container):
         elif self.model_source == "Unweighted":
             custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
 
-        segmentUNet(self.params, custom_objects, view_result=self.view_result)
+        segmentUNet(
+            experiment_name=self.experiment_name,
+            image_directory=self.TIFF_folder,
+            fovs=self.fovs,
+            phase_plane=self.phase_plane,
+            model_file=self.model_file,
+            trained_model_image_height=self.trained_model_image_height,
+            trained_model_image_width=self.trained_model_image_width,
+            batch_size=self.batch_size,
+            cell_class_threshold=self.cell_class_threshold,
+            min_object_size=self.min_object_size,
+            normalize_to_one=self.normalize_to_one,
+            num_analyzers=self.num_analyzers,
+            ana_dir=self.analysis_folder,
+            seg_dir=self.analysis_folder / "segmented",
+            cell_dir=self.analysis_folder / "cell_data",
+            custom_objects=custom_objects,
+            view_result=self.view_result,
+        )
 
     def set_fovs(self, fovs):
         self.fovs = fovs
@@ -694,10 +707,35 @@ class SegmentUnet(MM3Container):
     def set_model_source(self):
         self.model_source = self.model_source_widget.value
 
+    def set_phase_plane(self):
+        self.phase_plane = self.plane_widget.value
+
+    def set_model_file(self):
+        self.model_file = self.model_file_widget.value
+
+    def set_trained_model_image_height(self):
+        self.trained_model_image_height = self.height_widget.value
+
+    def set_trained_model_image_width(self):
+        self.trained_model_image_width = self.width_widget.value
+
+    def set_batch_size(self):
+        self.batch_size = self.batch_size_widget.value
+
+    def set_cell_class_threshold(self):
+        self.cell_class_threshold = self.cell_class_threshold_widget.value
+
+    def set_min_object_size(self):
+        self.min_object_size = self.min_object_size_widget.value
+
+    def set_normalize_to_one(self):
+        self.normalize_to_one = self.normalize_widget.value
+
+    def set_num_analyzers(self):
+        self.num_analyzers = multiprocessing.cpu_count()
+
     def render_preview(self):
         self.viewer.layers.clear()
-        self.set_params()
-
         self.model_source = self.model_source_widget.value
 
         if self.model_source == "Pixelwise weighted":
@@ -711,32 +749,29 @@ class SegmentUnet(MM3Container):
 
         # TODO: Add ability to change these to other FOVs
         valid_fov = self.valid_fovs[0]
-        specs = load_specs(self.params["ana_dir"])
+        specs = load_specs(self.analysis_folder)
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         ## pull out first fov & peak id with cells
         # load segmentation parameters
         unet_shape = (
-            self.params["segment"]["trained_model_image_height"],
-            self.params["segment"]["trained_model_image_width"],
+            self.trained_model_image_height,
+            self.trained_model_image_width,
         )
-
-        # img_stack = load_stack_params(
-        #     self.params, valid_fov, valid_peak, postfix=self.params["phase_plane"]
-        # )
-        img_stack = load_unmodified_stack(
-            self.params["ana_dir"],
-            self.params["experiment_name"],
+        img_stack_filename = TIFF_FILE_FORMAT_PEAK % (
+            self.experiment_name,
             valid_fov,
             valid_peak,
-            postfix=self.params["phase_plane"],
+            self.phase_plane,
         )
+        img_stack = load_tiff(self.analysis_folder / "channels" / img_stack_filename)
+
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
 
         pad_dict = get_pad_distances(unet_shape, img_height, img_width)
 
-        model_file_path = self.params["segment"]["model_file"]
+        model_file_path = self.model_file
 
         # *** Need parameter for weights
         seg_model = models.load_model(
@@ -745,19 +780,22 @@ class SegmentUnet(MM3Container):
         )
 
         predictions = segment_peak_unet(
-            img_stack, unet_shape, pad_dict, seg_model, self.params
+            img_stack,
+            unet_shape,
+            pad_dict,
+            seg_model,
+            self.batch_size,
+            multiprocessing.cpu_count(),
+            self.normalize_to_one,
         )
 
         del seg_model
 
-        min_object_size = self.params["segment"]["min_object_size"]
-        cellClassThreshold = self.params["segment"]["cell_class_threshold"]
-
         # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
         segmented_imgs = binarize_and_label(
             predictions,
-            cellClassThreshold,
-            min_object_size,
+            self.cellClassThreshold,
+            self.min_object_size,
         )
         # segmented_imgs = predictions.astype("uint8")
         images = self.viewer.add_image(img_stack)

@@ -1,95 +1,105 @@
 import multiprocessing
-import re
-import os
-import glob
-import yaml
-import six
-import pickle
-import sys
-import traceback
-import tifffile as tiff
-import numpy as np
 import json
-from typing import Union
-
-# from skimage.io import imread This works but temporarily disabling.
-from skimage.io.collection import alphanumeric_key
-from dask import delayed
-import dask.array as da
-from glob import glob
-from scipy import ndimage as ndi
-from skimage.feature import match_template
+import os
+import pickle
+import re
 from multiprocessing import Pool
 from pathlib import Path
 from pprint import pprint
-from scipy.signal import find_peaks_cwt
-from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, ComboBox, CheckBox
+from typing import Optional, Union
+
+import numpy as np
+import six
+import tifffile as tiff
+import yaml
+from magicgui.widgets import (
+    CheckBox,
+    ComboBox,
+    PushButton,
+    Slider,
+    SpinBox,
+)
 from napari import Viewer
 from napari.utils import progress
+from scipy import ndimage as ndi
+from scipy.ndimage import rotate
+from scipy.signal import find_peaks_cwt
+from skimage.feature import match_template
+
 from ._deriving_widgets import (
-    MM3Container,
     FOVChooser,
-    TimeRangeSelector,
+    MM3Container,
     PlanePicker,
+    TimeRangeSelector,
     information,
+    load_tiff,
     warning,
-    load_unmodified_stack,
 )
+from .utils import TIFF_FILE_FORMAT_PEAK
+
+## Refactor:
+## IMAGE ORDER: FOV, phase plane, time, y, x. THIS IS NON-NEGOTIABLE
 
 
 #### Helpful utility functions.
-
-
-def dask_imread(path: Path):
-    paths = list(path.parent.glob(path.name))
-    filenames = sorted(map(str, paths), key=alphanumeric_key)
-    # read the first file to get the shape and dtype
-    # ASSUMES THAT ALL FILES SHARE THE SAME SHAPE/TYPE
-    sample = tiff.imread(filenames[0])
-
-    lazy_imread = delayed(tiff.imread)  # lazy reader
-    lazy_arrays = [lazy_imread(fn) for fn in filenames]
-    dask_arrays = [
-        da.from_delayed(delayed_reader, shape=sample.shape, dtype=sample.dtype)
-        for delayed_reader in lazy_arrays
-    ]
-    # Stack into one large dask.array
-    return da.stack(dask_arrays, axis=0)
-
-
-def get_plane(filepath: str) -> Union[str, None]:
+def get_plane(filepath: str) -> Optional[str]:
     """Extracts the plane / channel number (e.g. phase fluorescence etc.) from a tiff file name.
     It is used to sort the tiff files into the correct order for processing.
     """
     pattern = r"(c\d+).tif"
     res = re.search(pattern, filepath, re.IGNORECASE)
-    if res != None:
+    if res:
         return res.group(1)
-    else:
-        return None
+    return None
 
 
-def get_fov(filepath: str) -> Union[int, None]:
+def get_fov(filepath: str) -> Optional[int]:
     """Extracts the fov number from a tiff file name."""
     pattern = r"xy(\d+)\w*.tif"
     res = re.search(pattern, filepath, re.IGNORECASE)
-    if res != None:
+    if res is not None:
         return int(res.group(1))
-    else:
-        return None
+    return None
 
 
-def get_time(filepath: str) -> Union[np.int_, None]:
+def get_time(filepath: str) -> Optional[int]:
     """Extracts the time point from a tiff file name."""
     pattern = r"t(\d+)\w*.tif"
     res = re.search(pattern, filepath, re.IGNORECASE)
-    if res != None:
-        return np.int_(res.group(1))
+    if res is not None:
+        return int(res.group(1))
+    return None
+
+
+def merge_split_channels(TIFF_dir: Path) -> None:
+    information("Checking if imaging channels are separated")
+    found_files = list(TIFF_dir.glob("*.tif"))
+    found_files = sorted(found_files)
+
+    files_list = []
+    i = 0
+    while True:
+        c_string = re.compile(f"c(0)*{i}[._]", re.IGNORECASE)
+        matched_files = [f for f in found_files if re.search(c_string, f.name)]
+        if matched_files:
+            files_list.append(matched_files)
+            i += 1
+        elif i == 0:
+            # continue in case channels indexed from 1
+            i += 1
+        else:
+            break
+
+    files_array = np.array(files_list).squeeze()  # type:ignore
+    if files_array.ndim > 1:
+        information("Merging TIFFs across channel")
+        stack_channels(files_array, TIFF_dir)
+
     else:
-        return None
+        pass
 
 
-def stack_channels(found_files: np.ndarray, params: dict) -> None:
+def stack_channels(found_files: np.ndarray, TIFF_dir: Path) -> None:
     """Check if phase and fluorescence channels are separate tiffs.
     If so, restack them as one tiff file and save out to TIFF_dir.
     Move the original files to a new directory original_TIFF.
@@ -97,14 +107,10 @@ def stack_channels(found_files: np.ndarray, params: dict) -> None:
     Parameters
     ---------
     found_files: ndarray of filepaths for each imaging plane
-    params: dictionary of parameters
+    TIFF_dir: Path
+        Directory containing the TIFF files.
 
-    Returns
-    ---------
-    None
     """
-
-    found_files = np.transpose(found_files)
 
     for files in found_files:
         information("Merging files")
@@ -113,232 +119,149 @@ def stack_channels(found_files: np.ndarray, params: dict) -> None:
         im_out = np.stack(ims, axis=0)
 
         # need to insert regex here to catch variants
-        name_out = re.sub("c\d+", "", str(files[0]), flags=re.IGNORECASE)
+        name_out = re.sub(r"c\d+", "", str(files[0]), flags=re.IGNORECASE)
         # 'minisblack' necessary to ensure that it interprets image as black/white.
         tiff.imwrite(name_out, im_out, photometric="minisblack")
 
-        ## make a new directory for the old images
-        old_tiff_path = params["TIFF_dir"].parent / "original_TIFF"
+        old_tiff_path = TIFF_dir.parent / "original_TIFF"
         if not old_tiff_path.exists():
-            old_tiff_path.mkdir()
-            information("Creating directory for original TIFFs")
+            os.makedirs(old_tiff_path)
 
         for f in files:
-            f.replace(str(f).replace(str(params["TIFF_dir"]), "original_TIFF"))
-
-    return
+            os.rename(f, old_tiff_path / Path(f).name)
 
 
-### Functions for working with TIFF metadata ###
+def fix_rotation(angle: float, image_data: np.ndarray) -> np.ndarray:
+    # need to add support for no channels.
+    if angle == 0:
+        return image_data
+
+    if len(image_data.shape) == 2:
+        image_data = np.expand_dims(image_data, 0)
+
+    return rotate(image_data, angle, axes=(2, 1))
 
 
-# get params is the major function which processes raw TIFF images
-def get_tif_params(
-    params: dict, image_filename: str, find_channels: bool = True
-) -> dict:
-    """This is a damn important function for getting the information
-    out of an image. It loads a tiff file, pulls out the image data, and the metadata,
-    including the location of the channels if flagged.
-
-    it returns a dictionary like this for each image:
-
-    'filename': image_filename,
-    'fov' : image_metadata['fov'], # fov id
-    't' : image_metadata['t'], # time point
-    'jdn' : image_metadata['jdn'], # absolute julian time
-    'plane_names' : image_metadata['plane_names'] # list of plane names
-    'channels': cp_dict, # dictionary of channel locations, in the case of Unet-based channel segmentation, it's a dictionary of channel labels
-
-    Called by
-    compile
-
-    Calls
-    extract_metadata
-    find_channels
+# define function for flipping the images on an FOV by FOV basis
+def fix_orientation(
+    image_data: np.ndarray, phase_idx: int, image_orientation: str
+) -> np.ndarray:
+    """
+    Fix the orientation. The standard direction for channels to open to is down.
     """
 
-    try:
-        # open up file and get metadata
-        with tiff.TiffFile(params["TIFF_dir"] / image_filename) as tif:
-            image_data = tif.asarray()
+    image_data = np.squeeze(image_data)  # remove singleton dimensions
 
-            if params["TIFF_source"] == "nd2":
-                image_metadata = get_tif_metadata_nd2(tif)
-            elif params["TIFF_source"] == "BioFormats / other TIFF":
-                image_metadata = get_tif_metadata_filename(tif)
-            if image_metadata["planes"] is None:
-                image_metadata["planes"] = params["planes"]
+    # if this is just a phase image give in an extra layer so rest of code is fine
+    flat = False
+    if len(image_data.shape) == 2:
+        image_data = np.expand_dims(image_data, 0)
+        flat = True
 
-        # look for channels if flagged
-        if find_channels:
-            # fix the image orientation and get the number of planes
-
-            image_data = fix_orientation(params, image_data)
-
-            # if the image data has more than 1 plane restrict image_data to phase,
-            # which should have highest mean pixel data
-            if len(image_data.shape) > 2:
-                # ph_index = np.argmax([np.mean(image_data[ci]) for ci in range(image_data.shape[0])])
-                ph_index = int(params["phase_plane"][1:]) - 1
-                image_data = image_data[ph_index]
-
-            # get shape of single plane
-            img_shape = [image_data.shape[0], image_data.shape[1]]
-
-            # find channels on the processed image
-            chnl_loc_dict = find_channel_locs(params, image_data)
-
-        information("Analyzed %s" % image_filename)
-
-        # return the file name, the data for the channels in that image, and the metadata
-        return {
-            "filepath": params["TIFF_dir"] / image_filename,
-            "fov": image_metadata["fov"],  # fov id
-            "t": image_metadata["t"],  # time point
-            "jd": image_metadata["jd"],  # absolute julian time
-            "planes": image_metadata["planes"],  # list of plane names
-            "shape": img_shape,  # image shape x y in pixels
-            # 'channels' : {1 : {'A' : 1, 'B' : 2}, 2 : {'C' : 3, 'D' : 4}}}
-            "channels": chnl_loc_dict,
-        }  # dictionary of channel locations
-
-    except:
-        warning(f"Failed get_params for {image_filename}")
-        information(sys.exc_info()[0])
-        information(sys.exc_info()[1])
-        information(traceback.print_tb(sys.exc_info()[2]))
-        return {
-            "filepath": params["TIFF_dir"] / image_filename,
-            "analyze_success": False,
-        }
-
-
-def get_tif_params_loop(params: dict, found_files: list) -> dict:
-    """Loop over found files and extract image parameters.
-
-    Parameters
-    ----------
-    params:
-        dictionary of parameters
-    found_files:
-        list of tiff files to analyze.
-
-    Returns
-    --------
-    analyzed_imgs
-        dictionary of image metadata.
-    """
-
-    analyzed_imgs = {}  # stores image metadata
-    # initialize pool for analyzing image metadata
-    pool = Pool(params["num_analyzers"])
-
-    # loop over images and get information
-    for fn in found_files:
-        # get_params gets the image metadata and puts it in analyzed_imgs dictionary
-        # for each file name. True means look for channels
-
-        # This is the non-parallelized version (useful for debug)
-        # analyzed_imgs[fn] = get_tif_params(params,fn, True)
-
-        # # Parallelized
-        analyzed_imgs[fn] = pool.apply_async(get_tif_params, args=(params, fn, True))
-
-    information("Waiting for image analysis pool to be finished.")
-
-    pool.close()  # tells the process nothing more will be added.
-    pool.join()  # blocks script until everything has been processed and workers exit
-
-    information("Image analysis pool finished, getting results.")
-
-    # get results from the pool and put them in a dictionary
-    for fn in analyzed_imgs.keys():
-        result = analyzed_imgs[fn]
-        if result.successful():
-            analyzed_imgs[fn] = (
-                result.get()
-            )  # put the metadata in the dict if it's good
+    if image_orientation == "up":
+        return image_data[:, ::-1, :]
+    elif image_orientation == "down":
+        pass
+    elif image_orientation == "auto":
+        # flip based on the index of the highest average row value
+        brightest_row = np.argmax(image_data[phase_idx].mean(axis=1))
+        midline = image_data[phase_idx].shape[0] / 2
+        if brightest_row < midline:
+            image_data = image_data[:, ::-1, :]
         else:
-            analyzed_imgs[fn] = False  # put a false there if it's bad
+            pass
 
-    return analyzed_imgs
+    # just return that first layer if it's that single phase layer.
+    if flat:
+        image_data = image_data[0]
+
+    return image_data
 
 
-def get_tif_metadata_nd2(tif: tiff.TiffFile) -> dict:
-    """This function pulls out the metadata from a tif file and returns it as a dictionary.
-    This if tiff files as exported by the mm3 function nd2ToTiff. All the metdata
-    is found in that script and saved in json format to the tiff, so it is simply extracted here
+def find_phase_idx(image_data: np.ndarray, phase_plane: str):
+    # use 'phase_plane' to find the phase plane in image_data, assuming c1, c2, c3... naming scheme here.
+    try:
+        return int(re.search("[0-9]", phase_plane).group(0)) - 1  # type:ignore
+    except:  # noqa: E722
+        # Pick the plane to analyze with the highest mean px value (should be phase)
+        average_channel_brightness = np.mean(image_data, axis=range(1, image_data.ndim))
+        return np.argmax(average_channel_brightness)
 
-    Paramters:
-        tif: TIFF file object from which data will be extracted
-    Returns:
-        dictionary of values:
-            'fov': int,
-            't' : int,
-            'jdn' (float)
-            'planes' (list of strings)
 
-    Called by
-    mm3_Compile.get_tif_params
+# finds the location of channels in a tif
+def find_channel_locs(
+    phase_data: np.ndarray,
+    channel_width_pad: int,
+    channel_width: int,
+    channel_detection_snr: float,
+    channel_separation: int,
+) -> dict:
+    """Finds the location of channels from a phase contrast image. The channels are returned in
+    a dictionary where the key is the x position of the channel in pixel and the value is a
+    dictionary with the open and closed end in pixels in y.
 
+    chnl_loc_dict : dict
+        Dictionary with the channel locations.
     """
-    # get the first page of the tiff and pull out image description
-    # this dictionary should be in the above form
 
-    for tag in tif.pages[0].tags:
-        if tag.name == "ImageDescription":
-            idata = tag.value
-            break
+    crop_wp = int(channel_width_pad + channel_width / 2)
+    projection_x = phase_data.sum(axis=0).astype(np.int32)
+    peaks = find_peaks_cwt(
+        projection_x,
+        np.arange(channel_width - 5, channel_width + 5),
+        min_snr=channel_detection_snr,  # type: ignore
+    )
 
-    idata = json.loads(idata)
-    return idata
+    # if the first or last peaks are close to the margins, ignore them.
+    image_height, image_width = phase_data.shape[0], phase_data.shape[1]
+    if peaks[0] < (channel_separation / 2):
+        peaks = peaks[1:]
+    if image_width - peaks[-1] < (channel_separation / 2):
+        peaks = peaks[:-1]
+
+    # assume the closed end is in the upper third and open in
+    # the lower third, respectively. Find them.
+    projection_y = phase_data.sum(axis=1)
+    proj_diff = np.diff(projection_y.astype(np.int32))
+    onethirdpoint = int(image_height / 3.0)
+    twothirdpoint = int(image_height * 2.0 / 3.0)
+    default_closed_end = proj_diff[:onethirdpoint].argmax()
+    default_open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
+    default_length = default_open_end - default_closed_end
+
+    chnl_loc_dict = {}
+    for peak in peaks:
+        chnl_loc_dict[peak] = {
+            "closed_end_px": default_closed_end,
+            "open_end_px": default_open_end,
+        }
+        channel_slice = phase_data[:, peak - crop_wp : peak + crop_wp]
+        slice_projection_y = channel_slice.sum(axis=1)
+        proj_diff = np.diff(slice_projection_y.astype(np.int32))
+        slice_closed_end = proj_diff[:onethirdpoint].argmax()
+        slice_open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
+        slice_length = slice_open_end - slice_closed_end
+
+        image_height = phase_data.shape[0]
+        if (
+            abs(slice_length - default_length) <= 15
+            and 15 <= slice_closed_end <= image_height - 15
+            and 15 <= slice_open_end <= image_height - 15
+        ):
+            chnl_loc_dict[peak] = {
+                "closed_end_px": slice_closed_end,
+                "open_end_px": slice_open_end,
+            }
+
+    return chnl_loc_dict
 
 
-def get_tif_metadata_filename(tif: tiff.TiffFile) -> dict:
-    """This function pulls out the metadata from a tif filename and returns it as a dictionary.
-    This just gets the tiff metadata from the filename and is a backup option when the known format of the metadata is not known.
-
-    Paramters:
-        tif: TIFF file object from which data will be extracted
-    Returns:
-        dictionary of values:
-            'fov': int,
-            't' : int,
-            'jdn' (float)
-
-    Called by
-    get_tif_params
-
-    """
-    idata = {
-        "fov": get_fov(tif.filename),  # fov id
-        "t": get_time(tif.filename),  # time point
-        "jd": -1 * 0.0,  # absolute julian time
-        "planes": get_plane(tif.filename),
-    }
-
-    return idata
-
-
-### Functions for dealing with cross-correlations, which are used to determine empty/full channels ###
-# calculate cross correlation between pixels in channel stack
-def channel_xcorr(params: dict, fov_id: int, peak_id: int) -> list:
+def channel_xcorr(img_path: Path, pad_size) -> list:
     """
     Function calculates the cross correlation of images in a
-    stack to the first image in the stack. The output is an
-    array that is the length of the stack with the best cross
-    correlation between that image and the first image.
+    stack to the first image in the stack.
+    The very first value should be all 1s.
 
-    The very first value should be 1.
-
-    Parameters
-    ----------
-    params: dict
-        dictionary of parameters
-    fov_id: int
-        fov to analyze
-    peak_id:
-        peak (trap) to analyze
 
     Returns
     -------
@@ -346,90 +269,60 @@ def channel_xcorr(params: dict, fov_id: int, peak_id: int) -> list:
         array of cross correlations over time
     """
 
-    pad_size = params["compile"]["alignment_pad"]
-
-    # Use this number of images to calculate cross correlations
     number_of_images = 20
+    # switch postfix to c1/c2/c3 auto??
+    image_data = load_tiff(img_path)
 
-    # load the phase contrast images
-    # image_data = load_stack_params(
-    #    params, fov_id, peak_id, postfix=params["phase_plane"]
-    # )
-    image_data = load_unmodified_stack(
-        params["ana_dir"],
-        params["experiment_name"],
-        fov_id,
-        peak_id,
-        params["phase_plane"],
-    )
-
-    # if there are more images than number_of_images, use number_of_images images evenly
-    # spaced across the range
     if image_data.shape[0] > number_of_images:
         spacing = int(image_data.shape[0] / number_of_images)
         image_data = image_data[::spacing, :, :]
         if image_data.shape[0] > number_of_images:
             image_data = image_data[:number_of_images, :, :]
 
-    # we will compare all images to this one, needs to be padded to account for image drift
     first_img = np.pad(image_data[0, :, :], pad_size, mode="reflect")
 
-    xcorr_array = []  # array holds cross correlation vaues
+    xcorr_array = []
     for img in image_data:
-        # use match_template to find all cross correlations for the
-        # current image against the first image.
         xcorr_array.append(np.max(match_template(first_img, img)))
 
     return xcorr_array
 
 
-def compute_xcorr(channel_masks: dict, user_spec_fovs: list, params: dict) -> None:
-    """Loop over FOVs and compute time autocorrelation for each channel
-    Calls channel_xcorr
-
-    Parameters
-    ----------
-    channel_masks: list
-        Trap locations relative to FOV
-    user_spec_fovs:
-        FOVs to analyzed
-
-    params: dict
-        dictionary of parameters
-
-    Returns
-    ---------
-    None
+def compute_xcorr(
+    analysis_dir: Path,
+    experiment_name: str,
+    phase_plane: str,
+    channel_masks: dict,  # Trap locations relative to FOV
+    user_spec_fovs: list,  # user specified fovs
+    num_analyzers: int,
+    alignment_pad: int,
+) -> dict:
+    """
+    Compute time autocorrelation for each channel
     """
 
-    # a nested dict to hold cross corrs per channel per fov.
-    crosscorrs: dict[int, dict[int, dict[str, Union[float, list[float]]]]] = {}
+    crosscorrs = {}
 
-    # for each fov find cross correlations (sending to pull)
     for fov_id in progress(user_spec_fovs):
-        information("Calculating cross correlations for FOV %d." % fov_id)
-
-        # nested dict keys are peak_ids and values are cross correlations
         crosscorrs[fov_id] = {}
+        pool = Pool(num_analyzers)
 
-        # initialize pool for analyzing image metadata
-        pool = Pool(params["num_analyzers"])
-
-        # find all peak ids in the current FOV
         for peak_id in sorted(channel_masks[fov_id].keys()):
-            information("Calculating cross correlations for peak %d." % peak_id)
-
-            # linear loop
-            # crosscorrs[fov_id][peak_id] = channel_xcorr(params, fov_id, peak_id)
-
-            # multiprocessing verion
-            crosscorrs[fov_id][peak_id] = pool.apply_async(
-                channel_xcorr,
-                args=(
-                    params,
-                    fov_id,
-                    peak_id,
-                ),
+            print(
+                f"Calculating cross correlations for fov {fov_id + 1} and peak {peak_id}",
+                end="\r",
+            )
+            # currently broken:
+            # channel_xcorr(ana_dir, experiment_name, fov_id: int, peak_id: int, phase_plane, pad_size) -> list:
+            img_filename = TIFF_FILE_FORMAT_PEAK % (
+                experiment_name,
+                fov_id,
+                peak_id,
+                phase_plane,
+            )
+            img_path = analysis_dir / "channels" / img_filename
+            crosscorrs[fov_id][peak_id] = pool.apply_async(  # type:ignore
+                channel_xcorr, args=(img_path, alignment_pad)
             )
 
         information("Waiting for cross correlation pool to finish for FOV %d." % fov_id)
@@ -439,296 +332,120 @@ def compute_xcorr(channel_masks: dict, user_spec_fovs: list, params: dict) -> No
 
         information("Finished cross correlations for FOV %d." % fov_id)
 
-    # get results from the pool and put the results in the dictionary if succesful
-    for fov_id, peaks in six.iteritems(crosscorrs):
-        for peak_id, result in six.iteritems(peaks):
-            if result.successful():
-                # put the results, with the average, and a guess if the channel
-                # is full into the dictionary
+    for fov_id, peaks in crosscorrs.items():
+        for peak_id, result in peaks.items():
+            if result.successful():  # type:ignore
                 crosscorrs[fov_id][peak_id] = {
-                    "ccs": result.get(),
-                    "cc_avg": np.average(result.get()),
+                    "ccs": result.get(),  # type: ignore
+                    "cc_avg": np.average(result.get()),  # type:ignore
                 }
+
             else:
-                crosscorrs[fov_id][peak_id] = False  # put a false there if it's bad
+                crosscorrs[fov_id][peak_id] = False  # type:ignore
 
-    # linear loop for debug
-    # get results from the pool and put the results in the dictionary if succesful
-    # for fov_id, peaks in six.iteritems(crosscorrs):
-    #     for peak_id, result in six.iteritems(peaks):
-    #         crosscorrs[fov_id][peak_id] = {'ccs' : result,
-    #                                            'cc_avg' : np.average(result),
-    #                                            'full' : np.average(result) < params['compile']['channel_picking_threshold']}
-
-    # write cross-correlations to pickle and text
-    information("Writing cross correlations file.")
-    with open(os.path.join(params["ana_dir"], "crosscorrs.pkl"), "wb") as xcorrs_file:
+    with open(analysis_dir / "crosscorrs.pkl", "wb") as xcorrs_file:
         pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
-    with open(os.path.join(params["ana_dir"], "crosscorrs.txt"), "w") as xcorrs_file:
-        pprint(crosscorrs, stream=xcorrs_file)
-    information("Wrote cross correlations files.")
+    # with open(analysis_dir / "crosscorrs.pkl", "wb") as xcorrs_file:
+    #     json.dump(crosscorrs, xcorrs_file)
+
+    return crosscorrs
 
 
-### functions about trimming, padding, and manipulating images
-# cuts out channels from the image
-def cut_slice(image_data: np.ndarray, channel_loc: list) -> np.ndarray:
-    """Takes an image and cuts out the channel based on the slice location
-    slice location is the list with the peak information, in the form
-    [[y1, y2],[x1, x2]]. Returns the channel slice as a numpy array.
-    The numpy array will be a stack if there are multiple planes.
-
-    if you want to slice all the channels from a picture with the channel_masks
-    dictionary use a loop like this:
-
-    for channel_loc in channel_masks[fov_id]: # fov_id is the fov of the image
-        channel_slice = cut_slice[image_pixel_data, channel_loc]
-        then do something with the slice
-
-    NOTE: this function will try to determine what the shape of your
-    image is and slice accordingly. It expects the images are in the order
-    [t, x, y, c]. It assumes images with three dimensions are [x, y, c] not
-    [t, x, y].
-
-    Parameters
-    ----------
-    image_data: np.ndarray
-        image to be sliced
-    channel_loc: list
-        nested list of slice locations [[y1, y2],[x1, x2]]
-
-    Returns
-    -------
-    channel_slice: np.ndarray
-        sliced channel
+def load_channel_masks(ana_dir: Path) -> dict:
     """
-
-    # case where image is in form [x, y]
-    if len(image_data.shape) == 2:
-        # make slice object
-        channel_slicer = np.s_[
-            channel_loc[0][0] : channel_loc[0][1], channel_loc[1][0] : channel_loc[1][1]
-        ]
-
-    # case where image is in form [x, y, c]
-    elif len(image_data.shape) == 3:
-        channel_slicer = np.s_[
-            channel_loc[0][0] : channel_loc[0][1],
-            channel_loc[1][0] : channel_loc[1][1],
-            :,
-        ]
-
-    # case where image in form [t, x , y, c]
-    elif len(image_data.shape) == 4:
-        channel_slicer = np.s_[
-            :,
-            channel_loc[0][0] : channel_loc[0][1],
-            channel_loc[1][0] : channel_loc[1][1],
-            :,
-        ]
-    else:
-        warning(
-            f"Image shape not recognized. Expected 2, 3, or 4 dimensions, found {image_data.ndim} dimensions with shape {image_data.shape}."
-        )
-
-    # slice based on appropriate slicer object.
-    channel_slice = image_data[channel_slicer]
-
-    # pad y of channel if slice happened to be outside of image
-    y_difference = (channel_loc[0][1] - channel_loc[0][0]) - channel_slice.shape[1]
-    if y_difference > 0:
-        paddings = [[0, 0], [0, y_difference], [0, 0], [0, 0]]  # t  # y  # x  # c
-        channel_slice = np.pad(channel_slice, paddings, mode="edge")
-
-    return channel_slice
-
-
-# slice_and_write cuts up the image files one at a time and writes them out to tiff stacks
-def tiff_stack_slice_and_write(
-    params: dict, images_to_write: list, channel_masks: dict, analyzed_imgs: dict
-) -> None:
-    """Writes out 4D stacks of TIFF images per channel.
-    Loads all tiffs from and FOV into memory and then slices all time points at once.
-
-    Called by
-    __main__
+    Load channel masks dictionary. Should be .yaml but try pickle too.
     """
+    information("Loading channel masks dictionary.")
 
-    # make an array of images and then concatenate them into one big stack
-    image_fov_stack = []
+    # try loading from .yaml before .pkl
+    try:
+        information("Path:", ana_dir / "channel_masks.yaml")
+        with (ana_dir / "channel_masks.yaml").open("r") as cmask_file:
+            channel_masks = yaml.safe_load(cmask_file)
+    except:  # noqa: E722
+        warning("Could not load channel masks dictionary from .yaml.")
 
-    # go through list of images and get the file path
-    for n, image in enumerate(images_to_write):
-        # analyzed_imgs dictionary will be found in main scope. [0] is the key, [1] is jd
-        image_params = analyzed_imgs[image[0]]
+        try:
+            information("Path:", ana_dir / "channel_masks.pkl")
+            with (ana_dir / "channel_masks.pkl").open("rb") as cmask_file:
+                channel_masks = pickle.load(cmask_file)
+        except ValueError:
+            warning("Could not load channel masks dictionary from .pkl.")
 
-        information("Loading %s." % image_params["filepath"].name)
-
-        if n == 1:
-            # declare identification variables for saving using first image
-            fov_id = image_params["fov"]
-
-        # load the tif and store it in array
-        with tiff.TiffFile(image_params["filepath"]) as tif:
-            image_data = tif.asarray()
-
-        # channel finding was also done on images after orientation was fixed
-        image_data = fix_orientation(params, image_data)
-
-        # add additional axis if the image is flat
-        if len(image_data.shape) == 2:
-            image_data = np.expand_dims(image_data, 0)
-
-        # change axis so it goes Y, X, Plane
-        image_data = np.rollaxis(image_data, 0, 3)
-
-        # add it to list. The images should be in time order
-        image_fov_stack.append(image_data)
-
-    # concatenate the list into one big ass stack
-    image_fov_array = np.stack(image_fov_stack, axis=0)
-
-    # cut out the channels as per channel masks for this fov
-    for peak, channel_loc in six.iteritems(channel_masks[fov_id]):
-        # information('Slicing and saving channel peak %s.' % channel_filename.split('/')[-1])
-        information("Slicing and saving channel peak %d." % peak)
-
-        # channel masks should only contain ints, but you can use this for hard fix
-        # for i in range(len(channel_loc)):
-        #     for j in range(len(channel_loc[i])):
-        #         channel_loc[i][j] = int(channel_loc[i][j])
-
-        # slice out channel.
-        # The function should recognize the shape length as 4 and cut all time points
-        channel_stack = cut_slice(image_fov_array, channel_loc)
-
-        # save a different time stack for all colors
-        for color_index in range(channel_stack.shape[3]):
-            # this is the filename for the channel
-            # # chnl_dir and p will be looked for in the scope above (__main__)
-            channel_filename = params["chnl_dir"] / (
-                params["experiment_name"]
-                + "_xy%03d_p%04d_c%1d.tif" % (fov_id, peak, color_index + 1)
-            )
-            # save stack
-            tiff.imwrite(
-                channel_filename,
-                channel_stack[:, :, :, color_index],
-                compression=("zlib", 4),
-            )
-
-    return
+    return channel_masks
 
 
 def make_consensus_mask(
-    fov: int,
-    analyzed_imgs: dict,
-    image_rows: int,
-    image_cols: int,
-    crop_wp: int,
-    chan_lp: int,
+    phase_imgs: np.ndarray,
+    chann_array: list[dict],  # time series of channel dicts
+    crop_wp: int,  # channel with padding
+    chan_lp: int,  # channel length padding
 ) -> np.ndarray:
     """
     Generate consensus channel mask for a given fov.
-
-    Parameters
-    ----------
-    fov: int
-        fov to analyze
-    analyzed_imgs: dict
-        image data
-    image_rows: int
-        image height
-    image_cols: int
-        image width
-    crop_wp: int
-        channel width padding
-    crop_lp: int
-        channel_width padding
+    Assume timestamps are pre-selected.
 
     Returns
     -------
     consensus_mask: np.ndarray
     """
-
-    consensus_mask = np.zeros([image_rows, image_cols])  # mask for labeling
+    times, img_rows, img_cols = phase_imgs.shape
+    consensus_mask = np.zeros([img_rows, img_cols])  # mask for labeling
 
     # bring up information for each image
-    for img_k in analyzed_imgs.keys():
-        img_v = analyzed_imgs[img_k]
-        # skip this one if it is not of the current fov
-        if img_v["fov"] != fov:
-            continue
-
-        # for each channel in each image make a single mask
-        img_chnl_mask = np.zeros([image_rows, image_cols])
+    for cur_t_img in phase_imgs:
+        img_chnl_mask = np.zeros([img_rows, img_cols])
 
         # and add the channel mask to it
-        for chnl_peak, peak_ends in six.iteritems(img_v["channels"]):
-            # pull out the peak location and top and bottom location
-            # and expand by padding (more padding done later for width)
-            x1 = max(chnl_peak - crop_wp, 0)
-            x2 = min(chnl_peak + crop_wp, image_cols)
-            y1 = max(peak_ends["closed_end_px"] - chan_lp, 0)
-            y2 = min(peak_ends["open_end_px"] + chan_lp, image_rows)
+        for t_chnls in chann_array:
+            for chnl_peak, peak_ends in t_chnls.items():
+                # expand by padding (more padding done later for width)
+                x1 = max(chnl_peak - crop_wp, 0)
+                x2 = min(chnl_peak + crop_wp, img_cols)
+                y1 = max(peak_ends["closed_end_px"] - chan_lp, 0)
+                y2 = min(peak_ends["open_end_px"] + chan_lp, img_rows)
 
-            # add it to the mask for this image
-            img_chnl_mask[y1:y2, x1:x2] = 1
+                img_chnl_mask[y1:y2, x1:x2] = 1
 
-        # add it to the consensus mask
-        consensus_mask += img_chnl_mask
+            # add it to the consensus mask
+            consensus_mask += img_chnl_mask
 
     # Normalize consensus mask between 0 and 1.
     consensus_mask = consensus_mask.astype("float32") / float(np.amax(consensus_mask))
 
-    # threshhold and homogenize each channel mask within the mask, label them
     # label when value is above 0.1 (so 90% occupancy), transpose.
     # the [0] is for the array ([1] is the number of regions)
     # It transposes and then transposes again so regions are labeled left to right
     # clear border it to make sure the channels are off the edge
-    consensus_mask = ndi.label(consensus_mask)[0]
+    consensus_mask = ndi.label(consensus_mask)[0]  # type: ignore
 
     return consensus_mask
 
 
 def update_channel_masks(
-    max_len: int,
-    max_wid: int,
-    binary_core: np.ndarray,
-    image_cols: int,
-    channel_masks_1fov: dict,
+    max_ch_l: int,
+    max_ch_w: int,
+    label_mask: np.ndarray,
+    img_w: int,
+    ch_masks: dict,  # dictionary of channel masks (per FOV)
 ) -> tuple[int, int, dict]:
     """
-    Add channel locations to dict. Update max channel length/width.
-
-    Parameters
-    ----------
-    max_len: int
-        maximum channel length
-    max_wid: int
-        maximum channel width
-    binary_core: np.ndarray
-        binary mask selecting current label
-    image_cols: int
-        image width
-    channel_masks_1fov: dict
-        dictionary of channel masks
-
     Returns
     -------
-    max_len: int
-        updated maximum channel length
-    max_wid: int
-        updated maximum channel width
-    channel_masks_1fov: dict
-        updated dictionary of channel masks
+    max_ch_l: int
+        maximum channel length
+    max_ch_w: int
+        maximum channel width
+    ch_masks: dict
+        updated dictionary of channel masks for the FOV
     """
 
     # clean up the rough edges
-    poscols = np.any(binary_core, axis=0)  # column positions where true (any)
-    posrows = np.any(binary_core, axis=1)  # row positions where true (any)
+    poscols = np.any(label_mask, axis=0)  # column positions where true (any)
+    posrows = np.any(label_mask, axis=1)  # row positions where true (any)
 
     # channel_id given by horizontal position
-    # this is important. later updates to the positions will have to check
+    # later updates to the positions will have to check
     # if their channels contain this median value to match up
     channel_id = int(np.median(np.where(poscols)[0]))
 
@@ -738,676 +455,163 @@ def update_channel_masks(
     min_col = np.min(np.where(poscols)[0])
     max_col = np.max(np.where(poscols)[0])
 
-    # if the min/max cols are within the image bounds,
-    # add the mask, as 4 points, to the dictionary
-    if min_col > 0 and max_col < image_cols:
-        channel_masks_1fov[channel_id] = [
+    if (0 < min_col) and (max_col < img_w):
+        ch_masks[channel_id] = [
             [min_row, max_row],
             [min_col, max_col],
         ]
 
         # find the largest channel width and height while you go round
-        max_len = int(max(max_len, max_row - min_row))
-        max_wid = int(max(max_wid, max_col - min_col))
+        max_ch_l = int(max(max_ch_l, max_row - min_row))
+        max_ch_w = int(max(max_ch_w, max_col - min_col))
 
-    return max_len, max_wid, channel_masks_1fov
+    return max_ch_l, max_ch_w, ch_masks
 
 
 def adjust_channel_mask(
-    chnl_mask: list, cm_copy: list, max_len: int, max_wid: int, image_cols: int
+    chnl_mask_corners: list,  # indices of mask corners
+    consensus_chnl_mask: list,
+    max_len: int,
+    max_wid: int,
+    image_cols: int,
 ) -> list:
     """
     Expand channel mask to match maximum length and width.
 
-    Parameters
-    ----------
-    chnl_mask: list
-        indices of channel mask corners
-    cm_copy: list
-        consensus channel mask
-    max_len: int
-        maximum channel length
-    max_width: int
-        maximum channel width
-    image_cols: int
-        image width in pixels
-
     Returns
     -------
-    cm_copy: list
+    ch_mask_copy: list
         updated consensus channel mask
     """
     # just add length to the open end (bottom of image, low column)
-    if chnl_mask[0][1] - chnl_mask[0][0] != max_len:
-        cm_copy[0][1] = chnl_mask[0][0] + max_len
+    if chnl_mask_corners[0][1] - chnl_mask_corners[0][0] != max_len:
+        consensus_chnl_mask[0][1] = chnl_mask_corners[0][0] + max_len
     # enlarge widths around the middle, but make sure you don't get floats
-    if chnl_mask[1][1] - chnl_mask[1][0] != max_wid:
-        wid_diff = max_wid - (chnl_mask[1][1] - chnl_mask[1][0])
+    if chnl_mask_corners[1][1] - chnl_mask_corners[1][0] != max_wid:
+        wid_diff = max_wid - (chnl_mask_corners[1][1] - chnl_mask_corners[1][0])
         if wid_diff % 2 == 0:
-            cm_copy[1][0] = max(chnl_mask[1][0] - wid_diff / 2, 0)
-            cm_copy[1][1] = min(chnl_mask[1][1] + wid_diff / 2, image_cols - 1)
+            consensus_chnl_mask[1][0] = max(chnl_mask_corners[1][0] - wid_diff / 2, 0)
+            consensus_chnl_mask[1][1] = min(
+                chnl_mask_corners[1][1] + wid_diff / 2, image_cols - 1
+            )
         else:
-            cm_copy[1][0] = max(chnl_mask[1][0] - (wid_diff - 1) / 2, 0)
-            cm_copy[1][1] = min(chnl_mask[1][1] + (wid_diff + 1) / 2, image_cols - 1)
+            consensus_chnl_mask[1][0] = max(
+                chnl_mask_corners[1][0] - (wid_diff - 1) / 2, 0
+            )
+            consensus_chnl_mask[1][1] = min(
+                chnl_mask_corners[1][1] + (wid_diff + 1) / 2, image_cols - 1
+            )
 
-    cm_copy = [list(map(int, i)) for i in cm_copy]  # make sure they are ints
+    consensus_chnl_mask = [
+        list(map(int, i)) for i in consensus_chnl_mask
+    ]  # make sure they are ints
 
-    return cm_copy
+    return consensus_chnl_mask
 
 
-# make masks from initial set of images (same images as clusters)
-def make_masks(params: dict, analyzed_imgs: dict, t_start: int, t_end: int) -> dict:
+def make_masks(
+    phase_image: np.ndarray,
+    chnl_timeseries: list[dict],
+    channel_width_pad: int = 0,
+    channel_width: int = 0,
+    channel_length_pad: int = 0,
+) -> tuple[int, int, dict]:
     """
-    Make masks goes through the channel locations in the image metadata and builds a consensus
-    Mask for each image per fov, which it returns as dictionary named channel_masks.
-    The keys in this dictionary are fov id, and the values is another dictionary. This dict's keys are channel locations (peaks) and the values is a [2][2] array:
-    [[minrow, maxrow],[mincol, maxcol]] of pixel locations designating the corner of each mask
-    for each channel on the whole image
-
+    The output dictionary's keys are peak numbers, and the values are channel locations in format
+    [[minrow, maxrow], [mincol, maxcol]]
     One important consequence of these function is that the channel ids and the size of the
     channel slices are decided now. Updates to mask must coordinate with these values.
-
-    Parameters
-    ----------
-    analyzed_imgs : dict
-        image information created by get_params
 
     Returns
     -------
     channel_masks : dict
         dictionary of consensus channel masks.
 
-    Called By
-    compile
-
-    Calls
-    make_consensus_mask
-    get_max_chnl_dim
-    adjust_channel_mask
     """
-    information("Determining initial channel masks...")
+    # declare temp variables from parameters.
+    crop_wp = int(channel_width_pad + channel_width / 2)
+    chan_lp = int(channel_length_pad)
 
-    # only calculate channels masks from images before t_end in case it is specified
-    if t_start:
-        analyzed_imgs = {
-            fn: i_metadata
-            for fn, i_metadata in six.iteritems(analyzed_imgs)
-            if i_metadata["t"] >= t_start
-        }
-    if t_end:
-        analyzed_imgs = {
-            fn: i_metadata
-            for fn, i_metadata in six.iteritems(analyzed_imgs)
-            if i_metadata["t"] <= t_end
-        }
-
-    # declare temp variables from yaml parameter dict.
-    crop_wp = int(
-        params["compile"]["channel_width_pad"] + params["compile"]["channel_width"] / 2
-    )
-    chan_lp = int(params["compile"]["channel_length_pad"])
-
-    # get the size of the images (hope they are the same)
-    for img_k in analyzed_imgs.keys():
-        img_v = analyzed_imgs[img_k]
-        image_rows = img_v["shape"][0]  # x pixels
-        image_cols = img_v["shape"][1]  # y pixels
-        break  # just need one. using iteritems mean the whole dict doesn't load
-
-    # get the fov ids
-    fovs = []
-    for img_k in analyzed_imgs.keys():
-        img_v = analyzed_imgs[img_k]
-        if img_v["fov"] not in fovs:
-            fovs.append(img_v["fov"])
+    times, image_rows, image_cols = phase_image.shape
 
     # max width and length across all fovs. channels will get expanded by these values
     # this important for later updates to the masks, which should be the same
-    max_len = 0
-    max_wid = 0
+    max_len, max_wid = 0, 0
 
-    # intialize dictionary
+    consensus_mask = make_consensus_mask(phase_image, chnl_timeseries, crop_wp, chan_lp)
+
+    # initialize dict which holds channel masks {peak : [[y1, y2],[x1,x2]],...}
     channel_masks = {}
 
-    # for each fov make a channel_mask dictionary from consensus mask
-    for fov in fovs:
+    # go through each label
+    for label in np.unique(consensus_mask):
+        if label == 0:  # label zero is the background
+            continue
 
-        consensus_mask = make_consensus_mask(
-            fov, analyzed_imgs, image_rows, image_cols, crop_wp, chan_lp
+        label_mask = consensus_mask == label
+        max_len, max_wid, channel_masks = update_channel_masks(
+            max_len, max_wid, label_mask, image_cols, channel_masks
         )
 
-        # initialize dict which holds channel masks {peak : [[y1, y2],[x1,x2]],...}
-        channel_masks_1fov: dict[int, list[list[float]]] = {}
-
-        # go through each label
-        for label in np.unique(consensus_mask):
-            if label == 0:  # label zero is the background
-                continue
-
-            binary_core = consensus_mask == label
-            max_len, max_wid, channel_masks_1fov = update_channel_masks(
-                max_len, max_wid, binary_core, image_cols, channel_masks_1fov
-            )
-
-        # add channel_mask dictionary to the fov dictionary, use copy to play it safe
-        channel_masks[fov] = channel_masks_1fov.copy()
-
-    # update all channel masks to be the max size
-    cm_copy = channel_masks.copy()
-
-    for fov, peaks in six.iteritems(channel_masks):
-        for peak, chnl_mask in six.iteritems(peaks):
-            cm_copy[fov][peak] = adjust_channel_mask(
-                chnl_mask, cm_copy[fov][peak], max_len, max_wid, image_cols
-            )
-
-    # save the channel mask dictionary to a yaml and a text file
-    with open(os.path.join(params["ana_dir"], "channel_masks.txt"), "w") as cmask_file:
-        pprint(cm_copy, stream=cmask_file)
-    with open(os.path.join(params["ana_dir"], "channel_masks.yaml"), "w") as cmask_file:
-        yaml.dump(data=cm_copy, stream=cmask_file, default_flow_style=False, tags=None)
-
-    information("Channel masks saved.")
-
-    return cm_copy
+    # add channel_mask dictionary to the fov dictionary, use copy to play it safe
+    return max_len, max_wid, channel_masks.copy()
 
 
-# function for loading the channel masks
-def load_channel_masks(params: dict) -> dict:
-    """Load channel masks dictionary. Should be .yaml but try pickle too.
+def tiff_stack_slice_and_write(
+    images_to_write: list,
+    fov_id: int,
+    channel_masks_fov: dict,
+    experiment_name: str,
+    channel_dir: Path,
+) -> None:
+    """Writes out 4D stacks of TIFF images per channel.
+    Loads all tiffs from and FOV into memory and then slices all time points at once.
 
     Parameters
     ----------
-    params: dict
-        parameters dictionary
-
-    Returns
-    -------
-    channel_masks: dict
-        dictionary of channel masks
+    images_to_write: list
+        list of images to write
     """
-    information("Loading channel masks dictionary.")
-
-    # try loading from .yaml before .pkl
-    try:
-        information("Path:", os.path.join(params["ana_dir"], "channel_masks.yaml"))
-        with open(
-            os.path.join(params["ana_dir"], "channel_masks.yaml"), "r"
-        ) as cmask_file:
-            channel_masks = yaml.safe_load(cmask_file)
-    except:
-        warning("Could not load channel masks dictionary from .yaml.")
-
-        try:
-            information("Path:", os.path.join(params["ana_dir"], "channel_masks.pkl"))
-            with open(
-                os.path.join(params["ana_dir"], "channel_masks.pkl"), "rb"
-            ) as cmask_file:
-                channel_masks = pickle.load(cmask_file)
-        except ValueError:
-            warning("Could not load channel masks dictionary from .pkl.")
-
-    return channel_masks
-
-
-# make a lookup time table for converting nominal time to elapsed time in seconds
-def make_time_table(params: dict, analyzed_imgs: dict) -> dict:
-    """
-    Loops through the analyzed images and uses the jd time in the metadata to find the elapsed
-    time in seconds that each picture was taken. This is later used for more accurate elongation
-    rate calculation.
-
-    Parameters
-    ---------
-    analyzed_imgs : dict
-        The output of get_tif_params.
-    params['use_jd'] : boolean
-        If set to True, 'jd' time will be used from the image metadata to use to create time table. Otherwise the 't' index will be used, and the parameter 'seconds_per_time_index' will be used from the parameters.yaml file to convert to seconds.
-
-    Returns
-    -------
-    time_table : dict
-        Look up dictionary with keys for the FOV and then the time point.
-    """
-    information("Making time table...")
-
-    # initialize
-    time_table = {}
-
-    first_time = float("inf")
-
-    # need to go through the data once to find the first time
-    for iname, idata in six.iteritems(analyzed_imgs):
-        if params["use_jd"]:
-            try:
-                if idata["jd"] < first_time:
-                    first_time = idata["jd"]
-            except:
-                if idata["t"] < first_time:
-                    first_time = idata["t"]
-        else:
-            if idata["t"] < first_time:
-                first_time = idata["t"]
-
-        # init dictionary for specific times per FOV
-        if idata["fov"] not in time_table:
-            time_table[idata["fov"]] = {}
-
-    for iname, idata in six.iteritems(analyzed_imgs):
-        if params["use_jd"]:
-            # convert jd time to elapsed time in seconds
-            try:
-                t_in_seconds = np.around(
-                    (idata["jd"] - first_time) * 24 * 60 * 60, decimals=0
-                ).astype("uint32")
-            except:
-                information(
-                    "Failed to extract time from metadata. Using user-specified interval."
-                )
-                t_in_seconds = np.around(
-                    (idata["t"] - first_time) * params["seconds_per_time_index"],
-                    decimals=0,
-                ).astype("uint32")
-        else:
-            t_in_seconds = np.around(
-                (idata["t"] - first_time) * params["seconds_per_time_index"], decimals=0
-            ).astype("uint32")
-
-        time_table[int(idata["fov"])][int(idata["t"])] = int(t_in_seconds)
-
-    # save to .pkl. This pkl will be loaded into the params
-    # with open(os.path.join(params['ana_dir'], 'time_table.pkl'), 'wb') as time_table_file:
-    #     pickle.dump(time_table, time_table_file, protocol=pickle.HIGHEST_PROTOCOL)
-    # with open(os.path.join(params['ana_dir'], 'time_table.txt'), 'w') as time_table_file:
-    #     pprint(time_table, stream=time_table_file)
-    with open(
-        os.path.join(params["ana_dir"], "time_table.yaml"), "w"
-    ) as time_table_file:
-        yaml.dump(
-            data=time_table, stream=time_table_file, default_flow_style=False, tags=None
-        )
-    information("Time table saved.")
-
-    return time_table
-
-
-# finds the location of channels in a tif
-def find_channel_locs(params: dict, image_data: np.ndarray) -> dict:
-    """Finds the location of channels from a phase contrast image. The channels are returned in
-    a dictionary where the key is the x position of the channel in pixel and the value is a
-    dicionary with the open and closed end in pixels in y.
-
-
-    Called by
-    get_tif_params
-
-    """
-
-    # declare temp variables from yaml parameter dict.
-    chan_w = params["compile"]["channel_width"]
-    chan_sep = params["compile"]["channel_separation"]
-    crop_wp = int(params["compile"]["channel_width_pad"] + chan_w / 2)
-    chan_snr = params["compile"]["channel_detection_snr"]
-
-    # Detect peaks in the x projection (i.e. find the channels)
-    projection_x = image_data.sum(axis=0).astype(np.int32)
-    # find_peaks_cwt is a function which attempts to find the peaks in a 1-D array by
-    # convolving it with a wave. here the wave is the default Mexican hat wave
-    # but the minimum signal to noise ratio is specified
-    # *** The range here should be a parameter or changed to a fraction.
-    peaks = find_peaks_cwt(
-        projection_x, np.arange(chan_w - 5, chan_w + 5), min_snr=chan_snr
-    )
-
-    # If the left-most peak position is within half of a channel separation,
-    # discard the channel from the list.
-    if peaks[0] < (chan_sep / 2):
-        peaks = peaks[1:]
-    # If the diference between the right-most peak position and the right edge
-    # of the image is less than half of a channel separation, discard the channel.
-    if image_data.shape[1] - peaks[-1] < (chan_sep / 2):
-        peaks = peaks[:-1]
-
-    # Find the average channel ends for the y-projected image
-    projection_y = image_data.sum(axis=1)
-    # find derivative, must use int32 because it was unsigned 16b before.
-    proj_y_d = np.diff(projection_y.astype(np.int32))
-    # use the top third to look for closed end, is pixel location of highest deriv
-    onethirdpoint_y = int(projection_y.shape[0] / 3.0)
-    default_closed_end_px = proj_y_d[:onethirdpoint_y].argmax()
-    # use bottom third to look for open end, pixel location of lowest deriv
-    twothirdpoint_y = int(projection_y.shape[0] * 2.0 / 3.0)
-    default_open_end_px = twothirdpoint_y + proj_y_d[twothirdpoint_y:].argmin()
-    default_length = default_open_end_px - default_closed_end_px  # used for checks
-
-    # go through peaks and assign information
-    # dict for channel dimensions
-    chnl_loc_dict = {}
-    # key is peak location, value is dict with {'closed_end_px': px, 'open_end_px': px}
-
-    for peak in peaks:
-        # set defaults
-        chnl_loc_dict[peak] = {
-            "closed_end_px": default_closed_end_px,
-            "open_end_px": default_open_end_px,
-        }
-        # redo the previous y projection finding with just this channel
-        channel_slice = image_data[:, peak - crop_wp : peak + crop_wp]
-        slice_projection_y = channel_slice.sum(axis=1)
-        slice_proj_y_d = np.diff(slice_projection_y.astype(np.int32))
-        slice_closed_end_px = slice_proj_y_d[:onethirdpoint_y].argmax()
-        slice_open_end_px = twothirdpoint_y + slice_proj_y_d[twothirdpoint_y:].argmin()
-        slice_length = slice_open_end_px - slice_closed_end_px
-
-        # check if these values make sense. If so, use them. If not, use default
-        # make sure lenght is not 30 pixels bigger or smaller than default
-        # *** This 15 should probably be a parameter or at least changed to a fraction.
-        if slice_length + 15 < default_length or slice_length - 15 > default_length:
-            continue
-        # make sure ends are greater than 15 pixels from image edge
-        if slice_closed_end_px < 15 or slice_open_end_px > image_data.shape[0] - 15:
-            continue
-
-        # if you made it to this point then update the entry
-        chnl_loc_dict[peak] = {
-            "closed_end_px": slice_closed_end_px,
-            "open_end_px": slice_open_end_px,
-        }
-
-    return chnl_loc_dict
-
-
-# define function for flipping the images on an FOV by FOV basis
-def fix_orientation(params: dict, image_data: np.ndarray) -> np.ndarray:
-    """
-    Fix the orientation. The standard direction for channels to open to is down.
-
-    called by
-        process_tif
-        get_params
-    """
-
-    # user parameter indicates how things should be flipped
-    image_orientation = params["compile"]["image_orientation"]
-
-    image_data = np.squeeze(
-        image_data
-    )  # remove singleton dimensions to standardize shape
-
-    # if this is just a phase image give in an extra layer so rest of code is fine
-    flat = False  # flag for if the image is flat or multiple levels
-    if len(image_data.shape) == 2:
-        image_data = np.expand_dims(image_data, 0)
-        flat = True
-
-    # setting image_orientation to 'auto' will use autodetection
-    if image_orientation == "auto":
-        # use 'phase_plane' to find the phase plane in image_data, assuming c1, c2, c3... naming scheme here.
-        try:
-            ph_channel = int(re.search("[0-9]", params["phase_plane"]).group(0)) - 1
-        except:
-            # Pick the plane to analyze with the highest mean px value (should be phase)
-            ph_channel = np.argmax(
-                [np.mean(image_data[ci]) for ci in range(image_data.shape[0])]
-            )
-
-        # flip based on the index of the higest average row value
-        # this should be closer to the opening
-        if (
-            np.argmax(image_data[ph_channel].mean(axis=1))
-            < image_data[ph_channel].shape[0] / 2
-        ):
-            image_data = image_data[:, ::-1, :]
-        else:
-            pass  # no need to do anything
-
-    # flip if up is chosen
-    elif image_orientation == "up":
-        return image_data[:, ::-1, :]
-
-    # do not flip the images if "down is the specified image orientation"
-    elif image_orientation == "down":
-        pass
-
-    if flat:
-        image_data = image_data[0]  # just return that first layer
-
-    return image_data
-
-
-def filter_files(
-    found_files: list, t_start: int, t_end: int, user_spec_fovs: list
-) -> list:
-    """Filter images for analysis based on user specified start / end time and FOVs
-
-    Parameters
-    ------------
-    found_files: list
-        list of files in TIFF directory.
-    t_start: int
-        start time for analysis.
-    t_end: int
-        end time for analysis.
-
-    Returns
-    ---------
-    found_files: list
-        filtered files for analysis.
-
-    """
-
-    found_files = [filepath.name for filepath in found_files]  # remove pre-path
-    found_files = sorted(found_files)  # should sort by timepoint
-
-    # keep images starting at this timepoint
-    if t_start is not None:
-        information("Removing images before time {}".format(t_start))
-        # go through list and find first place where timepoint is equivalent to t_start
-        for n, ifile in enumerate(found_files):
-            string = re.compile(
-                "t{:0=3}xy|t{:0=4}xy".format(t_start, t_start), re.IGNORECASE
-            )  # account for 3 and 4 digit
-            # if re.search == True then a match was found
-            if re.search(string, ifile):
-                # cut off every file name prior to this one and quit the loop
-                found_files = found_files[n:]
-                break
-
-    # remove images after this timepoint
-    if t_end is not None:
-        information("Removing images after time {}".format(t_end))
-        # go through list and find first place where timepoint is equivalent to t_end
-        for n, ifile in enumerate(found_files):
-            string = re.compile(
-                "t%03dxy|t%04dxy" % (t_end, t_end), re.IGNORECASE
-            )  # account for 3 and 4 digit
-            if re.search(string, ifile):
-                found_files = found_files[:n]
-                break
-
-    # if user has specified only certain FOVs, filter for those
-    if len(user_spec_fovs) > 0:
-        information("Filtering TIFFs by FOV.")
-        fitered_files = []
-        for fov_id in user_spec_fovs:
-            fov_string = re.compile("xy%02d|xy%03d" % (fov_id, fov_id), re.IGNORECASE)
-            fitered_files += [
-                ifile for ifile in found_files if re.search(fov_string, ifile)
-            ]
-
-        found_files = fitered_files[:]
-
-    return found_files
-
-
-def slice_channels(
-    channel_masks: dict, analyzed_imgs: dict, user_spec_fovs: list, params: dict
-):
-    """Loops over FOVs and slices individual traps for analysis.
-
-    Parameters:
-    ------------
-    channel_masks: dict
-        dictionary of trap positions for slicing.
-
-    analyzed_imgs
-        dictionary of image filenames and parameters
-
-    user spec_fovs
-        FOVs to analyze
-
-    params: dict
-        parameters dictionary"""
-
-    # do it by FOV. Not set up for multiprocessing
-    for fov, peaks in six.iteritems(channel_masks):
-
-        # skip fov if not in the group
-        if user_spec_fovs and fov not in user_spec_fovs:
-            continue
-
-        information("Loading images for FOV %03d." % fov)
-
-        # get filenames just for this fov along with the julian date of acquistion
-        send_to_write = [
-            [k, v["t"]] for k, v in six.iteritems(analyzed_imgs) if v["fov"] == fov
+    # cut out the channels as per channel masks for this fov
+    for peak, channel_corners in six.iteritems(channel_masks_fov):
+        # slice out channel.
+        # The function should recognize the shape length as 4 and cut all time points
+        images_to_write = np.array(images_to_write)
+        channel_stack = images_to_write[
+            ...,
+            channel_corners[0][0] : channel_corners[0][1],
+            channel_corners[1][0] : channel_corners[1][1],
         ]
+        # # pad y of channel if slice happened to be outside of image NOT SURE WHAT THIS IS FOR
+        # y_difference = (channel_loc[0][1] - channel_loc[0][0]) - channel_slice.shape[-2]
+        # if y_difference > 0:
+        #     paddings = [[0, 0], [0, 0], [0, y_difference], [0, 0]]  # t  # y  # x  # c
+        #     channel_slice = np.pad(channel_slice, paddings, mode="edge")
 
-        # sort the filenames by jdn
-        send_to_write = progress(sorted(send_to_write, key=lambda time: time[1]))
-
-        # This is for loading the whole raw tiff stack and then slicing through it
-        tiff_stack_slice_and_write(params, send_to_write, channel_masks, analyzed_imgs)
-
-    information("Channel slices saved.")
-
-
-def compile(params: dict) -> None:
-    """locates and slices out mother machine channels into image stacks."""
-
-    # Load the project parameters file
-    information("Loading experiment parameters.")
-
-    user_spec_fovs = params["FOV"]
-
-    information("Using {} threads for multiprocessing.".format(params["num_analyzers"]))
-
-    # only analyze images up until this t point. Put in None otherwise
-    if "t_end" in params["compile"]:
-        t_end = params["compile"]["t_end"]
-        if t_end == "None":
-            t_end = None
-    else:
-        t_end = None
-    # only analyze images at and after this t point. Put in None otherwise
-    if "t_start" in params["compile"]:
-        t_start = params["compile"]["t_start"]
-        if t_start == "None":
-            t_start = None
-    else:
-        t_start = None
-
-    # create the subfolders if they don't exist
-    if not os.path.exists(params["ana_dir"]):
-        os.makedirs(params["ana_dir"])
-
-    if not os.path.exists(params["chnl_dir"]):
-        os.makedirs(params["chnl_dir"])
-
-    ## need to stack phase and fl plane if not exported from .nd2
-    if params["TIFF_source"] == "BioFormats / other TIFF":
-        information("Checking if imaging channels are separated")
-        found_files = list(params["TIFF_dir"].glob("*.tif"))
-        found_files = sorted(found_files)  # sort by timepoint
-
-        files_list = []
-        i = 0
-        while True:
-            c_string = re.compile(f"c(0)*{i}[._]", re.IGNORECASE)
-            matched_files = [f for f in found_files if re.search(c_string, f.name)]
-            if matched_files:
-                files_list.append(matched_files)
-                i += 1
-            elif i == 0:
-                # continue in case channels indexed from 1
-                i += 1
-            else:
-                break
-
-        files_array = np.array(files_list).squeeze()
-        if files_array.ndim > 1:
-            information("Merging TIFFs across channel")
-            stack_channels(files_array, params)
-
-        else:
-            pass
-
-    ### process TIFFs for metadata #################################################################
-    if not params["compile"]["do_metadata"]:
-        information("Loading image parameters dictionary.")
-
-        with open(
-            os.path.join(params["ana_dir"], "TIFF_metadata.pkl"), "rb"
-        ) as tiff_metadata:
-            analyzed_imgs = pickle.load(tiff_metadata)  # stores image metadata
-
-    else:
-        information("Finding image parameters.")
-        # get all the TIFFs in the folder
-        found_files = params["TIFF_dir"].glob("*.tif")  # get all tiffs
-        found_files = filter_files(found_files, t_start, t_end, user_spec_fovs)
-        # get information for all these starting tiffs
-        if len(found_files) > 0:
-            information("Found %d image files." % len(found_files))
-        else:
-            warning("No TIFF files found")
-        analyzed_imgs = get_tif_params_loop(
-            params, found_files
-        )  # stores image metadata
-
-        # save metadata to a .pkl and a human readable txt file
-        information("Saving metadata from analyzed images...")
-        with open(
-            os.path.join(params["ana_dir"], "TIFF_metadata.pkl"), "wb"
-        ) as tiff_metadata:
-            pickle.dump(analyzed_imgs, tiff_metadata, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(
-            os.path.join(params["ana_dir"], "TIFF_metadata.txt"), "w"
-        ) as tiff_metadata:
-            pprint(analyzed_imgs, stream=tiff_metadata)
-        information("Saved metadata from analyzed images.")
-
-    ### Make table for jd time to FOV and time point
-    if not params["compile"]["do_time_table"]:
-        information("Skipping time table creation.")
-    else:
-        time_table = make_time_table(params, analyzed_imgs)
-
-    ### Make consensus channel masks and get other shared metadata #################################
-    if not params["compile"]["do_channel_masks"] and params["compile"]["do_slicing"]:
-        channel_masks = load_channel_masks(params)
-
-    elif params["compile"]["do_channel_masks"]:
-
-        # Uses channel information from the already processed image data
-        channel_masks = make_masks(params, analyzed_imgs, t_start, t_end)
-
-    ### Slice and write TIFF files into channels ###################################################
-    if params["compile"]["do_slicing"]:
-
-        information("Saving channel slices.")
-        slice_channels(channel_masks, analyzed_imgs, user_spec_fovs, params)
-
-    ### Cross correlations ########################################################################
-    compute_xcorr(channel_masks, user_spec_fovs, params)
+        channel_stack = channel_stack.squeeze()
+        for color_index in range(channel_stack.shape[1]):
+            # save stack
+            # this is the filename for the channel
+            channel_filename = channel_dir / (
+                f"{experiment_name}_xy{fov_id:03d}_p{peak:04d}_c{color_index + 1}.tif"
+            )
+            tiff.imwrite(
+                channel_filename,
+                channel_stack[:, color_index, :, :],
+                compression=("zlib", 4),  # type: ignore
+            )
 
 
 def load_fov(
     image_directory: Path, fov_id: int, filter_str: str = ""
 ) -> Union[np.ndarray, None]:
+    """
+    Load a single FOV from a directory of TIFF files.
+    """
+
     information("getting files")
     found_files_paths = image_directory.glob("*.tif")
-    file_string = re.compile(f"xy0*{fov_id}\w*.tif", re.IGNORECASE)
+    file_string = re.compile(rf"xy0*{fov_id}\w*.tif", re.IGNORECASE)
     found_files = [f.name for f in found_files_paths if re.search(file_string, f.name)]
     if filter_str:
         found_files = [
@@ -1430,6 +634,126 @@ def load_fov(
 
     information("numpying files")
     return np.array(image_fov_stack, dtype=object)
+
+
+def compile(
+    TIFF_dir: Path,
+    num_analyzers: int,
+    analysis_dir: Path,
+    t_start: int,
+    t_end: int,
+    image_orientation: str,  # orientation \in ('auto', 'up', 'down')
+    image_rotation: float,
+    channel_width: int,
+    channel_separation: int,
+    channel_detection_snr: float,
+    channel_length_pad: int,
+    channel_width_pad: int,
+    alignment_pad: int,
+    experiment_name: str,
+    phase_plane: str,
+    FOVs: list,
+    TIFF_source: str,  # one of {'nd2', 'BioFormats / other TIFF'}
+) -> None:
+    """
+    Finds channels, and slices them up into individual tiffs.
+    """
+    chnl_dir = analysis_dir / "channels"
+
+    if not analysis_dir.exists():
+        analysis_dir.mkdir()
+    if not chnl_dir.exists():
+        chnl_dir.mkdir()
+    if TIFF_source == "BioFormats / other TIFF":
+        merge_split_channels(TIFF_dir)
+
+    # load in filtered FOVs and time ranges.
+    information("Finding image parameters.")
+    found_files = list(TIFF_dir.glob("*.tif"))
+    if len(found_files) == 0:
+        return
+    fov_to_files = {}
+    for ff in found_files:
+        fov, time = get_fov(ff.name), get_time(ff.name)
+        if (not time) or (not fov):
+            raise Exception()
+        if (t_start <= time <= t_end) and (fov in FOVs):
+            if fov in fov_to_files:
+                fov_to_files[fov].append(ff)
+            else:
+                fov_to_files[fov] = [ff]
+
+    all_channels = {}  # index in by fov, peak #
+    for fov, paths in fov_to_files.items():
+        print(f"analyzing FOV {fov + 1}", end="\r")
+        chnl_timeseries = []
+        img_timeseries = []
+        sorted(paths)  # sort by timestamps
+        for path in paths:
+            time = get_time(ff.name)
+            with tiff.TiffFile(path) as tif:
+                image_data = tif.asarray().squeeze()
+            # TODO: move this out of the loop
+            phase_idx = int(find_phase_idx(image_data, phase_plane))
+
+            if image_rotation != 0:
+                image_data = fix_rotation(image_rotation, image_data)
+            image_data = fix_orientation(image_data, phase_idx, image_orientation)
+            phase_image = image_data[phase_idx]
+
+            channel_locs = find_channel_locs(
+                phase_image,
+                channel_width_pad,
+                channel_width,
+                channel_detection_snr,
+                channel_separation,
+            )
+
+            chnl_timeseries.append(channel_locs)
+            img_timeseries.append(image_data)
+
+        print(f"making masks for FOV {fov + 1}", end="\r")
+        img_timeseries = np.array(img_timeseries)
+        # maybe clean this up in a sec
+        max_len, max_wid, channel_masks = make_masks(
+            img_timeseries[:, phase_idx, :, :],
+            chnl_timeseries,
+            channel_width_pad,
+            channel_width,
+            channel_length_pad,
+        )
+
+        print(f"adjusting masks for FOV {fov + 1}", end="\r")
+        all_channels[fov] = {}
+        for peak, mask in channel_masks.items():
+            img_width = phase_image.shape[1]
+            all_channels[fov][peak] = adjust_channel_mask(
+                mask, channel_masks[peak], max_len, max_wid, img_width
+            )
+
+        print(f"slicing channels for FOV {fov + 1}", end="\r")
+        tiff_stack_slice_and_write(
+            img_timeseries, fov, all_channels[fov], experiment_name, chnl_dir
+        )
+        print(f"finished analyzing FOV {fov+1}")
+
+    compute_xcorr(
+        analysis_dir,
+        experiment_name,
+        phase_plane,
+        all_channels,
+        FOVs,
+        num_analyzers,
+        alignment_pad,
+    )
+
+    with open(analysis_dir / "channel_masks.yaml", "w") as cmask_file:
+        yaml.dump(
+            data=all_channels,
+            stream=cmask_file,
+            default_flow_style=False,
+            tags=None,
+        )
 
 
 class Compile(MM3Container):
@@ -1462,7 +786,9 @@ class Compile(MM3Container):
             min=1,
             max=60 * 60 * 24,
         )
-
+        self.image_rotation_widget = Slider(
+            label="image rotation", value=0, min=-90, max=90, step=1
+        )
         self.channel_orientation_widget = ComboBox(
             label="trap orientation", choices=["auto", "up", "down"]
         )
@@ -1470,7 +796,7 @@ class Compile(MM3Container):
         self.channel_width_widget = SpinBox(
             value=10,
             label="channel width",
-            tooltip="Required. Approx. width of traps in pixels.",
+            tooltip="Required. approx. width of traps in pixels.",
             min=1,
             max=10000,
         )
@@ -1480,16 +806,6 @@ class Compile(MM3Container):
             tooltip="Required. Center-to-center distance between traps in pixels.",
             min=1,
             max=10000,
-        )
-        self.xcorr_threshold_widget = FloatSpinBox(
-            label="cross correlation threshold",
-            value=0.97,
-            tooltip="Recommended. Threshold for designating channels as full /empty"
-            + "based on time correlation of trap intensity profile. "
-            + "Traps above threshold will be set as empty.",
-            step=0.01,
-            min=0,
-            max=1,
         )
 
         self.inspect_widget = PushButton(text="visualize all FOVs (from .nd2)")
@@ -1504,6 +820,7 @@ class Compile(MM3Container):
         self.channel_separation_widget.changed.connect(self.set_channel_separation)
         self.inspect_widget.clicked.connect(self.display_all_fovs)
         self.channel_orientation_widget.changed.connect(self.set_channel_orientation)
+        self.image_rotation_widget.changed.connect(self.set_image_rotation)
 
         self.append(self.fov_widget)
         self.append(self.image_source_widget)
@@ -1512,6 +829,7 @@ class Compile(MM3Container):
         self.append(self.time_range_widget)
         self.append(self.seconds_per_frame_widget)
         self.append(self.channel_orientation_widget)
+        self.append(self.image_rotation_widget)
         self.append(self.channel_width_widget)
         self.append(self.channel_separation_widget)
         self.append(self.inspect_widget)
@@ -1525,48 +843,33 @@ class Compile(MM3Container):
         self.set_channel_width()
         self.set_channel_separation()
         self.set_channel_orientation()
+        self.set_image_rotation()
 
-        self.display_single_fov()
+        # self.display_single_fov()
 
     def run(self):
         """Overriding method. Performs Mother Machine Analysis"""
-        # global params. Ideally, this is rendered obsolete. However, old code uses this
-        # Fixing it up would take a very long time, and as such is being deferred to later.
-        params = {
-            "experiment_name": self.experiment_name,
-            "analysis_directory": self.analysis_folder,
-            "FOV": self.fovs,
-            "TIFF_source": self.image_source,
-            "output": "TIFF",
-            "phase_plane": self.phase_plane,
-            "planes": self.valid_planes,
-            "seconds_per_time_index": self.seconds_per_frame,
-            "compile": {
-                "do_metadata": True,
-                "do_time_table": True,
-                "do_channel_masks": True,
-                "do_slicing": True,
-                "t_start": self.time_range[0],
-                "t_end": self.time_range[1] + 1,
-                "image_orientation": self.channel_orientation,
-                "channel_width": self.channel_width,
-                "channel_separation": self.channel_separation,
-                "channel_detection_snr": 1,
-                "channel_length_pad": 10,
-                "channel_width_pad": 10,
-                "do_crosscorrs": True,
-                "alignment_pad": 10,
-            },
-            "num_analyzers": multiprocessing.cpu_count(),
-            "TIFF_dir": self.TIFF_folder,
-            "ana_dir": self.analysis_folder,
-            "chnl_dir": self.analysis_folder / "channels",
-            "use_jd": False,  # disabling for now because of bug with Elements output formatting
-        }
         self.viewer.window._status_bar._toggle_activity_dock(True)
 
-        compile(params)
-        information("Finished.")
+        compile(
+            TIFF_dir=self.TIFF_folder,
+            num_analyzers=multiprocessing.cpu_count(),
+            analysis_dir=self.analysis_folder,
+            t_start=self.time_range[0],
+            t_end=self.time_range[1] + 1,
+            image_orientation=self.channel_orientation,
+            image_rotation=self.image_rotation,
+            channel_width=self.channel_width,
+            channel_separation=self.channel_separation,
+            channel_detection_snr=1,
+            channel_length_pad=10,
+            channel_width_pad=10,
+            alignment_pad=10,
+            experiment_name=self.experiment_name,
+            phase_plane=self.phase_plane,
+            FOVs=self.fovs,
+            TIFF_source=self.image_source,
+        )
 
     def display_single_fov(self):
         self.viewer.layers.clear()
@@ -1575,65 +878,18 @@ class Compile(MM3Container):
         if self.split_channels:
             # should not be getting executred.
             image_fov_stack = load_fov(
-                self.TIFF_folder, min(self.valid_fovs), filter_str="c*01"
+                self.TIFF_folder, min(self.valid_fovs), filter_str="c0*1"
             )
         else:
-            image_fov_stack = dask_imread(path)
-        image_fov_stack = np.squeeze(image_fov_stack)
-        images = self.viewer.add_image(image_fov_stack, contrast_limits=[0, 2000])
+            image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
+        image_fov_stack = np.squeeze(image_fov_stack)  # type:ignore
+        images = self.viewer.add_image(image_fov_stack.astype(np.float32))
         self.viewer.dims.current_step = (0, 0)
-        images.reset_contrast_limits()
+        images.reset_contrast_limits()  # type:ignore
         # images.gamma = 0.5
 
     def display_all_fovs(self):
         pass
-
-        # viewer = self.viewer
-        # viewer.layers.clear()
-        # viewer.grid.enabled = True
-
-        # filepath = Path(".")
-        # nd2file = list(filepath.glob("*.nd2"))[0]
-
-        # if not nd2file:
-        #     warning(
-        #         f"Could not find .nd2 file to display in directory {filepath.resolve()}"
-        #     )
-        #     return
-
-        # with nd2reader.reader.ND2Reader(str(nd2file)) as ndx:
-        #     sizes = ndx.sizes
-
-        #     if "t" not in sizes:
-        #         sizes["t"] = 1
-        #     if "z" not in sizes:
-        #         sizes["z"] = 1
-        #     if "c" not in sizes:
-        #         sizes["c"] = 1
-        #     ndx.bundle_axes = "zcyx"
-        #     ndx.iter_axes = "t"
-        #     n = len(ndx)
-
-        #     shape = (
-        #         sizes["t"],
-        #         sizes["z"],
-        #         sizes["v"],
-        #         sizes["c"],
-        #         sizes["y"],
-        #         sizes["x"],
-        #     )
-        #     image = np.zeros(shape, dtype=np.float32)
-
-        #     for i in range(n):
-        #         image[i] = ndx.get_frame(i)
-
-        # image = np.squeeze(image)
-
-        # viewer.add_image(image, channel_axis=1, colormap="gray")
-        # viewer.grid.shape = (-1, 3)
-
-        # viewer.dims.current_step = (0, 0)
-        # viewer.layers.link_layers()  ## allows user to set contrast limits for all FOVs at once
 
     def set_image_source(self):
         self.image_source = self.image_source_widget.value
@@ -1668,3 +924,32 @@ class Compile(MM3Container):
     def set_split_channels(self):
         self.split_channels = self.split_channels_widget.value
         self.display_single_fov()
+
+    def set_image_rotation(self):
+        self.image_rotation = self.image_rotation_widget.value
+        print(self.image_rotation)
+
+
+if __name__ == "__main__":
+    cur_dir = Path(
+        "/Users/michaelsandler/Documents/others-data/napari_testing_data/napari-mm3-test"
+    )
+    compile(
+        TIFF_dir=cur_dir / "TIFF",
+        num_analyzers=30,
+        analysis_dir=cur_dir / "analysis",
+        t_start=0,
+        t_end=29,
+        image_orientation="auto",
+        image_rotation=0,
+        channel_width=10,
+        channel_separation=45,
+        channel_detection_snr=1,
+        channel_length_pad=10,
+        channel_width_pad=10,
+        alignment_pad=10,
+        experiment_name="",
+        phase_plane="c1",
+        FOVs=[0, 1, 2, 3],
+        TIFF_source="nd2",
+    )

@@ -17,17 +17,7 @@ from ._deriving_widgets import (
 
 def load_specs(analysis_folder):
     """
-    Loads the specifications YAML file for the analysis and returns its contents as a dictionary.
-
-    Parameters
-    ----------
-    analysis_folder : Path
-        The path to the analysis folder.
-
-    Returns
-    -------
-    dict
-        The contents of the specifications YAML file as a dictionary.
+    Loads the specifications YAML file for the analysis and returns its contents.
     """
     with (analysis_folder / "specs.yaml").open(mode="r") as specs_file:
         return yaml.safe_load(specs_file)
@@ -36,18 +26,6 @@ def load_specs(analysis_folder):
 def get_peaks(specs, fov):
     """
     Returns a list of peaks for a given FOV.
-
-    Parameters
-    ----------
-    specs : dict
-        A dictionary containing the specifications for the analysis.
-    fov : str
-        The name of the field of view.
-
-    Returns
-    -------
-    list
-        A list of peak names for the given FOV.
     """
     return [peak for peak in specs[fov].keys() if specs[fov][peak] == 1]
 
@@ -55,13 +33,6 @@ def get_peaks(specs, fov):
 class PeakCounter:
     """
     A class that keeps track of the current peak being annotated.
-
-    Parameters
-    ----------
-    specs : dict
-        A dictionary containing the specifications for the analysis.
-    fov : str
-        The name of the field of view.
     """
 
     def __init__(self, specs, fov):
@@ -87,11 +58,6 @@ class PeakCounter:
     def set_peak(self, peak):
         """
         Sets the current peak to the specified peak.
-
-        Parameters
-        ----------
-        peak : str
-            The name of the peak to set as the current peak.
         """
         peaks = get_peaks(self.specs, self.fov)
         self.peak_index = peaks.index(peak)
@@ -100,11 +66,6 @@ class PeakCounter:
     def set_fov(self, fov):
         """
         Sets the current FOV to the specified FOV.
-
-        Parameters
-        ----------
-        fov : str
-            The name of the FOV to set as the current FOV.
         """
         self.fov = fov
         self.peak_index = 0

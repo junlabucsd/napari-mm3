@@ -8,7 +8,8 @@ from magicgui.widgets import (
     ComboBox,
 )
 from pathlib import Path
-from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
+from .utils import TIFF_FILE_FORMAT_PEAK
+from magicgui.types import FileDialogMode
 import h5py
 import pickle
 import yaml
@@ -47,62 +48,11 @@ def load_hdf5(hdf5_location: Path, dataset_name: str):
         return h5f[dataset_name]
 
 
-def gen_tiff_filename(prefix, fov_id: int, postfix: str, peak_id: int = None):
-    if peak_id:
-        return TIFF_FILE_FORMAT_PEAK % (prefix, fov_id, peak_id, postfix)
-    return TIFF_FILE_FORMAT_NO_PEAK % (prefix, fov_id, postfix)
-
-
-def load_seg_stack(
-    ana_dir: Path, experiment_name: str, fov_id, peak_id, seg_mode: SegmentationMode
-):
-    img_dir = ana_dir / "segmented"
-    if seg_mode == SegmentationMode.OTSU:
-        postfix = "seg_otsu"
-    elif seg_mode == SegmentationMode.UNET:
-        postfix = "seg_unet"
-    img_filename = gen_tiff_filename(
-        prefix=experiment_name,
-        fov_id=fov_id,
-        peak_id=peak_id,
-        postfix=postfix,
-    )
-
-    return load_tiff(img_dir / img_filename)
-
-
-def load_subtracted_stack(
-    ana_dir: Path, experiment_name: str, fov_id, peak_id, postfix
-):
-    img_dir = ana_dir / "subtracted"
-    # switch postfix to c1/c2/c3 auto??
-    img_filename = gen_tiff_filename(
-        prefix=experiment_name, fov_id=fov_id, peak_id=peak_id, postfix=postfix
-    )
-    return load_tiff(img_dir / img_filename)
-
-
-def load_unmodified_stack(
-    ana_dir: Path, experiment_name: str, fov_id, peak_id, postfix
-):
-    img_dir = ana_dir / "channels"
-    # switch postfix to c1/c2/c3 auto??
-    img_filename = gen_tiff_filename(
-        prefix=experiment_name, fov_id=fov_id, peak_id=peak_id, postfix=postfix
-    )
-    return load_tiff(img_dir / img_filename)
-
-
-def load_empty_stack(ana_dir: Path, experiment_name: str, fov_id, postfix):
-    img_dir = ana_dir / "empties"
-    img_filename = gen_tiff_filename(
-        prefix=experiment_name, fov_id=fov_id, postfix=postfix
-    )
-    return load_tiff(img_dir / img_filename)
-
-
 def load_specs(analysis_dir: Path) -> dict:
-    """Load specs file which indicates which channels should be analyzed, used as empties, or ignored."""
+    """
+    Load specs file which indicates which channels should be analyzed, 
+    used as empties, or ignored.
+    """
     try:
         with (analysis_dir / "specs.yaml").open("r") as specs_file:
             specs = yaml.safe_load(specs_file)
@@ -162,8 +112,10 @@ def get_valid_planes(TIFF_folder):
         # there are multiple planes
         num_channels = test_file.shape[0]
     elif dim == 2:
-        # only one plane (phase or fluorescence)
-        num_channels = 1
+        pattern = r"(c\d+)"
+        num_channels = len(
+            set([re.search(pattern, str(f), re.IGNORECASE).group(1) for f in filepaths]) # type:ignore
+        )
     else:
         raise ValueError(f"Expected 2 or 3 dimensions but found {dim}.")
 
@@ -257,6 +209,12 @@ def range_string_to_indices(range_string):
             "Index range string invalid. Returning empty range until a new string is specified."
         )
         return []
+    
+class DataclassWidget(Container):
+    def __init__(self, dataclass):
+        for annotation in dataclass.annotations:
+            pass
+
 
 
 class MM3Container(Container):
@@ -282,13 +240,13 @@ class MM3Container(Container):
         self.validate_folders = validate_folders
 
         self.analysis_folder_widget = FileEdit(
-            mode="d",
+            mode=FileDialogMode.EXISTING_DIRECTORY,
             label="analysis folder",
             tooltip="Required. Location for outputting analysis. If in doubt, leave as default.",
             value=Path(".") / "analysis",
         )
         self.TIFF_folder_widget = FileEdit(
-            mode="d",
+            mode=FileDialogMode.EXISTING_DIRECTORY,
             label="TIFF folder",
             tooltip="Required. Location for the input images. If in doubt, leave as default.",
             value=Path(".") / "TIFF",
@@ -383,13 +341,13 @@ class MM3Container(Container):
             self.pop()
 
     def _set_analysis_folder(self):
-        self.analysis_folder = self.analysis_folder_widget.value
+        self.analysis_folder = Path(self.analysis_folder_widget.value) # type:ignore
 
     def _set_experiment_name(self):
-        self.experiment_name = self.experiment_name_widget.value
+        self.experiment_name = str(self.experiment_name_widget.value) # type:ignore
 
     def _set_TIFF_folder(self):
-        self.TIFF_folder = self.TIFF_folder_widget.value
+        self.TIFF_folder = Path(self.TIFF_folder_widget.value) # type:ignore
 
     def _set_valid_fovs(self):
         try:
@@ -405,24 +363,26 @@ class MM3Container(Container):
         try:
             self.valid_times = get_valid_times(self.TIFF_folder)
             self.found_times = True
-        except ValueError:
+        except ValueError as e:
             try:
                 self.valid_times = get_valid_times(self.analysis_folder / "subtracted")
                 self.found_times = True
-            except ValueError:
+            except ValueError as e:
+                warning(f"Failed to get times: {e}")
                 self.found_times = False
 
     def _set_valid_planes(self):
         try:
             self.valid_planes = get_valid_planes(self.TIFF_folder)
             self.found_planes = True
-        except ValueError:
+        except ValueError as e:
             try:
                 self.valid_planes = get_valid_planes(
                     self.analysis_folder / "subtracted"
                 )
                 self.found_planes = True
-            except ValueError:
+            except ValueError as e:
+                warning(f"Failed to get planes: {e}")
                 self.found_planes = False
 
     def _validate_folders(self):
@@ -540,7 +500,7 @@ class InteractiveSpinBox(Container):
         self.name = label
 
         self.text_widget = LineEdit(
-            value=self.value,
+            value=str(self.value),
         )
         self.increment_widget = PushButton(label="+")
         self.decrement_widget = PushButton(label="-")
@@ -579,7 +539,7 @@ class InteractiveSpinBox(Container):
         if self.use_float:
             self.text_widget.value = f"{self.value:.3f}"
         else:
-            self.text_widget.value = self.value
+            self.text_widget.value = str(self.value)
 
     def _decrement(self):
         # Update internal value, then update displayed value.
@@ -588,7 +548,7 @@ class InteractiveSpinBox(Container):
         if self.use_float:
             self.text_widget.value = f"{self.value:.3f}"
         else:
-            self.text_widget.value = self.value
+            self.text_widget.value = str(self.value)
 
 
 class FOVChooserSingle(InteractiveSpinBox):

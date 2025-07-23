@@ -13,7 +13,7 @@ Two separate pipelines here.
     c. Filter blobs off SNR -- TODO: Check what blob_log does as threshold => Reuse from (1)
     d. Write the new Cells file.
 
---- 
+---
 Also need to regression test!
 It is possible to keep the entire Cells file in memory, so in-place editing isn't necessary.
 """
@@ -33,6 +33,7 @@ from .utils import (
     organize_cells_by_channel,
     write_cells_to_json,
     read_cells_from_json,
+    TIFF_FILE_FORMAT_PEAK,
     Cells,
 )
 
@@ -40,9 +41,8 @@ from ._deriving_widgets import (
     MM3Container,
     PlanePicker,
     SegmentationMode,
+    load_tiff,
     load_specs,
-    load_seg_stack,
-    load_subtracted_stack,
     InteractivePeakChooser,
 )
 
@@ -180,14 +180,16 @@ def foci_preview(
     cells: Cells, seg_stack: np.ndarray, img_stack: np.ndarray, foci_params: FociParams
 ):
     blob_times, blobs = find_peak_blobs(img_stack, foci_params)
-    cell_foci_ys, cell_foci_xs, foci_hs, assignments, times_real = assign_blobs_to_cells(
-        blobs,
-        blob_times,
-        cells,
-        seg_stack,
-        img_stack,
-        foci_params.median_ratio,
-        absolute_locs=True,
+    cell_foci_ys, cell_foci_xs, foci_hs, assignments, times_real = (
+        assign_blobs_to_cells(
+            blobs,
+            blob_times,
+            cells,
+            seg_stack,
+            img_stack,
+            foci_params.median_ratio,
+            absolute_locs=True,
+        )
     )
     time_idx = [time_real - 1 for time_real in times_real]
     return cell_foci_ys, cell_foci_xs, foci_hs, assignments, time_idx
@@ -287,20 +289,22 @@ def foci(
             if len(cells_of_peak) == 0:
                 return
 
-            img_stack = load_subtracted_stack(
-                ana_dir=ana_dir,
-                experiment_name=experiment_name,
-                fov_id=fov_id,
-                peak_id=peak_id,
-                postfix=f"sub_{fl_plane}",
+            img_filename = TIFF_FILE_FORMAT_PEAK % (
+                experiment_name,
+                fov_id,
+                peak_id,
+                f"sub_{fl_plane}",
             )
-            seg_stack = load_seg_stack(
-                ana_dir=ana_dir,
-                experiment_name=experiment_name,
-                fov_id=fov_id,
-                peak_id=peak_id,
-                seg_mode=seg_method,
+            img_stack = load_tiff(ana_dir / "subtracted" / img_filename)
+
+            seg_str = "seg_otsu" if seg_method == SegmentationMode.OTSU else "seg_unet"
+            seg_filename = TIFF_FILE_FORMAT_PEAK % (
+                experiment_name,
+                fov_id,
+                peak_id,
+                seg_str,
             )
+            seg_stack = load_tiff(ana_dir / "segmented" / seg_filename)
 
             print(f"running foci analysis for peak {peak_id} and fov {fov_id}")
             cell_foci(cells_of_peak, seg_stack, img_stack, foci_params)
@@ -435,20 +439,27 @@ class Foci(MM3Container):
         for cellid, cell in self.cells.items():
             all_times.union(set(cell.times))
 
-        foci_stack = load_subtracted_stack(
-            self.analysis_folder,
+        foci_filename = TIFF_FILE_FORMAT_PEAK % (
             self.experiment_name,
             self.preview_fov,
             self.preview_peak,
             f"sub_{self.fl_plane}",
         )
-        seg_stack = load_seg_stack(
-            ana_dir=self.analysis_folder,
-            experiment_name=self.experiment_name,
-            fov_id=self.preview_fov,
-            peak_id=self.preview_peak,
-            seg_mode=self.segmentation_method,
+        foci_stack = load_tiff(self.analysis_folder / "subtracted" / foci_filename)
+
+        seg_str = (
+            "seg_otsu"
+            if self.segmentation_method == SegmentationMode.OTSU
+            else "seg_unet"
         )
+        seg_filename = TIFF_FILE_FORMAT_PEAK % (
+            self.experiment_name,
+            self.preview_fov,
+            self.preview_peak,
+            seg_str,
+        )
+        seg_stack = load_tiff(self.analysis_folder / "segmented" / seg_filename)
+
         self.y_pts, self.x_pts, self.radii, self.assignments, self.times = foci_preview(
             self.cells, seg_stack, foci_stack, foci_params
         )
@@ -471,14 +482,13 @@ class Foci(MM3Container):
         # with p as the number of planes,
         # this displays 'sets' of n_steps images.
         for plane in self.valid_planes:
-            postfix = f"sub_{plane}"
-            sub_stack_fl = load_subtracted_stack(
-                self.analysis_folder,
+            sub_filename = TIFF_FILE_FORMAT_PEAK % (
                 self.experiment_name,
                 self.preview_fov,
                 self.preview_peak,
-                postfix,
+                f"sub_{plane}",
             )
+            sub_stack_fl = load_tiff(self.analysis_folder / "subtracted" / sub_filename)
             image_kymo = gen_image_kymo(sub_stack_fl, n_steps=self.n_steps)
             kymos.append(image_kymo)
 
@@ -497,13 +507,21 @@ class Foci(MM3Container):
         cells_by_peak = organize_cells_by_channel(self.cells, specs)
         cells_visible = cells_by_peak[self.preview_fov][self.preview_peak]
         # only going to show cells that were lineage tracked.
-        seg_stack = load_seg_stack(
-            self.analysis_folder,
+
+        seg_str = (
+            "seg_otsu"
+            if self.segmentation_method == SegmentationMode.OTSU
+            else "seg_unet"
+        )
+        seg_filename = TIFF_FILE_FORMAT_PEAK % (
             self.experiment_name,
             self.preview_fov,
             self.preview_peak,
-            self.segmentation_method,
+            seg_str,
         )
+
+        seg_stack = load_tiff(self.analysis_folder / "segmented" / seg_filename)
+
         cell_filter_stack = [[] for _ in range(len(seg_stack))]
         # check about frame 0.
         for cell_id, cell in cells_visible.items():
@@ -511,6 +529,7 @@ class Foci(MM3Container):
                 if time == 0:
                     print("time 0 found")
                 cell_filter_stack[time - 1].append(cell.labels[i])
+
         # only keep the regions including cells we've saved.
         new_seg_stack = []
         for t, time_useful_regions in enumerate(cell_filter_stack):
