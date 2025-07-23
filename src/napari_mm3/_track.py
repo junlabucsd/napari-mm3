@@ -8,6 +8,7 @@ import pickle
 import os
 import json
 from typing import Tuple
+from dataclasses import dataclass
 
 import numpy as np
 import matplotlib as mpl
@@ -66,8 +67,7 @@ class CellTracker:
 
     def __init__(
         self,
-        fov_id: int,
-        peak_id: int,
+        fmt_cell_id: str,
         y_cutoff: int,
         region_cutoff: int,
         lost_cell_time: int,
@@ -77,12 +77,10 @@ class CellTracker:
         min_growth_length: float,
         max_growth_area: float,
         min_growth_area: float,
-        experiment_name: str,
     ):
+        self.fmt_cell_id = fmt_cell_id
         self.cell_leaves: list[str] = []
         self.cells: dict[str, Cell] = {}
-        self.fov_id = fov_id
-        self.peak_id = peak_id
         self.y_cutoff = y_cutoff
         self.region_cutoff = region_cutoff
         self.lost_cell_time = lost_cell_time
@@ -92,7 +90,19 @@ class CellTracker:
         self.min_growth_length = min_growth_length
         self.max_growth_area = max_growth_area
         self.min_growth_area = min_growth_area
-        self.experiment_name = experiment_name
+
+    def add_cell(self, region, t, parent_id=None) -> str:
+        """Adds a cell to the graph and returns its id."""
+        cell_id = self.fmt_cell_id.format(region.label, t)
+        self.cells[cell_id] = Cell(
+            self.pxl2um,
+            self.time_table,
+            cell_id,
+            region,
+            t,
+            parent_id=parent_id,
+        )
+        return cell_id
 
     def prune_leaves(self, t: int):
         """
@@ -111,12 +121,34 @@ class CellTracker:
         Add new leaf if it clears thresholds.
         """
         if region.centroid[0] < self.y_cutoff and region.label <= self.region_cutoff:
-            cell_id = self.create_cell_id(
-                region,
-                t,
-            )
-            self.add_cell(cell_id, region, t, parent_id=None)
+            cell_id = self.add_cell(region, t, parent_id=None)
             self.cell_leaves.append(cell_id)  # add to leaves
+
+    def divide_cell(
+        self,
+        region1,
+        region2,
+        t: int,
+        leaf_id: str,
+    ) -> Tuple[str, str, dict]:
+        """
+        Create two new cells and divide the mother
+        """
+        # This logic's a bit weird, but it's preserved from original mm3.
+        # If we're not adding this to leaves, why add it to the cells?
+        daughter1_id = self.add_cell(region1, t, parent_id=leaf_id)
+        daughter2_id = self.add_cell(region2, t, parent_id=leaf_id)
+        self.cells[leaf_id].divide(
+            self.cells[daughter1_id], self.cells[daughter2_id], t
+        )
+
+        self.cell_leaves.remove(leaf_id)
+        if region1.centroid[0] < self.y_cutoff and region1.label <= self.region_cutoff:
+            self.cell_leaves.append(daughter1_id)
+        if region2.centroid[0] < self.y_cutoff and region2.label <= self.region_cutoff:
+            self.cell_leaves.append(daughter2_id)
+
+        return daughter1_id, daughter2_id, self.cells
 
     def update_region_links(
         self,
@@ -180,16 +212,6 @@ class CellTracker:
                 t,
                 leaf_id,
             )
-            self.cell_leaves.remove(leaf_id)
-            self.add_leaf_daughter(region1, daughter1_id)
-            self.add_leaf_daughter(region2, daughter2_id)
-
-    def add_leaf_daughter(self, region, id: str):
-        """
-        Add new leaf to tree if it clears thresholds
-        """
-        if region.centroid[0] < self.y_cutoff and region.label <= self.region_cutoff:
-            self.cell_leaves.append(id)
 
     def link_regions_to_previous_cells(
         self,
@@ -242,11 +264,7 @@ class CellTracker:
                 region.centroid[0] < self.y_cutoff
                 and region.label <= self.region_cutoff
             ):
-                cell_id = self.create_cell_id(
-                    region,
-                    t,
-                )
-                self.add_cell(cell_id, region, t, parent_id=None)
+                cell_id = self.add_cell(region, t, parent_id=None)
                 self.cell_leaves.append(cell_id)
             else:
                 break
@@ -328,41 +346,6 @@ class CellTracker:
 
         return True
 
-    def create_cell_id(
-        self,
-        region,
-        t: int,
-    ) -> str:
-        """
-        Make a unique cell id string for a new cell
-        Returns
-        -------
-        cell_id: str
-            string for cell ID
-        """
-        if self.experiment_name is None:
-            cell_id = "f%02dp%04dt%04dr%02d" % (
-                self.fov_id,
-                self.peak_id,
-                t,
-                region.label,
-            )
-        else:
-            cell_id = "{}f{:0=2}p{:0=4}t{:0=4}r{:0=2}".format(
-                self.experiment_name, self.fov_id, self.peak_id, t, region.label
-            )
-        return cell_id
-
-    def add_cell(self, cell_id, region, t, parent_id=None):
-        self.cells[cell_id] = Cell(
-            self.pxl2um,
-            self.time_table,
-            cell_id,
-            region,
-            t,
-            parent_id=parent_id,
-        )
-
     def update_leaf_regions(
         self,
         regions: list,
@@ -415,34 +398,6 @@ class CellTracker:
         closest_two_regions = sorted(closest_two_regions, key=lambda x: x[0])
         return closest_two_regions
 
-    def divide_cell(
-        self,
-        region1,
-        region2,
-        t: int,
-        leaf_id: str,
-    ) -> Tuple[str, str, dict]:
-        """
-        Create two new cells and divide the mother
-        """
-        daughter1_id = self.create_cell_id(
-            region1,
-            t,
-        )
-        daughter2_id = self.create_cell_id(
-            region2,
-            t,
-        )
-
-        self.add_cell(daughter1_id, region1, t, parent_id=leaf_id)
-        self.add_cell(daughter2_id, region2, t, parent_id=leaf_id)
-
-        self.cells[leaf_id].divide(
-            self.cells[daughter1_id], self.cells[daughter2_id], t
-        )
-
-        return daughter1_id, daughter2_id, self.cells
-
 
 # Creates lineage for a single channel
 def make_lineage_chnl_stack(
@@ -494,9 +449,10 @@ def make_lineage_chnl_stack(
         regionprops(label_image=timepoint) for timepoint in image_data_seg
     ]  # removed coordinates='xy'
 
+    # TODO: move to global constant.
+    cell_id_format = f"{experiment_name}f{fov_id:0=2}p{peak_id:0=4}t{{:0=4}}r{{:0=2}}"
     tracker = CellTracker(
-        fov_id,
-        peak_id,
+        cell_id_format,
         new_cell_y_cutoff,
         new_cell_region_cutoff,
         lost_cell_time,
@@ -506,7 +462,6 @@ def make_lineage_chnl_stack(
         min_growth_length,
         max_growth_area,
         min_growth_area,
-        experiment_name,
     )
 
     for t, regions in enumerate(regions_by_time, start=start_time_index):
@@ -1348,7 +1303,7 @@ if __name__ == "__main__":
         min_growth_length=0.8,
         max_growth_area=1.3,
         min_growth_area=0.8,
-        seg_img="seg_unet",
+        seg_img="seg_otsu",
         ana_dir=analysis_folder,
         seg_dir=analysis_folder / "segmented",
         cell_dir=analysis_folder / "cell_data",
