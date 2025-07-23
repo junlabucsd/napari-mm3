@@ -114,6 +114,9 @@ def nd2ToTIFF(
     if not os.path.exists(tif_dir):
         os.makedirs(tif_dir)
 
+    if not os.path.exists(Path(".") / "analysis"):
+        os.makedirs(Path(".") / "analysis")
+
     nd2file = data_path
     file_prefix = os.path.split(os.path.splitext(nd2file)[0])[1]
     information("Extracting {file_prefix} ...")
