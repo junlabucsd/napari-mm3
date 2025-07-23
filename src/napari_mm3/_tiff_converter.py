@@ -31,17 +31,6 @@ def get_nd2_times(data_path):
         return nd2f.sizes["T"]
 
 
-def get_bioformats_times(data_path):
-    posix_path = data_path.as_posix()
-    print("data path: " + posix_path)
-    md = bioformats.get_omexml_metadata(path=posix_path)
-    xml_data = bioformats.OMEXML(md)
-
-    times = xml_data.image(0).Pixels.SizeT
-    # javabridge.kill_vm()
-    return times
-
-
 def get_bioformats_fovs(data_path):
     """
     Gets the number of FOVs in a bioformats-compatible file.
@@ -81,13 +70,13 @@ def nd2_iter(nd2f: nd2.ND2File, time_range, fov_list):
             image_data = im[t]
             yield t, 0, image_data
         return
-    
+
     nd2_fov_list = set(range(0, nd2f.sizes["P"]))
     # TODO: Move this into the UI code.
     fov_list = [fov - 1 for fov in fov_list]
     if fov_list != []:
         valid_fovs = set(fov_list).intersection(nd2_fov_list)
-    else: 
+    else:
         valid_fovs = nd2_fov_list
 
     if valid_fovs != set(fov_list):
@@ -103,143 +92,21 @@ def nd2_iter(nd2f: nd2.ND2File, time_range, fov_list):
             yield t, fov, image_data
 
 
-def bioformats_iter(data_path: Path, time_range, fov_list):
-    """
-    Iterates over the contents of a bioformats-compatible file.
-
-    params:
-        filepath: The bioformats object to use.
-
-    returns:
-        t: the time-index of the returned frame.
-        fov: the fov-index of the returned frame.
-        image_data: the image at the given time/fov.
-    """
-    import javabridge
-    import bioformats
-
-    javabridge.start_vm(class_path=bioformats.JARS)
-
-    # TODO: Move this into the UI code.
-    fov_list = [fov - 1 for fov in fov_list]
-    base_fov_list = set(range(0, get_bioformats_fovs(data_path)))
-    if fov_list == []:
-        fov_list = base_fov_list
-    base_time_range = set(range(0, get_bioformats_times(data_path)))
-
-    valid_fovs = set(fov_list).intersection(base_fov_list)
-    if valid_fovs != set(fov_list):
-        information("The following FOVs were not in the nd2, and thus were omitted:")
-        information(set(fov_list) - valid_fovs)
-
-    for fov in valid_fovs:
-        for t in base_time_range:
-            if t not in time_range:
-                continue
-
-            image_data = bioformats.load_image(str(data_path), t=t, series=fov)
-            yield t, fov, image_data
-    javabridge.kill_vm()
-
-
-def bioformats_import(
-    data_path: Path,
-    tif_dir: str,
-    image_start: int,
-    image_end: int,
-    vertical_crop=None,
-    horizontal_crop=None,
-    tworow_crop=None,
-    fov_list=[],
-):
-    """Imports a bioformats-compatible file into a tif stack.
-    Parameters
-    ----------
-    data_path : Path
-        The path to the data to import.
-    tif_dir : str
-        The directory to save the tif stack to.
-    image_start : int
-        The first image to import.
-    image_end : int
-        The last image to import.
-    vertical_crop : tuple, optional
-        The vertical crop to apply to the image. The default is None.
-    tworow_crop : tuple, optional
-        The two-row (vertical) crop to apply to the image. The default is None.
-    horizontal_crop: tuple, optional
-        The horizontal crop to apply to the image. The default is None.
-    fov_list : list, optional
-        The list of fovs to import. The default is [].
-    Returns
-    -------
-    None."""
-
-    if not os.path.exists(tif_dir):
-        os.makedirs(tif_dir)
-
-    file_prefix = os.path.split(os.path.splitext(data_path)[0])[1]
-    information("Extracting {file_prefix} ...")
-    # Extraction range is the time points that will be taken out.
-    time_range = range(image_start, image_end)
-    for t_id, fov_id, image_data in bioformats_iter(
-        data_path, time_range=time_range, fov_list=fov_list
-    ):
-        # timepoint and fov output name (1 indexed rather than 0 indexed)
-        t, fov = t_id + 1, fov_id + 1
-
-        # add extra axis to make below slicing simpler. removed automatically if only one color
-        if len(image_data.shape) < 3:
-            image_data = np.expand_dims(image_data, axis=0)
-
-        # crop tiff if specified. Lots of flags for if there are double rows or  multiple colors
-        if tworow_crop:
-            crop1_y1, crop1_y2 = tworow_crop[0][0], tworow_crop[0][1]
-            crop2_y1, crop2_y2 = tworow_crop[0][0], tworow_crop[0][1]
-            image_upper_row = image_data[:, crop1_y1:crop1_y2, :]
-            image_lower_row = image_data[:, crop2_y1:crop2_y2, :]
-
-            upper_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_1.tif"
-            information("Saving %s." % tif_filename)
-            # TODO: Make the channel order correct, here and below.
-            tiff.imwrite(
-                tif_dir / upper_row_filename,
-                image_upper_row,
-                compression="zlib",
-                photometric="minisblack",
-            )
-
-            # cut and save bottom row
-            lower_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_2.tif"
-            information("Saving %s." % lower_row_filename)
-            tiff.imwrite(
-                tif_dir / lower_row_filename,
-                image_lower_row,
-                photometric="minisblack",
-                compression="zlib",
-            )
+def write_timetable(nd2f: nd2.ND2File, path: Path):
+    timetable = {}
+    for event in nd2f.events():
+        if "P Index" not in event:
             continue
-        # for just a simple crop
-        elif vertical_crop:
-            nc, H, W = image_data.shape
-            ylo = int(vertical_crop[0] * H)
-            yhi = int(vertical_crop[1] * H)
-            image_data = image_data[:, ylo:yhi, :]
+        timestamp = event["Time [s]"]
+        fov_idx = event["P Index"]
+        t_idx = event["T Index"]
+        if fov_idx not in timetable:
+            timetable[fov_idx] = {t_idx: timestamp}
+        else:
+            timetable[fov_idx][t_idx] = timestamp
+    with path.open("w") as f:
+        json.dump(timetable, f)
 
-        if horizontal_crop:
-            nc, H, W = image_data.shape
-            xlo = int(horizontal_crop[0] * W)
-            xhi = int(horizontal_crop[1] * W)
-            image_data = image_data[:, :, xlo:xhi]
-
-        tif_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}.tif"
-        information("Saving %s." % tif_filename)
-        tiff.imwrite(
-            tif_dir / tif_filename,
-            image_data,
-            compression="zlib",
-            photometric="minisblack",
-        )
 
 
 def nd2ToTIFF(
@@ -273,10 +140,9 @@ def nd2ToTIFF(
     file_prefix = os.path.split(os.path.splitext(nd2file)[0])[1]
     information("Extracting {file_prefix} ...")
     with nd2.ND2File(str(nd2file)) as nd2f:
-        starttime = nd2f.text_info["date"]
-        starttime = datetime.datetime.strptime(starttime, "%m/%d/%Y %I:%M:%S %p")
-
-        planes = nd2f.sizes["C"]
+        # load in the time table.
+        # TODO: Add analysis
+        write_timetable(nd2f, Path(".") / "analysis" / "timetable.json")
 
         # Extraction range is the time points that will be taken out.
         time_range = range(image_start, image_end)
