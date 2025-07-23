@@ -262,17 +262,17 @@ def subtract_fov_stack(
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
         subtract_pairs = zip(image_data, avg_empty_stack)
-        subtract_phase_args = [(params, pair[0], pair[1]) for pair in subtract_pairs]
-        subtract_fl_args = [(pair[0], pair[1]) for pair in subtract_pairs]
-
+        
         # set up multiprocessing pool to do subtraction. Should wait until finished
         pool = Pool(processes=params["num_analyzers"])
 
         if method == "phase":
+            subtract_phase_args = [(params, pair[0], pair[1]) for pair in subtract_pairs]
             subtracted_imgs = pool.map(
                 subtract_phase_helper, subtract_phase_args, chunksize=10
             )
         elif method == "fluor":
+            subtract_fl_args = [(pair[0], pair[1]) for pair in subtract_pairs]
             subtracted_imgs = pool.map(
                 subtract_fluor_helper, subtract_fl_args, chunksize=10
             )
