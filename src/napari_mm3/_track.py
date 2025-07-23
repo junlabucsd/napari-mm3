@@ -6,6 +6,7 @@ import yaml
 import six
 import pickle
 import os
+import json
 from typing import Tuple
 
 import numpy as np
@@ -24,7 +25,6 @@ from ._deriving_widgets import (
     FOVChooser,
     load_specs,
     information,
-    SegmentationMode,
     load_tiff,
     warning,
 )
@@ -45,11 +45,17 @@ def load_time_table(ana_dir: Path) -> dict:
 
     # try first for yaml, then for pkl
     try:
+        with open(ana_dir / "timetable.json", "r") as time_table_file:
+            timetable = json.load(time_table_file)  # loads in keys as strings.
+            new_timetable = {}
+            for fov, time_idxs in timetable.items():
+                new_timetable[int(fov)] = {}
+                for time_idx, real_time in time_idxs.items():
+                    new_timetable[int(fov)][int(time_idx)] = real_time
+            return new_timetable
+    except FileNotFoundError:
         with open(ana_dir / "time_table.yaml", "rb") as time_table_file:
             return yaml.safe_load(time_table_file)
-    except FileNotFoundError:
-        with open(ana_dir / "time_table.pkl", "rb") as time_table_file:
-            return pickle.load(time_table_file)
 
 
 class CellTracker:
@@ -527,7 +533,7 @@ def make_lineage_chnl_stack(
         cells,
         start_time_index,
         phase_plane,
-        seg_mode,
+        seg_img,
     )
     plotter.make_lineage_plot()
 
@@ -652,7 +658,7 @@ class LineagePlotter:
         cells: dict,
         start_time_index: int,
         phase_plane: str,
-        seg_mode: SegmentationMode,
+        seg_mode: str,
     ):
         self.ana_dir = ana_dir
         self.experiment_name = experiment_name
@@ -979,12 +985,11 @@ class LineagePlotter:
         )
         image_data_bg = load_tiff(self.ana_dir / "channels" / img_filename)
 
-        seg_img = "seg_otsu" if self.segmentation_method == "Otsu" else "seg_unet"
         img_filename = TIFF_FILE_FORMAT_PEAK % (
             self.experiment_name,
             self.fov_id,
             self.peak_id,
-            seg_img,
+            self.seg_mode,
         )
         image_data_seg = load_tiff(self.ana_dir / "segmented" / img_filename)
 
@@ -1008,56 +1013,19 @@ def track_cells(
     lost_cell_time: int,
     new_cell_y_cutoff: int,
     new_cell_region_cutoff: int,
-    max_growth_length: float,
-    min_growth_length: float,
-    max_growth_area: float,
-    min_growth_area: float,
+    max_growth_length: float,  # Max allowed growth length ratio.
+    min_growth_length: float,  # Minimum allowed growth length ratio.
+    max_growth_area: float,  # Max allowed growth area ratio.
+    min_growth_area: float,  # Min allowed growth area ratio.
     seg_img: str,
     ana_dir: Path,
     seg_dir: Path,
     cell_dir: Path,
 ):
-    """Track cells in a set of FOVs.
-    Parameters
-    ----------
-    experiment_name : str
-        Name of the experiment.
-    fovs : list[int]
-        List of FOVs to process.
-    phase_plane : str
-        Phase plane.
-    pxl2um : float
-        Pixel to micron conversion factor.
-    num_analyzers : int
-        Number of analyzers for multiprocessing.
-    lost_cell_time : int
-        Time after which a cell is considered lost.
-    new_cell_y_cutoff : int
-        Y position cutoff for new cells.
-    new_cell_region_cutoff : int
-        Region label cutoff for new cells.
-    max_growth_length : float
-        Maximum allowed growth length ratio.
-    min_growth_length : float
-        Minimum allowed growth length ratio.
-    max_growth_area : float
-        Maximum allowed growth area ratio.
-    min_growth_area : float
-        Minimum allowed growth area ratio.
-    seg_img : str
-        Segmentation image type.
-    ana_dir : Path
-        Path to the analysis directory.
-    seg_dir : Path
-        Path to the segmented directory.
-    cell_dir : Path
-        Path to the cell data directory.
-    """
+    """Track cells in a set of FOVs"""
     # Load the project parameters file
     information("Loading experiment parameters.")
-
     information("Using {} threads for multiprocessing.".format(num_analyzers))
-
     information("Using {} images for tracking.".format(seg_img))
 
     # create segmentation and cell data folder if they don't exist
