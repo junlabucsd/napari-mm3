@@ -20,6 +20,7 @@ from napari.utils import progress
 from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, PushButton
 
 from ._deriving_widgets import (
+    get_valid_fovs_folder,
     MM3Container,
     PlanePicker,
     FOVChooser,
@@ -1327,3 +1328,28 @@ class Track(MM3Container):
 
     def set_display_fovs(self, fovs):
         self.fovs_to_display = fovs
+
+
+if __name__ == "__main__":
+    experiment_name = ""
+    analysis_folder = Path(".") / "analysis"
+    valid_fovs = get_valid_fovs_folder(analysis_folder / "segmented")
+
+    track_cells(
+        experiment_name=experiment_name,
+        fovs=valid_fovs,
+        phase_plane="c1",
+        pxl2um=0.11,
+        num_analyzers=multiprocessing.cpu_count(),
+        lost_cell_time=3,
+        new_cell_y_cutoff=150,
+        new_cell_region_cutoff=4,
+        max_growth_length=1.3,
+        min_growth_length=0.8,
+        max_growth_area=1.3,
+        min_growth_area=0.8,
+        seg_img="seg_unet",
+        ana_dir=analysis_folder,
+        seg_dir=analysis_folder / "segmented",
+        cell_dir=analysis_folder / "cell_data",
+    )
