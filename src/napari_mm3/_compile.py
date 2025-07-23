@@ -31,6 +31,8 @@ from ._deriving_widgets import (
     MM3Container,
     PlanePicker,
     TimeRangeSelector,
+    get_valid_times,
+    get_valid_fovs_folder,
     information,
     load_tiff,
     warning,
@@ -610,9 +612,13 @@ def load_fov(
     """
 
     information("getting files")
-    found_files_paths = image_directory.glob("*.tif")
-    file_string = re.compile(rf"xy0*{fov_id}\w*.tif", re.IGNORECASE)
-    found_files = [f.name for f in found_files_paths if re.search(file_string, f.name)]
+    found_files_paths = list(image_directory.glob("*.tif"))
+    get_fov_regex = re.compile(r"xy(\d+)", re.IGNORECASE)
+    fovs = list(
+        int(get_fov_regex.findall(filename.name)[0]) for filename in found_files_paths
+    )
+    found_files = zip(found_files_paths, fovs)
+    found_files = [fpath.name for fpath, fov in found_files if fov == fov_id]
     if filter_str:
         found_files = [
             f for f in found_files if re.search(filter_str, f, re.IGNORECASE)
@@ -685,7 +691,7 @@ def compile(
 
     all_channels = {}  # index in by fov, peak #
     for fov, paths in fov_to_files.items():
-        print(f"analyzing FOV {fov + 1}", end="\r")
+        print(f"analyzing FOV {fov + 1}", end="\n")
         chnl_timeseries = []
         img_timeseries = []
         sorted(paths)  # sort by timestamps
@@ -712,7 +718,7 @@ def compile(
             chnl_timeseries.append(channel_locs)
             img_timeseries.append(image_data)
 
-        print(f"making masks for FOV {fov + 1}", end="\r")
+        print(f"making masks for FOV {fov + 1}", end="\n")
         img_timeseries = np.array(img_timeseries)
         # maybe clean this up in a sec
         max_len, max_wid, channel_masks = make_masks(
@@ -723,7 +729,7 @@ def compile(
             channel_length_pad,
         )
 
-        print(f"adjusting masks for FOV {fov + 1}", end="\r")
+        print(f"adjusting masks for FOV {fov + 1}", end="\n")
         all_channels[fov] = {}
         for peak, mask in channel_masks.items():
             img_width = phase_image.shape[1]
@@ -731,7 +737,7 @@ def compile(
                 mask, channel_masks[peak], max_len, max_wid, img_width
             )
 
-        print(f"slicing channels for FOV {fov + 1}", end="\r")
+        print(f"slicing channels for FOV {fov + 1}", end="\n")
         tiff_stack_slice_and_write(
             img_timeseries, fov, all_channels[fov], experiment_name, chnl_dir
         )
@@ -931,15 +937,16 @@ class Compile(MM3Container):
 
 
 if __name__ == "__main__":
-    cur_dir = Path(
-        "/Users/michaelsandler/Documents/others-data/napari_testing_data/napari-mm3-test"
-    )
+    cur_dir = Path(".")
+    valid_times = get_valid_times(cur_dir / "TIFF")
+    valid_fovs = get_valid_fovs_folder(cur_dir / "TIFF")
+    t_end = max(valid_times)
     compile(
         TIFF_dir=cur_dir / "TIFF",
         num_analyzers=30,
         analysis_dir=cur_dir / "analysis",
         t_start=0,
-        t_end=29,
+        t_end=t_end,
         image_orientation="auto",
         image_rotation=0,
         channel_width=10,
@@ -950,6 +957,6 @@ if __name__ == "__main__":
         alignment_pad=10,
         experiment_name="",
         phase_plane="c1",
-        FOVs=[0, 1, 2, 3],
+        FOVs=valid_fovs,
         TIFF_source="nd2",
     )
