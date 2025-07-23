@@ -133,7 +133,6 @@ def stack_channels(found_files: np.ndarray, TIFF_dir: Path) -> None:
 
 def fix_rotation(angle: float, image_data: np.ndarray) -> np.ndarray:
     # need to add support for no channels.
-    print("rotating")
     if angle == 0:
         return image_data
 
@@ -305,12 +304,14 @@ def compute_xcorr(
     crosscorrs = {}
 
     for fov_id in progress(user_spec_fovs):
-        information("Calculating cross correlations for FOV %d." % fov_id)
         crosscorrs[fov_id] = {}
         pool = Pool(num_analyzers)
 
         for peak_id in sorted(channel_masks[fov_id].keys()):
-            information("Calculating cross correlations for peak %d." % peak_id)
+            print(
+                f"Calculating cross correlations for fov {fov_id + 1} and peak {peak_id}",
+                end="\r",
+            )
             # currently broken:
             # channel_xcorr(ana_dir, experiment_name, fov_id: int, peak_id: int, phase_plane, pad_size) -> list:
             img_filename = TIFF_FILE_FORMAT_PEAK % (
@@ -342,7 +343,6 @@ def compute_xcorr(
             else:
                 crosscorrs[fov_id][peak_id] = False  # type:ignore
 
-    information("Writing cross correlations file.")
     with open(analysis_dir / "crosscorrs.pkl", "wb") as xcorrs_file:
         pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
     # with open(analysis_dir / "crosscorrs.pkl", "wb") as xcorrs_file:
@@ -528,8 +528,6 @@ def make_masks(
         dictionary of consensus channel masks.
 
     """
-    information("Determining initial channel masks...")
-
     # declare temp variables from parameters.
     crop_wp = int(channel_width_pad + channel_width / 2)
     chan_lp = int(channel_length_pad)
@@ -576,11 +574,8 @@ def tiff_stack_slice_and_write(
     """
     # cut out the channels as per channel masks for this fov
     for peak, channel_corners in six.iteritems(channel_masks_fov):
-        information("Slicing and saving channel peak %d." % peak)
-
         # slice out channel.
         # The function should recognize the shape length as 4 and cut all time points
-        print(f"{images_to_write.shape=}")
         images_to_write = np.array(images_to_write)
         channel_stack = images_to_write[
             ...,
@@ -594,9 +589,7 @@ def tiff_stack_slice_and_write(
         #     channel_slice = np.pad(channel_slice, paddings, mode="edge")
 
         channel_stack = channel_stack.squeeze()
-        print(f"{channel_stack.shape=}")
         for color_index in range(channel_stack.shape[1]):
-            print(f"{channel_stack.shape=}")
             # save stack
             # this is the filename for the channel
             channel_filename = channel_dir / (
@@ -692,9 +685,9 @@ def compile(
 
     all_channels = {}  # index in by fov, peak #
     for fov, paths in fov_to_files.items():
+        print(f"analyzing FOV {fov + 1}", end="\r")
         chnl_timeseries = []
         img_timeseries = []
-        print(f"lenpaths = {len(paths)}")
         sorted(paths)  # sort by timestamps
         for path in paths:
             time = get_time(ff.name)
@@ -719,8 +712,7 @@ def compile(
             chnl_timeseries.append(channel_locs)
             img_timeseries.append(image_data)
 
-            information("Saving channel locations.")
-
+        print(f"making masks for FOV {fov + 1}", end="\r")
         img_timeseries = np.array(img_timeseries)
         # maybe clean this up in a sec
         max_len, max_wid, channel_masks = make_masks(
@@ -730,6 +722,8 @@ def compile(
             channel_width,
             channel_length_pad,
         )
+
+        print(f"adjusting masks for FOV {fov + 1}", end="\r")
         all_channels[fov] = {}
         for peak, mask in channel_masks.items():
             img_width = phase_image.shape[1]
@@ -737,10 +731,11 @@ def compile(
                 mask, channel_masks[peak], max_len, max_wid, img_width
             )
 
+        print(f"slicing channels for FOV {fov + 1}", end="\r")
         tiff_stack_slice_and_write(
             img_timeseries, fov, all_channels[fov], experiment_name, chnl_dir
         )
-    print(all_channels)
+        print(f"finished analyzing FOV {fov+1}")
 
     compute_xcorr(
         analysis_dir,
@@ -751,10 +746,6 @@ def compile(
         num_analyzers,
         alignment_pad,
     )
-    print(all_channels)
-    # # save the channel mask dictionary to a yaml and a text file
-    # with open(analysis_dir / "channel_masks.json", "w") as cmask_file:
-    #     json.dump(all_channels, cmask_file)
 
     with open(analysis_dir / "channel_masks.yaml", "w") as cmask_file:
         yaml.dump(
@@ -879,7 +870,6 @@ class Compile(MM3Container):
             FOVs=self.fovs,
             TIFF_source=self.image_source,
         )
-        information("Finished.")
 
     def display_single_fov(self):
         self.viewer.layers.clear()
