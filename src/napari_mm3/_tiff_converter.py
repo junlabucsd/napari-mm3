@@ -2,18 +2,12 @@ import os
 import napari
 import copy
 import datetime
-import dask.array as da
 import json
 import nd2
 import tifffile as tiff
-import re
-import io
 import numpy as np
-
 from pathlib import Path
-from skimage import io
-from napari.utils import progress
-from magicgui.widgets import Container, FileEdit, CheckBox, PushButton, FloatSpinBox
+from magicgui.widgets import Container, FileEdit, PushButton, FloatSpinBox
 from ._deriving_widgets import FOVChooser, TimeRangeSelector, warning, information
 
 
@@ -29,20 +23,6 @@ def get_nd2_fovs(data_path):
 def get_nd2_times(data_path):
     with nd2.ND2File(str(data_path)) as nd2f:
         return nd2f.sizes["T"]
-
-
-def get_bioformats_fovs(data_path):
-    """
-    Gets the number of FOVs in a bioformats-compatible file.
-    """
-
-    posix_path = data_path.as_posix()
-    print("data path: " + posix_path)
-    md = bioformats.get_omexml_metadata(path=posix_path)
-    xml_data = bioformats.OMEXML(md)
-
-    fovs = xml_data.image_count
-    return fovs
 
 
 def nd2_iter(nd2f: nd2.ND2File, time_range, fov_list):
@@ -115,7 +95,6 @@ def nd2ToTIFF(
     image_end: int,
     vertical_crop=None,
     horizontal_crop=None,
-    tworow_crop=None,
     fov_list=[],
 ):
     """
@@ -177,37 +156,9 @@ def nd2ToTIFF(
             # in case one channel, one fov.
             if len(image_data.shape) == 3:
                 image_data = np.expand_dims(image_data, axis=0)
-            # crop tiff if specified. Lots of flags for if there are double rows or  multiple colors
-            if tworow_crop:
-                crop1_y1, crop1_y2 = tworow_crop[0][0], tworow_crop[0][1]
-                crop2_y1, crop2_y2 = tworow_crop[0][0], tworow_crop[0][1]
-                image_upper_row = image_data[:, crop1_y1:crop2_y2, :]
-                image_lower_row = image_data[:, crop2_y1:crop2_y2, :]
 
-                upper_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_1.tif"
-                information("Saving %s." % tif_filename)
-                # TODO: Make the channel order correct, here and below.
-                tiff.imwrite(
-                    tif_dir / upper_row_filename,
-                    data=image_upper_row,
-                    description=metadata_json,
-                    compression="zlib",
-                    photometric="minisblack",
-                )
-
-                # cut and save bottom row
-                lower_row_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}_2.tif"
-                information("Saving %s." % lower_row_filename)
-                tiff.imwrite(
-                    tif_dir / lower_row_filename,
-                    data=image_lower_row,
-                    description=metadata_json,
-                    compression="zlib",
-                    photometric="minisblack",
-                )
-                continue
             # for just a simple crop
-            elif vertical_crop:
+            if vertical_crop:
                 _, nc, H, W = image_data.shape
                 ## convert from xy to row-column coordinates for numpy slicing
                 yhi = int((1 - vertical_crop[0]) * H)
@@ -229,38 +180,6 @@ def nd2ToTIFF(
                 compression="zlib",
                 photometric="minisblack",
             )
-
-
-def _get_tif_metadata_nd2(self, tif: tiff.TiffFile) -> dict:
-    """This function pulls out the metadata from a tif file and returns it as a dictionary.
-    This if tiff files as exported by the mm3 function nd2ToTiff. All the metdata
-    is found in that script and saved in json format to the tiff, so it is simply extracted here
-
-    Paramters
-    ---------
-    tif: tiff.TiffFile
-        TIFF file object from which data will be extracted
-
-    Returns
-    -------
-    idata: dict
-        dictionary of values:
-            'fov': int,
-            't' : int,
-            'jdn' (float)
-            'planes' (list of strings)
-
-    """
-    # get the first page of the tiff and pull out image description
-    # this dictionary should be in the above form
-
-    for tag in tif.pages[0].tags:
-        if tag.name == "ImageDescription":
-            idata = tag.value
-            break
-
-    idata = json.loads(idata)
-    return idata
 
 
 # make a lookup time table for converting nominal time to elapsed time in seconds
@@ -343,37 +262,6 @@ def make_time_table(
     return time_table
 
 
-def _get_tif_metadata_filename(self, tif: tiff.TiffFile) -> dict:
-    """This function pulls out the metadata from a tif filename and returns it as a dictionary.
-    This just gets the tiff metadata from the filename and is a backup option when the known format of the metadata is not known.
-
-    Parameters
-    ---------
-    tif: tiff.TiffFile
-        TIFF file object from which data will be extracted
-
-    Returns
-    -------
-    idata: dict
-        dictionary of values:
-            'fov': int,
-            't' : int,
-            'jdn' (float)
-
-    Called by
-    get_tif_params
-
-    """
-    idata = {
-        "fov": get_fov(tif.filename),  # fov id
-        "t": get_time(tif.filename),  # time point
-        "jd": -1 * 0.0,  # absolute julian time
-        "planes": get_plane(tif.filename),
-    }
-
-    return idata
-
-
 class TIFFExport(Container):
     """No good way to make this derive MM3Widget; have to roll a custom version here."""
 
@@ -384,24 +272,10 @@ class TIFFExport(Container):
 
         nd2files = list(Path(".").glob("*.nd2"))
         self.nd2files_found = len(nd2files) != 0
-        if not self.nd2files_found:
-            warning(
-                "No nd2 files found in current directory. \nIf your data is in .nd2 format, launch napari from the directory containing the .nd2 file.\nNow looking for bioformats..."
-            )
 
-            global bioformats, javabridge
-            import javabridge
-            import bioformats
-
-            javabridge.start_vm(class_path=bioformats.JARS)
-
-            self.nd2file = ""
-            self.valid_times = [1, 1]
-            self.valid_fovs = [1, 1]
-        else:
-            self.nd2file = nd2files[0]
-            self.valid_times = [1, get_nd2_times(self.nd2file)]
-            self.valid_fovs = [1, get_nd2_fovs(self.nd2file)]
+        self.nd2file = nd2files[0]
+        self.valid_times = [1, get_nd2_times(self.nd2file)]
+        self.valid_fovs = [1, get_nd2_fovs(self.nd2file)]
 
         self.data_path_widget = FileEdit(
             label="data_path",
@@ -469,28 +343,15 @@ class TIFFExport(Container):
         napari.current_viewer().window._status_bar._toggle_activity_dock(True)
 
     def run(self):
-        if self.nd2files_found:
-            nd2ToTIFF(
-                self.data_path,
-                self.exp_dir / "TIFF",
-                image_start=self.time_range[0] - 1,
-                image_end=self.time_range[1],
-                vertical_crop=[self.lower_crop, self.upper_crop],
-                horizontal_crop=[self.left_crop, self.right_crop],
-                fov_list=self.fovs,
-                tworow_crop=None,
-            )
-        else:
-            bioformats_import(
-                self.data_path,
-                self.exp_dir / "TIFF",
-                image_start=self.time_range[0] - 1,
-                image_end=self.time_range[1],
-                vertical_crop=[self.lower_crop, self.upper_crop],
-                horizontal_crop=[self.left_crop, self.right_crop],
-                fov_list=self.fovs,
-                tworow_crop=None,
-            )
+        nd2ToTIFF(
+            self.data_path,
+            self.exp_dir / "TIFF",
+            image_start=self.time_range[0] - 1,
+            image_end=self.time_range[1],
+            vertical_crop=[self.lower_crop, self.upper_crop],
+            horizontal_crop=[self.left_crop, self.right_crop],
+            fov_list=self.fovs,
+        )
 
         information("Finished TIFF export")
 
@@ -543,12 +404,8 @@ class TIFFExport(Container):
         viewer.layers.link_layers()  ## allows user to set contrast limits for all FOVs at once
 
     def set_widget_bounds(self):
-        if self.nd2files_found:
-            self.valid_fovs = [1, get_nd2_fovs(self.data_path)]
-            self.valid_times = [1, get_nd2_times(self.data_path)]
-        else:
-            self.valid_fovs = [1, get_bioformats_fovs(self.data_path)]
-            self.valid_times = [1, get_bioformats_times(self.data_path)]
+        self.valid_fovs = [1, get_nd2_fovs(self.data_path)]
+        self.valid_times = [1, get_nd2_times(self.data_path)]
         self.FOVs_range_widget.max_FOV = min(self.valid_fovs)
         self.FOVs_range_widget.max_FOV = max(self.valid_fovs)
         self.FOVs_range_widget.label = (
@@ -591,3 +448,23 @@ class TIFFExport(Container):
 
     def set_right_crop(self):
         self.right_crop = self.right_crop_widget.value
+
+
+if __name__ == "__main__":
+    nd2files = list(Path(".").glob("*.nd2"))
+    nd2files_found = len(nd2files) != 0
+    print(f"ND2 Files found: {nd2files_found}")
+    nd2file = nd2files[0]
+    valid_times = get_nd2_times(nd2file)
+    valid_fovs = get_nd2_fovs(nd2file)
+
+    cur_dir = Path(".")
+    nd2ToTIFF(
+        cur_dir,
+        cur_dir / "TIFF",
+        image_start=0,
+        image_end=valid_times,
+        vertical_crop=[0, 1],
+        horizontal_crop=[0, 1],
+        fov_list=list(range(0, valid_fovs)),
+    )
