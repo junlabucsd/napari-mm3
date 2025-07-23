@@ -97,16 +97,15 @@ def write_timetable(nd2f: nd2.ND2File, path: Path):
     for event in nd2f.events():
         if "P Index" not in event:
             continue
-        timestamp = event["Time [s]"]
-        fov_idx = event["P Index"]
-        t_idx = event["T Index"]
+        timestamp = float(int(event["Time [s]"]))
+        fov_idx = int(event["P Index"])
+        t_idx = int(event["T Index"])
         if fov_idx not in timetable:
             timetable[fov_idx] = {t_idx: timestamp}
         else:
             timetable[fov_idx][t_idx] = timestamp
     with path.open("w") as f:
-        json.dump(timetable, f)
-
+        json.dump(timetable, f, indent=4)
 
 
 def nd2ToTIFF(
@@ -143,6 +142,10 @@ def nd2ToTIFF(
         # load in the time table.
         # TODO: Add analysis
         write_timetable(nd2f, Path(".") / "analysis" / "timetable.json")
+        starttime = nd2f.text_info["date"]
+        starttime = datetime.datetime.strptime(starttime, "%m/%d/%Y %I:%M:%S %p")
+
+        planes = nd2f.sizes["C"]
 
         # Extraction range is the time points that will be taken out.
         time_range = range(image_start, image_end)
@@ -227,6 +230,7 @@ def nd2ToTIFF(
                 photometric="minisblack",
             )
 
+
 def _get_tif_metadata_nd2(self, tif: tiff.TiffFile) -> dict:
     """This function pulls out the metadata from a tif file and returns it as a dictionary.
     This if tiff files as exported by the mm3 function nd2ToTiff. All the metdata
@@ -257,6 +261,7 @@ def _get_tif_metadata_nd2(self, tif: tiff.TiffFile) -> dict:
 
     idata = json.loads(idata)
     return idata
+
 
 # make a lookup time table for converting nominal time to elapsed time in seconds
 def make_time_table(
@@ -336,6 +341,7 @@ def make_time_table(
     information("Time table saved.")
 
     return time_table
+
 
 def _get_tif_metadata_filename(self, tif: tiff.TiffFile) -> dict:
     """This function pulls out the metadata from a tif filename and returns it as a dictionary.
