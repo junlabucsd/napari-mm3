@@ -1,4 +1,5 @@
 import multiprocessing
+import argparse
 from multiprocessing import Pool
 import numpy as np
 import pickle
@@ -372,3 +373,26 @@ class Colors(MM3Container):
 
     def set_fovs(self, fovs):
         self.fovs = list(set(fovs))
+
+if __name__ == "__main__":
+    cur_dir = Path(".")
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument(
+        "--seg_method",
+        help="Otsu or U-net",
+        type=str,
+    )
+    p = parser.parse_args()
+    if p.seg_method not in ("seg_unet", "seg_otsu"):
+        raise ValueError("seg method must be either Otsu or U-net")
+
+    colors(
+        Path(".") / "analysis" / "cell_data",
+        "",
+        Path(".") / "analysis",
+        multiprocessing.cpu_count(),
+        "c1",
+        p.seg_method,
+        Path(".") / "analysis" / "cell_data" / "complete_cells.pkl",
+    )
