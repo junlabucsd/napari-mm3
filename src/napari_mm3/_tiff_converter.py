@@ -6,9 +6,16 @@ import json
 import nd2
 import tifffile as tiff
 import numpy as np
+import argparse
 from pathlib import Path
 from magicgui.widgets import Container, FileEdit, PushButton, FloatSpinBox
-from ._deriving_widgets import FOVChooser, TimeRangeSelector, warning, information
+from ._deriving_widgets import (
+    FOVChooser,
+    TimeRangeSelector,
+    range_string_to_indices,
+    warning,
+    information,
+)
 
 
 def get_nd2_fovs(data_path):
@@ -454,20 +461,48 @@ class TIFFExport(Container):
 
 
 if __name__ == "__main__":
-    nd2files = list(Path(".").glob("*.nd2"))
-    nd2files_found = len(nd2files) != 0
-    print(f"ND2 Files found: {nd2files_found}")
-    nd2file = nd2files[0]
-    valid_times = get_nd2_times(nd2file)
-    valid_fovs = get_nd2_fovs(nd2file)
-
     cur_dir = Path(".")
+    nd2files = list(cur_dir.glob("*.nd2"))
+    nd2files_found = len(nd2files) != 1
+    if not nd2files_found:
+        print(
+            "No ND2 files found. Please run this in a folder containing a single nd2 file."
+        )
+    nd2file = nd2files[0]
+
+    end_time = get_nd2_times(nd2file)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--start_time", help="1-indexed time to start at", default=1, type=int
+    )
+    parser.add_argument(
+        "--end_time",
+        help="1-indexed time to end at (exclusive)",
+        default=end_time,
+        type=int,
+    )
+    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
+    p = parser.parse_args()
+
+    total_fovs = get_nd2_fovs(nd2file)
+    if p.fovs == "":
+        fovs = list(range(total_fovs))
+    else:
+        fovs = range_string_to_indices(p.fovs)
+        for fov in fovs:
+            if fov >= total_fovs:
+                raise ValueError("Some FOVs are out of range for your nd2 file.")
+
+    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
+        raise ValueError("Times out of range")
+
     nd2ToTIFF(
-        cur_dir,
+        nd2file,
         cur_dir / "TIFF",
-        image_start=0,
-        image_end=valid_times,
+        image_start=p.start_time - 1,
+        image_end=p.end_time - 1,
         vertical_crop=[0, 1],
         horizontal_crop=[0, 1],
-        fov_list=list(range(0, valid_fovs)),
+        fov_list=fovs,
     )

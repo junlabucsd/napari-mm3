@@ -214,10 +214,9 @@ def range_string_to_indices(range_string):
         print("Index range string valid!")
         return indices
     except:
-        print(
+        raise ValueError(
             "Index range string invalid. Returning empty range until a new string is specified."
         )
-        return []
 
 
 class DataclassWidget(Container):
@@ -654,7 +653,10 @@ class FOVChooser(LineEdit):
         """
 
         def func_with_range():
-            user_fovs = range_string_to_indices(self.value)
+            try:
+                user_fovs = range_string_to_indices(self.value)
+            except ValueError:
+                user_fovs = []
             if user_fovs:
                 func(user_fovs)
 

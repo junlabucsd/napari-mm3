@@ -4,6 +4,7 @@ from multiprocessing.pool import Pool
 from magicgui.widgets import SpinBox, ComboBox, CheckBox
 
 import tifffile as tiff
+import argparse
 import numpy as np
 import multiprocessing
 import napari
@@ -15,6 +16,9 @@ from ._deriving_widgets import (
     MM3Container,
     FOVChooser,
     PlanePicker,
+    range_string_to_indices,
+    get_valid_times,
+    get_valid_fovs_folder,
     load_specs,
     information,
     warning,
@@ -511,11 +515,11 @@ def subtract(
             ana_dir, experiment_name, empty_dir, from_fov, fov_id, color=sub_plane
         )
 
-    ### Subtract ##################################################################################
+    ### Subtract ###########
     information("Subtracting channels for channel {}.".format(sub_plane))
     for fov_id in fov_id_list:
         # send to function which will create empty stack for each fov.
-        subtraction_result = subtract_fov_stack(
+        subtract_fov_stack(
             ana_dir,
             experiment_name,
             alignment_pad,
@@ -599,3 +603,43 @@ class Subtract(MM3Container):
 
     def set_view_result(self):
         self.view_result = self.output_display_widget.value
+
+
+if __name__ == "__main__":
+    cur_dir = Path(".")
+    end_time = get_valid_times(cur_dir / "TIFF")
+    all_fovs = get_valid_fovs_folder(cur_dir / "TIFF")
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--start_time", help="1-indexed time to start at", default=1, type=int
+    )
+    parser.add_argument(
+        "--end_time",
+        help="1-indexed time to end at (exclusive)",
+        default=end_time,
+        type=int,
+    )
+    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
+    p = parser.parse_args()
+
+    if p.fovs == "":
+        fovs = all_fovs
+    else:
+        fovs = range_string_to_indices(p.fovs)
+        for fov in fovs:
+            if fov not in all_fovs:
+                raise ValueError("Some FOVs are out of range for your nd2 file.")
+
+    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
+        raise ValueError("Times out of range")
+
+    subtract(
+        ana_dir=cur_dir / "analysis",
+        experiment_name="",
+        fovs=fovs,
+        alignment_pad=10,
+        num_analyzers=1,  # the assumption is you're running headless to debug
+        subtraction_plane="c1",
+        fluor_mode=False,
+    )

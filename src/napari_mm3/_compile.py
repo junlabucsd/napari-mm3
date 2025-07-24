@@ -1,4 +1,5 @@
 import multiprocessing
+import argparse
 import json
 import os
 import pickle
@@ -31,6 +32,7 @@ from ._deriving_widgets import (
     MM3Container,
     PlanePicker,
     TimeRangeSelector,
+    range_string_to_indices,
     get_valid_times,
     get_valid_fovs_folder,
     information,
@@ -880,7 +882,6 @@ class Compile(MM3Container):
     def display_single_fov(self):
         self.viewer.layers.clear()
         self.viewer.text_overlay.visible = False
-        path = self.TIFF_folder / "*xy*.tif"
         if self.split_channels:
             # should not be getting executred.
             image_fov_stack = load_fov(
@@ -938,15 +939,39 @@ class Compile(MM3Container):
 
 if __name__ == "__main__":
     cur_dir = Path(".")
-    valid_times = get_valid_times(cur_dir / "TIFF")
-    valid_fovs = get_valid_fovs_folder(cur_dir / "TIFF")
-    t_end = max(valid_times)
+    end_time = get_valid_times(cur_dir / "TIFF")
+    all_fovs = get_valid_fovs_folder(cur_dir / "TIFF")
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--start_time", help="1-indexed time to start at", default=1, type=int
+    )
+    parser.add_argument(
+        "--end_time",
+        help="1-indexed time to end at (exclusive)",
+        default=end_time,
+        type=int,
+    )
+    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
+    p = parser.parse_args()
+
+    if p.fovs == "":
+        fovs = all_fovs
+    else:
+        fovs = range_string_to_indices(p.fovs)
+        for fov in fovs:
+            if fov not in all_fovs:
+                raise ValueError("Some FOVs are out of range for your nd2 file.")
+
+    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
+        raise ValueError("Times out of range")
+
     compile(
         TIFF_dir=cur_dir / "TIFF",
         num_analyzers=30,
         analysis_dir=cur_dir / "analysis",
-        t_start=0,
-        t_end=t_end,
+        t_start=p.start_time - 1,
+        t_end=p.end_time - 1,
         image_orientation="auto",
         image_rotation=0,
         channel_width=10,
@@ -957,6 +982,6 @@ if __name__ == "__main__":
         alignment_pad=10,
         experiment_name="",
         phase_plane="c1",
-        FOVs=valid_fovs,
+        FOVs=fovs,
         TIFF_source="nd2",
     )

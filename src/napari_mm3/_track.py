@@ -2,11 +2,10 @@ import multiprocessing
 from multiprocessing import Pool
 from pathlib import Path
 import napari
-import yaml
 import six
 import pickle
 import os
-import json
+import argparse
 from typing import Tuple
 from dataclasses import dataclass
 
@@ -21,12 +20,15 @@ from napari.utils import progress
 from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, PushButton
 
 from ._deriving_widgets import (
+    get_valid_times,
     get_valid_fovs_folder,
+    range_string_to_indices,
     MM3Container,
     PlanePicker,
     FOVChooser,
     load_specs,
     information,
+    load_time_table,
     load_tiff,
     warning,
 )
@@ -36,28 +38,6 @@ from .utils import (
     find_complete_cells,
     write_cells_to_json,
 )
-
-
-# load the time table
-def load_time_table(ana_dir: Path) -> dict:
-    """
-    Load the time table.
-    This is so it can be used during Cell creation.
-    """
-
-    # try first for yaml, then for pkl
-    try:
-        with open(ana_dir / "timetable.json", "r") as time_table_file:
-            timetable = json.load(time_table_file)  # loads in keys as strings.
-            new_timetable = {}
-            for fov, time_idxs in timetable.items():
-                new_timetable[int(fov)] = {}
-                for time_idx, real_time in time_idxs.items():
-                    new_timetable[int(fov)][int(time_idx)] = real_time
-            return new_timetable
-    except FileNotFoundError:
-        with open(ana_dir / "time_table.yaml", "rb") as time_table_file:
-            return yaml.safe_load(time_table_file)
 
 
 class CellTracker:
@@ -1287,12 +1267,38 @@ class Track(MM3Container):
 
 if __name__ == "__main__":
     experiment_name = ""
-    analysis_folder = Path(".") / "analysis"
-    valid_fovs = get_valid_fovs_folder(analysis_folder / "segmented")
+    cur_dir = Path(".")
+    analysis_folder = cur_dir / "analysis"
+    end_time = get_valid_times(cur_dir / "TIFF")
+    all_fovs = get_valid_fovs_folder(cur_dir / "TIFF")
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--start_time", help="1-indexed time to start at", default=1, type=int
+    )
+    parser.add_argument(
+        "--end_time",
+        help="1-indexed time to end at (exclusive)",
+        default=end_time,
+        type=int,
+    )
+    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
+    p = parser.parse_args()
+
+    if p.fovs == "":
+        fovs = all_fovs
+    else:
+        fovs = range_string_to_indices(p.fovs)
+        for fov in fovs:
+            if fov not in all_fovs:
+                raise ValueError("Some FOVs are out of range for your nd2 file.")
+
+    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
+        raise ValueError("Times out of range")
 
     track_cells(
         experiment_name=experiment_name,
-        fovs=valid_fovs,
+        fovs=fovs,
         phase_plane="c1",
         pxl2um=0.11,
         num_analyzers=multiprocessing.cpu_count(),

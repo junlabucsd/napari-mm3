@@ -6,8 +6,10 @@ import six
 import tifffile as tiff
 import numpy as np
 import warnings
+import argparse
 
 from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, CheckBox
+from pathlib import Path
 from scipy import ndimage as ndi
 from skimage import segmentation, morphology
 from skimage.filters import threshold_otsu
@@ -17,6 +19,9 @@ from ._deriving_widgets import (
     MM3Container,
     PlanePicker,
     FOVChooser,
+    range_string_to_indices,
+    get_valid_fovs_folder,
+    get_valid_times,
     load_specs,
     information,
     load_tiff,
@@ -31,7 +36,7 @@ def segment_chnl_stack(
     ana_dir,
     experiment_name,
     phase_plane,
-    seg_dir, # The directory where the segmented images will be saved.
+    seg_dir,  # The directory where the segmented images will be saved.
     num_analyzers,
     fov_id,
     peak_id,
@@ -428,3 +433,47 @@ class SegmentOtsu(MM3Container):
             self.min_object_size,
             self.view_result,
         )
+
+
+if __name__ == "__main__":
+    cur_dir = Path(".")
+    end_time = get_valid_times(cur_dir / "TIFF")
+    all_fovs = get_valid_fovs_folder(cur_dir / "TIFF")
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--start_time", help="1-indexed time to start at", default=1, type=int
+    )
+    parser.add_argument(
+        "--end_time",
+        help="1-indexed time to end at (exclusive)",
+        default=end_time,
+        type=int,
+    )
+    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
+    p = parser.parse_args()
+
+    if p.fovs == "":
+        fovs = all_fovs
+    else:
+        fovs = range_string_to_indices(p.fovs)
+        for fov in fovs:
+            if fov not in all_fovs:
+                raise ValueError("Some FOVs are out of range for your nd2 file.")
+
+    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
+        raise ValueError("Times out of range")
+
+    segmentOTSU(
+        analysis_folder=cur_dir / "analysis",
+        experiment_name="",
+        phase_plane="c1",
+        segmentation_folder=cur_dir / "analysis" / "segmented",
+        num_analyzers=multiprocessing.cpu_count(),
+        fovs=fovs,
+        OTSU_threshold=1,
+        first_opening_size=2,
+        distance_threshold=1,
+        second_opening_size=2,
+        min_object_size=0,
+    )
