@@ -2,9 +2,11 @@ from __future__ import print_function, division
 import os
 import multiprocessing
 import six
-
+import argparse
 import numpy as np
 from skimage import segmentation, morphology
+from pathlib import Path
+
 import tifffile as tiff
 import h5py
 import tensorflow as tf
@@ -28,6 +30,9 @@ from ._deriving_widgets import (
     FOVChooser,
     MM3Container,
     PlanePicker,
+    range_string_to_indices,
+    get_valid_fovs_folder,
+    get_valid_times,
     load_specs,
     information,
     load_tiff,
@@ -219,7 +224,7 @@ def save_out(
     segmented_imgs: np.ndarray,
     fov_id: int,
     peak_id: int,
-) ->  None:
+) -> None:
     """Saves out the segmented images."""
     # save out the segmented stacks
     seg_filename = experiment_name + "_xy%03d_p%04d_%s.tif" % (
@@ -251,8 +256,7 @@ def normalize(img_stack: np.ndarray) -> np.ndarray:
 ## post-processing of u-net output
 # binarize, remove small objects, clear border, and label
 def binarize_and_label(predictions, cellClassThreshold, min_object_size) -> np.ndarray:
-    """Binarizes the predictions, removes small objects, clears the border, and labels the objects.
-    """
+    """Binarizes the predictions, removes small objects, clears the border, and labels the objects."""
 
     predictions[predictions >= cellClassThreshold] = 1
     predictions[predictions < cellClassThreshold] = 0
@@ -802,3 +806,69 @@ class SegmentUnet(MM3Container):
         images.gamma = 1
         labels = self.viewer.add_labels(segmented_imgs, name="Labels")
         labels.opacity = 0.5
+
+
+if __name__ == "__main__":
+    cur_dir = Path(".")
+    end_time = get_valid_times(cur_dir / "TIFF")
+    all_fovs = get_valid_fovs_folder(cur_dir / "TIFF")
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--start_time", help="1-indexed time to start at", default=1, type=int
+    )
+    parser.add_argument(
+        "--end_time",
+        help="1-indexed time to end at (exclusive)",
+        default=end_time,
+        type=int,
+    )
+    parser.add_argument(
+        "--model_path",
+        help="path to the model",
+        type=int,
+        required=True,
+    )
+    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
+    p = parser.parse_args()
+
+    if p.fovs == "":
+        fovs = all_fovs
+    else:
+        fovs = range_string_to_indices(p.fovs)
+        for fov in fovs:
+            if fov not in all_fovs:
+                raise ValueError("Some FOVs are out of range for your nd2 file.")
+
+    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
+        raise ValueError("Times out of range")
+    
+    model_path = Path(p.model_path)
+
+    model_source = "Pixelwise weighted"
+    if model_source == "Pixelwise weighted":
+        custom_objects = {
+            "binary_acc": binary_acc,
+            "pixelwise_weighted_bce": pixelwise_weighted_bce,
+        }
+    elif model_source == "Unweighted":
+        custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
+
+    segmentUNet(
+        experiment_name="",
+        image_directory=cur_dir / "TIFF",
+        fovs=fovs,
+        phase_plane="c1",
+        model_file=model_path,
+        trained_model_image_height=256,
+        trained_model_image_width=32,
+        batch_size=20,
+        cell_class_threshold=0.5,
+        min_object_size=25,
+        normalize_to_one=True,
+        num_analyzers=multiprocessing.cpu_count(),
+        ana_dir=cur_dir / "analysis",
+        seg_dir=cur_dir / "analysis" / "segmented",
+        cell_dir=cur_dir / "analysis" "cell_data",
+        custom_objects=custom_objects,
+    )
