@@ -50,7 +50,7 @@ def load_hdf5(hdf5_location: Path, dataset_name: str):
 
 def load_specs(analysis_dir: Path) -> dict:
     """
-    Load specs file which indicates which channels should be analyzed, 
+    Load specs file which indicates which channels should be analyzed,
     used as empties, or ignored.
     """
     try:
@@ -66,19 +66,26 @@ def load_specs(analysis_dir: Path) -> dict:
     return specs
 
 
-# load the time table and add it to the global params
-def load_time_table(ana_dir: Path):
-    """Add the time table dictionary to the params global dictionary.
+# load the time table
+def load_time_table(ana_dir: Path) -> dict:
+    """
+    Load the time table.
     This is so it can be used during Cell creation.
     """
 
     # try first for yaml, then for pkl
     try:
-        with (ana_dir / "time_table.yaml").open("rb") as time_table_file:
+        with open(ana_dir / "timetable.json", "r") as time_table_file:
+            timetable = json.load(time_table_file)  # loads in keys as strings.
+            new_timetable = {}
+            for fov, time_idxs in timetable.items():
+                new_timetable[int(fov)] = {}
+                for time_idx, real_time in time_idxs.items():
+                    new_timetable[int(fov)][int(time_idx)] = real_time
+            return new_timetable
+    except FileNotFoundError:
+        with open(ana_dir / "time_table.yaml", "rb") as time_table_file:
             return yaml.safe_load(time_table_file)
-    except:
-        with (ana_dir / "time_table.pkl").open("rb") as time_table_file:
-            return pickle.load(time_table_file)
 
 
 def get_valid_planes(TIFF_folder):
@@ -114,7 +121,9 @@ def get_valid_planes(TIFF_folder):
     elif dim == 2:
         pattern = r"(c\d+)"
         num_channels = len(
-            set([re.search(pattern, str(f), re.IGNORECASE).group(1) for f in filepaths]) # type:ignore
+            set(
+                [re.search(pattern, str(f), re.IGNORECASE).group(1) for f in filepaths]
+            )  # type:ignore
         )
     else:
         raise ValueError(f"Expected 2 or 3 dimensions but found {dim}.")
@@ -209,12 +218,12 @@ def range_string_to_indices(range_string):
             "Index range string invalid. Returning empty range until a new string is specified."
         )
         return []
-    
+
+
 class DataclassWidget(Container):
     def __init__(self, dataclass):
         for annotation in dataclass.annotations:
             pass
-
 
 
 class MM3Container(Container):
@@ -341,13 +350,13 @@ class MM3Container(Container):
             self.pop()
 
     def _set_analysis_folder(self):
-        self.analysis_folder = Path(self.analysis_folder_widget.value) # type:ignore
+        self.analysis_folder = Path(self.analysis_folder_widget.value)  # type:ignore
 
     def _set_experiment_name(self):
-        self.experiment_name = str(self.experiment_name_widget.value) # type:ignore
+        self.experiment_name = str(self.experiment_name_widget.value)  # type:ignore
 
     def _set_TIFF_folder(self):
-        self.TIFF_folder = Path(self.TIFF_folder_widget.value) # type:ignore
+        self.TIFF_folder = Path(self.TIFF_folder_widget.value)  # type:ignore
 
     def _set_valid_fovs(self):
         try:
