@@ -8,7 +8,6 @@ import numpy as np
 import multiprocessing
 import napari
 import six
-import h5py
 
 from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
 
