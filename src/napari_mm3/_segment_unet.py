@@ -1,42 +1,42 @@
-from __future__ import print_function, division
-import os
-import multiprocessing
-import six
+from __future__ import division, print_function
+
 import argparse
-import numpy as np
-from skimage import segmentation, morphology
+import multiprocessing
+import os
 from pathlib import Path
 
-import tifffile as tiff
 import h5py
-import tensorflow as tf
-from tensorflow import keras
-from keras import models, losses
-from tensorflow.python.ops import array_ops, math_ops
-from keras import backend as K
 import napari
+import numpy as np
+import six
+import tensorflow as tf
+import tifffile as tiff
+from keras import backend as K
+from keras import losses, models
 from magicgui.widgets import (
-    FileEdit,
-    SpinBox,
-    FloatSlider,
     CheckBox,
     ComboBox,
+    FileEdit,
+    FloatSlider,
     PushButton,
+    SpinBox,
 )
-
-from .utils import TIFF_FILE_FORMAT_PEAK
+from skimage import morphology, segmentation
+from tensorflow import keras
+from tensorflow.python.ops import array_ops, math_ops
 
 from ._deriving_widgets import (
     FOVChooser,
     MM3Container,
     PlanePicker,
-    range_string_to_indices,
     get_valid_fovs_folder,
     get_valid_times,
-    load_specs,
     information,
+    load_specs,
     load_tiff,
+    range_string_to_indices,
 )
+from .utils import TIFF_FILE_FORMAT_PEAK
 
 
 # loss functions for model
@@ -842,7 +842,7 @@ if __name__ == "__main__":
 
     if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
         raise ValueError("Times out of range")
-    
+
     model_path = Path(p.model_path)
 
     model_source = "Pixelwise weighted"

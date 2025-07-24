@@ -1,19 +1,19 @@
 import numpy as np
-
+from magicgui.widgets import FileEdit, LineEdit, PushButton, SpinBox
 from napari import Viewer
+
+from ._deriving_widgets import (
+    MM3Container,
+    SegmentationMode,
+    load_specs,
+    load_tiff,
+)
 from .utils import (
+    TIFF_FILE_FORMAT_PEAK,
     Cells,
     read_cells_from_json,
     write_cells_to_json,
     write_cells_to_matlab,
-    TIFF_FILE_FORMAT_PEAK,
-)
-from magicgui.widgets import SpinBox, PushButton, FileEdit, LineEdit
-from ._deriving_widgets import (
-    MM3Container,
-    load_specs,
-    load_tiff,
-    SegmentationMode,
 )
 
 TRANSLUCENT_BLUE = np.array([0.0, 0.0, 1.0, 1.0])
@@ -194,7 +194,6 @@ class FociPicking(MM3Container):
         self.viewer.layers["image"].mouse_drag_callbacks.append(self.click_callback)
 
     def vis_seg_stack(self):
-
         seg_str = (
             "seg_otsu" if SegmentationMode.OTSU == SegmentationMode.OTSU else "seg_unet"
         )

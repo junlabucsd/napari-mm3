@@ -1,20 +1,22 @@
-import os
-import napari
+import argparse
 import copy
 import datetime
 import json
-import nd2
-import tifffile as tiff
-import numpy as np
-import argparse
+import os
 from pathlib import Path
-from magicgui.widgets import Container, FileEdit, PushButton, FloatSpinBox
+
+import napari
+import nd2
+import numpy as np
+import tifffile as tiff
+from magicgui.widgets import Container, FileEdit, FloatSpinBox, PushButton
+
 from ._deriving_widgets import (
     FOVChooser,
     TimeRangeSelector,
+    information,
     range_string_to_indices,
     warning,
-    information,
 )
 
 

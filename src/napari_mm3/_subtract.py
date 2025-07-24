@@ -1,29 +1,28 @@
-from pathlib import Path
-from skimage.feature import match_template
-from multiprocessing.pool import Pool
-from magicgui.widgets import SpinBox, ComboBox, CheckBox
-
-import tifffile as tiff
 import argparse
-import numpy as np
 import multiprocessing
-import napari
-import six
+from multiprocessing.pool import Pool
+from pathlib import Path
 
-from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
+import napari
+import numpy as np
+import six
+import tifffile as tiff
+from magicgui.widgets import CheckBox, ComboBox, SpinBox
+from skimage.feature import match_template
 
 from ._deriving_widgets import (
-    MM3Container,
     FOVChooser,
+    MM3Container,
     PlanePicker,
-    range_string_to_indices,
-    get_valid_times,
     get_valid_fovs_folder,
-    load_specs,
+    get_valid_times,
     information,
-    warning,
+    load_specs,
     load_tiff,
+    range_string_to_indices,
+    warning,
 )
+from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
 
 
 def subtract_phase(

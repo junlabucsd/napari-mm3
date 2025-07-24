@@ -1,27 +1,27 @@
+import json
+import pickle
+import re
+import sys
+import time
+import traceback
 from datetime import datetime
+from enum import Enum
+from pathlib import Path
+
+import h5py
+import numpy as np
+import tifffile as tiff
+import yaml
+from magicgui.types import FileDialogMode
 from magicgui.widgets import (
+    ComboBox,
     Container,
     FileEdit,
     LineEdit,
     PushButton,
     RangeEdit,
-    ComboBox,
 )
-from pathlib import Path
-from .utils import TIFF_FILE_FORMAT_PEAK
-from magicgui.types import FileDialogMode
-import h5py
-import pickle
-import yaml
-import json
-import tifffile as tiff
-import re
-import time
-import sys
-import traceback
-from enum import Enum
 from napari import Viewer
-import numpy as np
 
 
 class SegmentationMode(Enum):
@@ -121,9 +121,7 @@ def get_valid_planes(TIFF_folder):
     elif dim == 2:
         pattern = r"(c\d+)"
         num_channels = len(
-            set(
-                [re.search(pattern, str(f), re.IGNORECASE).group(1) for f in filepaths]
-            )  # type:ignore
+            set([re.search(pattern, str(f), re.IGNORECASE).group(1) for f in filepaths])  # type:ignore
         )
     else:
         raise ValueError(f"Expected 2 or 3 dimensions but found {dim}.")

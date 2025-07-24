@@ -1,6 +1,6 @@
-import multiprocessing
 import argparse
 import json
+import multiprocessing
 import os
 import pickle
 import re
@@ -32,11 +32,11 @@ from ._deriving_widgets import (
     MM3Container,
     PlanePicker,
     TimeRangeSelector,
-    range_string_to_indices,
-    get_valid_times,
     get_valid_fovs_folder,
+    get_valid_times,
     information,
     load_tiff,
+    range_string_to_indices,
     warning,
 )
 from .utils import TIFF_FILE_FORMAT_PEAK

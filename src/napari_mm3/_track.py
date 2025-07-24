@@ -1,40 +1,39 @@
+import argparse
 import multiprocessing
+import os
+import pickle
 from multiprocessing import Pool
 from pathlib import Path
-import napari
-import six
-import pickle
-import os
-import argparse
 from typing import Tuple
-from dataclasses import dataclass
 
-import numpy as np
 import matplotlib as mpl
-import matplotlib.pyplot as plt
-import seaborn as sns
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import napari
+import numpy as np
+import seaborn as sns
+import six
+from magicgui.widgets import ComboBox, FloatSpinBox, PushButton, SpinBox
+from napari.utils import progress
 from skimage import io
 from skimage.measure import regionprops
-from napari.utils import progress
-from magicgui.widgets import FloatSpinBox, SpinBox, ComboBox, PushButton
 
 from ._deriving_widgets import (
-    get_valid_times,
-    get_valid_fovs_folder,
-    range_string_to_indices,
+    FOVChooser,
     MM3Container,
     PlanePicker,
-    FOVChooser,
-    load_specs,
+    get_valid_fovs_folder,
+    get_valid_times,
     information,
-    load_time_table,
+    load_specs,
     load_tiff,
+    load_time_table,
+    range_string_to_indices,
     warning,
 )
 from .utils import (
-    Cell,
     TIFF_FILE_FORMAT_PEAK,
+    Cell,
     find_complete_cells,
     write_cells_to_json,
 )

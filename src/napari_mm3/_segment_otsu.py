@@ -1,33 +1,32 @@
+import argparse
 import multiprocessing
-from multiprocessing import Pool
-import napari
 import os
+import warnings
+from multiprocessing import Pool
+from pathlib import Path
+
+import napari
+import numpy as np
 import six
 import tifffile as tiff
-import numpy as np
-import warnings
-import argparse
-
-from magicgui.widgets import FloatSpinBox, SpinBox, PushButton, CheckBox
-from pathlib import Path
-from scipy import ndimage as ndi
-from skimage import segmentation, morphology
-from skimage.filters import threshold_otsu
+from magicgui.widgets import CheckBox, FloatSpinBox, PushButton, SpinBox
 from napari.utils import progress
+from scipy import ndimage as ndi
+from skimage import morphology, segmentation
+from skimage.filters import threshold_otsu
 
 from ._deriving_widgets import (
+    FOVChooser,
     MM3Container,
     PlanePicker,
-    FOVChooser,
-    range_string_to_indices,
     get_valid_fovs_folder,
     get_valid_times,
-    load_specs,
     information,
+    load_specs,
     load_tiff,
+    range_string_to_indices,
     warning,
 )
-
 from .utils import TIFF_FILE_FORMAT_PEAK
 
 

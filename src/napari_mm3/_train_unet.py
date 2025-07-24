@@ -1,63 +1,57 @@
-import os
+import copy
 import glob
-import numpy as np
-from re import search, match
-from pathlib import Path
 import itertools
+import os
+import random
+from pathlib import Path
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Tuple,
+    Union,
+)
+
+import elasticdeform
+import napari
+import numpy as np
+import numpy.typing as npt
+import skimage.transform as trans
+
+# learning modules
+import tensorflow as tf
+import tifffile as tiff
+from keras import backend as K
+from keras import losses, models
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.layers import (
+    Concatenate,
+    Conv2D,
+    Conv2DTranspose,
+    Input,
+    MaxPooling2D,
+)
+from keras.models import Model
+from keras.optimizers import Adam
+from magicgui.widgets import (
+    CheckBox,
+    FileEdit,
+    FloatSpinBox,
+    PushButton,
+    SpinBox,
+)
+from napari import Viewer
+from scipy import interpolate
 
 # image modules
 # import png # can pip this package to save pngs at any bitsize
 from scipy import ndimage as ndi  # use for binary_fill_holes
-from scipy import interpolate
-import skimage.transform as trans
+from skimage import io
 from skimage import morphology as morph  # use for remove small objects
 from skimage.filters import gaussian
-from skimage import io
-import tifffile as tiff
-from pprint import pprint
-import elasticdeform
-import matplotlib.pyplot as plt
-
-import napari
-from napari import Viewer
-from magicgui import magicgui
-from magicgui.widgets import FileEdit, SpinBox, FloatSpinBox
-
-# learning modules
-import tensorflow as tf
 from tensorflow import keras
-from keras import backend as K
-from keras import models, losses
 from tensorflow.python.ops import array_ops, math_ops
-from keras.models import Model
-from keras.layers import (
-    Input,
-    Conv2D,
-    Conv2DTranspose,
-    MaxPooling2D,
-    Concatenate,
-)
-from keras.optimizers import Adam
-from keras.callbacks import ModelCheckpoint, EarlyStopping
-
-from magicgui.widgets import (
-    FileEdit,
-    CheckBox,
-    PushButton,
-    SpinBox,
-)
-
-from typing import (
-    Tuple,
-    List,
-    Dict,
-    Union,
-    Iterator,
-    Any,
-)
-import numpy.typing as npt
-import random
-import copy
 
 from ._deriving_widgets import MM3Container, information
 
@@ -572,7 +566,6 @@ def seg_weights_2D(
 
 
 def save_weights(mask_source_path, weights_path):
-
     mask_files = list(mask_source_path.glob("*.tif"))
 
     if not weights_path.exists():
@@ -651,7 +644,6 @@ def trainGenerator(
     augment_params: Dict[str, Any] = {},
     seed: int = 1,
 ) -> Iterator[Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]]:
-
     """
     Generator for training the segmentation U-Net.
 
@@ -749,7 +741,6 @@ def conv_block(input_tensor, num_filters):
 
 
 def encoder_block(input_tensor, num_filters):
-
     """Creates an encoder block consisting of a convolutional block followed by max pooling.
 
     Args:
@@ -767,7 +758,6 @@ def encoder_block(input_tensor, num_filters):
 
 
 def decoder_block(input_tensor, concat_tensor, num_filters):
-
     """Creates a decoder block consisting of an up-sampling layer, concatenation with skip connection,
     and a convolutional block.
 
@@ -972,7 +962,6 @@ def train_model(
     epochs=600,
     patience=50,
 ):
-
     # Data generator parameters:
     data_gen_args = dict(
         rotation=2,
@@ -1060,7 +1049,6 @@ class TrainUnet(MM3Container):
         super().__init__(napari_viewer=napari_viewer, validate_folders=False)
 
     def create_widgets(self):
-
         self.image_widget = FileEdit(
             mode="d",
             label="image directory",
@@ -1203,7 +1191,6 @@ class TrainUnet(MM3Container):
         )
 
     def predict(self):
-
         self.viewer.layers.clear()
 
         model = models.load_model(

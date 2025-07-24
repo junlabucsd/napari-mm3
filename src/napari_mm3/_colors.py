@@ -1,28 +1,27 @@
-import multiprocessing
 import argparse
-from multiprocessing import Pool
-import numpy as np
-import pickle
+import multiprocessing
 import os
-from pathlib import Path
+import pickle
 from functools import partial
+from multiprocessing import Pool
+from pathlib import Path
 
+import numpy as np
+from magicgui.widgets import ComboBox, FileEdit
 from skimage import morphology
 
-
-from ._deriving_widgets import MM3Container, PlanePicker, FOVChooser
-from magicgui.widgets import ComboBox, FileEdit
-
-from .utils import organize_cells_by_channel, TIFF_FILE_FORMAT_PEAK
-
 from ._deriving_widgets import (
-    load_specs,
-    load_time_table,
-    information,
-    warning,
-    load_tiff,
+    FOVChooser,
+    MM3Container,
+    PlanePicker,
     SegmentationMode,
+    information,
+    load_specs,
+    load_tiff,
+    load_time_table,
+    warning,
 )
+from .utils import TIFF_FILE_FORMAT_PEAK, organize_cells_by_channel
 
 
 def find_cell_intensities(
@@ -374,10 +373,11 @@ class Colors(MM3Container):
     def set_fovs(self, fovs):
         self.fovs = list(set(fovs))
 
+
 if __name__ == "__main__":
     cur_dir = Path(".")
     parser = argparse.ArgumentParser()
-    
+
     parser.add_argument(
         "--seg_method",
         help="Otsu or U-net",

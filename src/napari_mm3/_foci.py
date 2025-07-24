@@ -21,29 +21,27 @@ It is possible to keep the entire Cells file in memory, so in-place editing isn'
 from __future__ import print_function
 
 import pickle
-import numpy as np
-import scipy.signal as signal
-
-from pathlib import Path
-from magicgui.widgets import SpinBox, ComboBox, FileEdit, FloatSpinBox, PushButton
-from skimage.feature import blob_log  # used for foci finding
 from dataclasses import dataclass
+from pathlib import Path
 
-from .utils import (
-    organize_cells_by_channel,
-    write_cells_to_json,
-    read_cells_from_json,
-    TIFF_FILE_FORMAT_PEAK,
-    Cells,
-)
+import numpy as np
+from magicgui.widgets import ComboBox, FileEdit, FloatSpinBox, PushButton, SpinBox
+from skimage.feature import blob_log  # used for foci finding
 
 from ._deriving_widgets import (
+    InteractivePeakChooser,
     MM3Container,
     PlanePicker,
     SegmentationMode,
-    load_tiff,
     load_specs,
-    InteractivePeakChooser,
+    load_tiff,
+)
+from .utils import (
+    TIFF_FILE_FORMAT_PEAK,
+    Cells,
+    organize_cells_by_channel,
+    read_cells_from_json,
+    write_cells_to_json,
 )
 
 
