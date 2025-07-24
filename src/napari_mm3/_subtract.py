@@ -510,7 +510,7 @@ def subtract(
         from_fov = min(
             have_empty, key=lambda x: abs(x - fov_id)
         )  # find closest FOV with an empty
-        copy_result = copy_empty_stack(
+        _ = copy_empty_stack(
             ana_dir, experiment_name, empty_dir, from_fov, fov_id, color=sub_plane
         )
 

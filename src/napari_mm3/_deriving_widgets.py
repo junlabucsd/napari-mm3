@@ -56,7 +56,7 @@ def load_specs(analysis_dir: Path) -> dict:
     try:
         with (analysis_dir / "specs.yaml").open("r") as specs_file:
             specs = yaml.safe_load(specs_file)
-    except:
+    except FileNotFoundError:
         try:
             with (analysis_dir / "specs.pkl").open("rb") as specs_file:
                 specs = pickle.load(specs_file)
@@ -211,7 +211,7 @@ def range_string_to_indices(range_string):
                 indices += [int(items)]
         print("Index range string valid!")
         return indices
-    except:
+    except:  # noqa: E722
         raise ValueError(
             "Index range string invalid. Returning empty range until a new string is specified."
         )
@@ -359,17 +359,17 @@ class MM3Container(Container):
         try:
             try:
                 self.valid_fovs = get_valid_fovs_specs(self.analysis_folder)
-            except:
+            except FileNotFoundError:
                 self.valid_fovs = get_valid_fovs_folder(self.TIFF_folder)
             self.found_fovs = True
-        except:
+        except FileNotFoundError:
             self.found_fovs = False
 
     def _set_valid_times(self):
         try:
             self.valid_times = get_valid_times(self.TIFF_folder)
             self.found_times = True
-        except ValueError as e:
+        except ValueError:
             try:
                 self.valid_times = get_valid_times(self.analysis_folder / "subtracted")
                 self.found_times = True
@@ -381,7 +381,7 @@ class MM3Container(Container):
         try:
             self.valid_planes = get_valid_planes(self.TIFF_folder)
             self.found_planes = True
-        except ValueError as e:
+        except ValueError:
             try:
                 self.valid_planes = get_valid_planes(
                     self.analysis_folder / "subtracted"
@@ -402,7 +402,7 @@ class MM3Container(Container):
         try:
             with open("./history.json", "r") as h:
                 history = json.load(h)
-        except:
+        except FileNotFoundError:
             return {}
         # get the most recent run of the relevant widget.
         old_params = {}
@@ -528,7 +528,7 @@ class InteractiveSpinBox(Container):
                 self.value = float(self.text_widget.value)
             else:
                 self.value = int(self.text_widget.value)
-        except:
+        except ValueError:
             # Casting failure is not a big deal. No point throwing an exception.
             print("Failed to turn text into a number.")
             return

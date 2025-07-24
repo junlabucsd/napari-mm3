@@ -1,16 +1,17 @@
+import pathlib
 import pickle
+import re
+
 import napari
 import numpy as np
-import yaml
 import tifffile as tiff
-import re
-import pathlib
-
+import yaml
 from napari import Viewer
+
 from ._deriving_widgets import (
-    MM3Container,
     FOVChooserSingle,
     InteractiveSpinBox,
+    MM3Container,
     PlanePicker,
     information,
     warning,
@@ -49,7 +50,7 @@ def load_channel_masks(analysis_directory: pathlib.Path) -> dict:
         information("Path:", analysis_directory / "channel_masks.yaml")
         with open(analysis_directory / "channel_masks.yaml", "r") as cmask_file:
             channel_masks = yaml.safe_load(cmask_file)
-    except:
+    except FileNotFoundError:
         warning("Could not load channel masks dictionary from .yaml.")
 
         try:
@@ -66,7 +67,7 @@ def load_specs(analysis_directory: pathlib.Path) -> dict:
     """Load specs dictionary. Should be .yaml but try pickle too."""
     with (analysis_directory / "specs.yaml").open("r") as specs_file:
         specs = yaml.safe_load(specs_file)
-    if specs == None:
+    if specs is None:
         file_location = analysis_directory / "specs.yaml"
         raise FileNotFoundError(
             f"Specs file not found. Looked for it in the following location:\n {file_location.absolute().as_posix()}"
@@ -139,7 +140,7 @@ def load_crosscorrs(
     information("Getting crosscorrs")
     with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
         cross_corrs = pickle.load(data)
-        if fov_id == None:
+        if fov_id is None:
             return cross_corrs
     fov_crosscorrs = cross_corrs[fov_id]
     average_crosscorrs = {
@@ -222,10 +223,10 @@ def display_rectangles(
 
 
 def regenerate_fov_specs(
-    analysis_folder: pathlib.Path, 
-    fov: int, 
-    threshold: float, 
-    overwrite: bool = False # whether to start anew or overwrite existing specs.
+    analysis_folder: pathlib.Path,
+    fov: int,
+    threshold: float,
+    overwrite: bool = False,  # whether to start anew or overwrite existing specs.
 ) -> dict:
     """Regenerate the specs dictionary for a FOV.
 
@@ -235,7 +236,7 @@ def regenerate_fov_specs(
         The updated specs dictionary."""
     try:
         specs = load_specs(analysis_folder)
-    except:
+    except FileNotFoundError:
         specs = {}
 
     if not overwrite and (fov in specs):
@@ -243,12 +244,12 @@ def regenerate_fov_specs(
 
     try:
         crosscorrs = load_crosscorrs(analysis_folder)
-    except:
+    except FileNotFoundError:
         crosscorrs = {}
 
     try:
         channel_masks = load_channel_masks(analysis_directory=analysis_folder)
-    except:
+    except FileNotFoundError:
         channel_masks = None
 
     new_specs = threshold_fov(fov, threshold, specs, crosscorrs, channel_masks)
@@ -298,7 +299,7 @@ class ChannelPicker(MM3Container):
 
         try:
             self.update_fov()
-        except:
+        except:  # noqa: E722
             Warning("Failed to load FOV")
 
     def update_fov(self):
@@ -345,7 +346,7 @@ class ChannelPicker(MM3Container):
             return
         shape_i = shapes_under_cursor[0]
         # Image under cursor, but no channel
-        if shape_i == None:
+        if shape_i is None:
             return
 
         # Would be nice to do this with modulo, but sadly we chose -1 0 1 as our convention instead of 0 1 2

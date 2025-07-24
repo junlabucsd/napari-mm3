@@ -2,7 +2,6 @@ import argparse
 import multiprocessing
 import os
 import warnings
-from multiprocessing import Pool
 from pathlib import Path
 
 import napari

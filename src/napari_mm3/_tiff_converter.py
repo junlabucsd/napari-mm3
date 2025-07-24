@@ -16,7 +16,6 @@ from ._deriving_widgets import (
     TimeRangeSelector,
     information,
     range_string_to_indices,
-    warning,
 )
 
 
@@ -194,86 +193,6 @@ def nd2ToTIFF(
             )
 
 
-# make a lookup time table for converting nominal time to elapsed time in seconds
-def make_time_table(
-    analyzed_imgs: dict, use_jd: bool, seconds_per_time_index: int, ana_dir: Path
-) -> dict:
-    """
-    Loops through the analyzed images and uses the jd time in the metadata to find the elapsed
-    time in seconds that each picture was taken. This is later used for more accurate elongation
-    rate calculation.
-
-    Parameters
-    ---------
-    analyzed_imgs : dict
-        The output of get_tif_params.
-    use_jd : boolean
-        If set to True, 'jd' time will be used from the image metadata to use to create time table. Otherwise the 't' index will be used, and the parameter 'seconds_per_time_index' will be used to convert to seconds.
-    seconds_per_time_index : int
-        Time interval in seconds between consecutive imaging rounds.
-    ana_dir : Path
-        Directory where the time table will be saved.
-
-    Returns
-    -------
-    time_table : dict
-        Look up dictionary with keys for the FOV and then the time point.
-    """
-    information("Making time table...")
-
-    # initialize
-    time_table: dict[int, dict[int, int]] = {}
-
-    first_time = float("inf")
-
-    # need to go through the data once to find the first time
-    for iname, idata in six.iteritems(analyzed_imgs):
-        if use_jd:
-            try:
-                if idata["jd"] < first_time:
-                    first_time = idata["jd"]
-            except:
-                if idata["t"] < first_time:
-                    first_time = idata["t"]
-        else:
-            if idata["t"] < first_time:
-                first_time = idata["t"]
-
-        # init dictionary for specific times per FOV
-        if idata["fov"] not in time_table:
-            time_table[idata["fov"]] = {}
-
-    for iname, idata in six.iteritems(analyzed_imgs):
-        if use_jd:
-            # convert jd time to elapsed time in seconds
-            try:
-                t_in_seconds = np.around(
-                    (idata["jd"] - first_time) * 24 * 60 * 60, decimals=0
-                ).astype("uint32")
-            except:
-                information(
-                    "Failed to extract time from metadata. Using user-specified interval."
-                )
-                t_in_seconds = np.around(
-                    (idata["t"] - first_time) * seconds_per_time_index,
-                    decimals=0,
-                ).astype("uint32")
-        else:
-            t_in_seconds = np.around(
-                (idata["t"] - first_time) * seconds_per_time_index, decimals=0
-            ).astype("uint32")
-
-        time_table[int(idata["fov"])][int(idata["t"])] = int(t_in_seconds)
-
-    with open(os.path.join(ana_dir, "time_table.yaml"), "w") as time_table_file:
-        yaml.dump(
-            data=time_table, stream=time_table_file, default_flow_style=False, tags=None
-        )
-    information("Time table saved.")
-
-    return time_table
-
-
 class TIFFExport(Container):
     """No good way to make this derive MM3Widget; have to roll a custom version here."""
 
@@ -373,14 +292,7 @@ class TIFFExport(Container):
         viewer.layers.clear()
         viewer.grid.enabled = True
 
-        try:
-            # nd2file = list(self.data_path.glob('*.nd2'))[0]
-            nd2file = self.data_path
-        except:
-            warning(
-                f"Could not find .nd2 file to display in directory {self.data_path.resolve()}"
-            )
-            return
+        nd2file = self.data_path
 
         with nd2.ND2Reader(str(nd2file)) as ndx:
             sizes = ndx.sizes

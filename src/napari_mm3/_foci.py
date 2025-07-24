@@ -143,7 +143,7 @@ def assign_blobs_to_cells(
     for blob, time_real in zip(blobs, blob_times):
         # The fucking time is 1-indexed...
         time_idx = time_real - 1
-        if not (time_real in time_to_cells_map):
+        if time_real not in time_to_cells_map:
             continue
         same_time_cells = time_to_cells_map[time_real]
         for cell_id in same_time_cells:
@@ -280,7 +280,7 @@ def foci(
     cells_by_peak = organize_cells_by_channel(cells, specs)
     # for each set of cells in one fov/peak, find the foci
     for fov_id in fov_id_list:
-        if not (fov_id in cells_by_peak):
+        if fov_id not in cells_by_peak:
             continue
 
         for peak_id, cells_of_peak in cells_by_peak[fov_id].items():
@@ -551,7 +551,7 @@ class Foci(MM3Container):
     def reset_contrast_limits(self):
         try:
             self.viewer.layers["Image"].reset_contrast_limits()
-        except:
+        except:  # noqa: E722
             pass
 
     def draw_points(self):
@@ -571,7 +571,7 @@ class Foci(MM3Container):
         # if the points layer does not exist => create it.
         try:
             self.viewer.layers["points"].data = points
-        except:
+        except:  # noqa: E722
             self.points = self.viewer.add_points(
                 data=points,
                 # size=1.5 * np.array(self.radii[times_in_range_mask]),

@@ -2,7 +2,6 @@ import argparse
 import multiprocessing
 import os
 import pickle
-from multiprocessing import Pool
 from pathlib import Path
 from typing import Tuple
 
