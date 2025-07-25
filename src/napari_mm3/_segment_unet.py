@@ -511,7 +511,6 @@ def segment_peak_unet(
 
 def segmentUNet(
     experiment_name: str,
-    image_directory: str,
     fovs: list,
     phase_plane: str,
     model_file: str,
@@ -684,7 +683,6 @@ class SegmentUnet(MM3Container):
 
         segmentUNet(
             experiment_name=self.experiment_name,
-            image_directory=self.TIFF_folder,
             fovs=self.fovs,
             phase_plane=self.phase_plane,
             model_file=self.model_file,
@@ -810,8 +808,8 @@ class SegmentUnet(MM3Container):
 
 if __name__ == "__main__":
     cur_dir = Path(".")
-    end_time = get_valid_times(cur_dir / "TIFF")
-    all_fovs = get_valid_fovs_folder(cur_dir / "TIFF")
+    end_time = get_valid_times(cur_dir / "analysis" / "channels")
+    all_fovs = get_valid_fovs_folder(cur_dir / "analysis" / "channels")
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -856,7 +854,6 @@ if __name__ == "__main__":
 
     segmentUNet(
         experiment_name="",
-        image_directory=cur_dir / "TIFF",
         fovs=fovs,
         phase_plane="c1",
         model_file=model_path,

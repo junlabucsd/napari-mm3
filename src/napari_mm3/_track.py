@@ -1267,8 +1267,8 @@ if __name__ == "__main__":
     experiment_name = ""
     cur_dir = Path(".")
     analysis_folder = cur_dir / "analysis"
-    end_time = get_valid_times(cur_dir / "TIFF")
-    all_fovs = get_valid_fovs_folder(cur_dir / "TIFF")
+    end_time = get_valid_times(analysis_folder / "channels")
+    all_fovs = get_valid_fovs_folder(analysis_folder / "channels")
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
