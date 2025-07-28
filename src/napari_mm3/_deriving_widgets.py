@@ -4,6 +4,7 @@ import re
 import sys
 import time
 import traceback
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -12,6 +13,7 @@ import h5py
 import numpy as np
 import tifffile as tiff
 import yaml
+from magicgui.type_map import register_type
 from magicgui.types import FileDialogMode
 from magicgui.widgets import (
     ComboBox,
@@ -20,6 +22,7 @@ from magicgui.widgets import (
     LineEdit,
     PushButton,
     RangeEdit,
+    create_widget,
 )
 from napari import Viewer
 
@@ -466,6 +469,79 @@ class MM3Container(Container):
             json.dump(history, h, indent=2)
 
 
+class MM3Container2(Container):
+    """
+    the pipeline is as follows.
+      1. check folders for existence, fetch FOVs & times & planes
+          -> upon failure, simply show a list of inputs + update button.
+      2. create a 'params' object whose params are valuemapped to widgets contained in our main list (a la guiclass)
+          -> input directories, again, have a special status.
+      3.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def regen_widgets(self):
+        self.clear()
+        for folder_field, annotation in self.in_folders.__annotations__.items():
+            # equivalent to in_folders.folder_field
+            folder_default_value = vars(self.in_folders)[folder_field]
+            folder_widget = create_widget(
+                value=folder_default_value, annotation=annotation, name=folder_field
+            )
+            self.append(folder_widget)
+
+            def map_value():
+                # should get the relative path is possible!
+                vars(self.in_folders)[folder_field] = folder_widget.value
+
+            # careful about method resolution order here!
+            folder_widget.changed.connect(map_value)
+            folder_widget.changed.connect(self.regen_widgets)
+
+        if not self.initialized:
+            return
+
+        for param_field, annotation in self.run_params.__annotations__.items():
+            param_default_value = vars(self.run_params)[param_field]
+            print(param_field)
+            print(annotation)
+            param_widget = create_widget(
+                value=param_default_value, annotation=annotation, name=param_field
+            )
+            self.append(param_widget)
+
+            def map_value():
+                # should get the relative path is possible!
+                vars(self.run_params)[param_field] = param_widget.value
+
+            # is there a nice way to wire up changes to a preview update
+            param_widget.changed.connect(map_value)
+
+        for folder_field, annotation in self.out_paths.__annotations__.items():
+            # equivalent to in_folders.folder_field
+            folder_default_value = vars(self.out_paths)[folder_field]
+            folder_widget = create_widget(
+                value=folder_default_value, annotation=annotation, name=folder_field
+            )
+            self.append(folder_widget)
+
+            def map_value():
+                # should get the relative path is possible!
+                vars(self.out_paths)[folder_field] = folder_widget.value
+
+            # careful about method resolution order here!
+            folder_widget.changed.connect(map_value)
+
+        self.run_button = PushButton(text="run")
+        self.append(self.run_button)
+        self.run_button.changed.connect(self.run)
+
+    def run(self):
+        pass
+
+
 class TimeRangeSelector(RangeEdit):
     def __init__(self, permitted_times):
         label_str = f"time range (frames {permitted_times[0]}-{permitted_times[1]})"
@@ -622,6 +698,10 @@ class PlanePicker(ComboBox):
         super().__init__(label=label, choices=permitted_planes, tooltip=tooltip)
 
 
+class FOVList(list):
+    pass
+
+
 class FOVChooser(LineEdit):
     """
     Widget for choosing multiple FOVs.
@@ -630,32 +710,21 @@ class FOVChooser(LineEdit):
     parameter (the range of FOVs)
     """
 
-    def __init__(self, permitted_FOVs, custom_label=None):
-        self.min_FOV = min(permitted_FOVs)
-        self.max_FOV = max(permitted_FOVs)
-        if custom_label:
-            label_str = f"{custom_label} ({self.min_FOV}-{self.max_FOV})"
-        else:
-            label_str = f"FOVs ({self.min_FOV}-{self.max_FOV})"
-        value_str = f"{self.min_FOV}-{self.max_FOV}"
-        super().__init__(
-            label=label_str,
-            value=value_str,
-            tooltip="A list of FOVs to analyze. Ranges and comma separated values allowed (e.g. '1-30', '2-4,15,18'.)",
-        )
+    def __init__(self, value=[], **kwargs):
+        super().__init__(value=f"{min(value)}-{max(value)}", **kwargs)
 
-    def connect_callback(self, func):
-        """Replaces self.changed.connect(...).
-        Interprets any text in the box as a list of FOVs.
-        Thus 'func' should operate on a list of FOVs, filtered by those that actually exist in the TIFs.
-        """
+    def get_value(self):
+        fov_str = super().get_value()
+        return range_string_to_indices(fov_str)  # example postprocessing
 
-        def func_with_range():
-            try:
-                user_fovs = range_string_to_indices(self.value)
-            except ValueError:
-                user_fovs = []
-            if user_fovs:
-                func(user_fovs)
+    def set_value(self):
+        lo = min(super().get_value())
+        hi = max(super().get_value())
+        super().set_value(f"{lo}-{hi}")
 
-        self.changed.connect(func_with_range)
+
+#    def set_value(self, value):
+#        super().set_value(value / 2)  # inverse of get_value
+
+
+register_type(type_=FOVList, widget_type=FOVChooser)

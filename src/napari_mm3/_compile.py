@@ -1,24 +1,27 @@
+"""
+Splits image TIFFs into trap TIFFs.
+Can be run headless with parameters; if left unspecified it will analyze the full time range and all FOVs,
+and use the default UI parameters.
+"""
+
 import argparse
 import multiprocessing
 import os
 import pickle
 import re
+from dataclasses import dataclass
+from enum import Enum
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Optional, Union
+from typing import Annotated, Optional, Union, overload
 
 import numpy as np
 import six
 import tifffile as tiff
 import yaml
-from magicgui.widgets import (
-    CheckBox,
-    ComboBox,
-    PushButton,
-    Slider,
-    SpinBox,
-)
+from magicgui.widgets import Slider
 from napari import Viewer
+from napari.qt.threading import thread_worker
 from napari.utils import progress
 from scipy import ndimage as ndi
 from scipy.ndimage import rotate
@@ -26,11 +29,10 @@ from scipy.signal import find_peaks_cwt
 from skimage.feature import match_template
 
 from ._deriving_widgets import (
-    FOVChooser,
-    MM3Container,
-    PlanePicker,
-    TimeRangeSelector,
+    FOVList,
+    MM3Container2,
     get_valid_fovs_folder,
+    get_valid_planes,
     get_valid_times,
     information,
     load_tiff,
@@ -604,6 +606,7 @@ def tiff_stack_slice_and_write(
             )
 
 
+@thread_worker
 def load_fov(
     image_directory: Path, fov_id: int, filter_str: str = ""
 ) -> Union[np.ndarray, None]:
@@ -639,43 +642,125 @@ def load_fov(
             image_fov_stack.append(tif.asarray())
 
     information("numpying files")
-    return np.array(image_fov_stack, dtype=object)
+    return np.squeeze(np.array(image_fov_stack, dtype=np.int32))
 
 
-def compile(
-    TIFF_dir: Path,
-    num_analyzers: int,
-    analysis_dir: Path,
-    t_start: int,
-    t_end: int,
-    image_orientation: str,  # orientation \in ('auto', 'up', 'down')
-    image_rotation: float,
-    channel_width: int,
-    channel_separation: int,
-    channel_detection_snr: float,
-    channel_length_pad: int,
-    channel_width_pad: int,
-    alignment_pad: int,
-    experiment_name: str,
-    phase_plane: str,
-    FOVs: list,
-    TIFF_source: str,  # one of {'nd2', 'BioFormats / other TIFF'}
-) -> None:
+def load_fov_quick(
+    image_directory: Path, fov_id: int, filter_str: str = ""
+) -> Union[np.ndarray, None]:
+    """
+    Load a single FOV from a directory of TIFF files.
+    """
+
+    information("getting files")
+    found_files_paths = list(image_directory.glob("*.tif"))
+    get_fov_regex = re.compile(r"xy(\d+)", re.IGNORECASE)
+    fovs = list(
+        int(get_fov_regex.findall(filename.name)[0]) for filename in found_files_paths
+    )
+    found_files = zip(found_files_paths, fovs)
+    found_files = [fpath.name for fpath, fov in found_files if fov == fov_id]
+    if filter_str:
+        found_files = [
+            f for f in found_files if re.search(filter_str, f, re.IGNORECASE)
+        ]
+
+    information("sorting files")
+    found_files = sorted(found_files)  # should sort by timepoint
+
+    if len(found_files) == 0:
+        information("No data found for FOV " + str(fov_id))
+        return None
+
+    image_fov_stack = []
+
+    information("Loading files")
+    with tiff.TiffFile(image_directory / found_files[0]) as tif:
+        image_fov_stack = tif.asarray()
+
+    information("numpying files")
+    return np.squeeze(np.array(image_fov_stack, dtype=np.int32))
+
+
+class Orientation(Enum):
+    auto = 1
+    up = 2
+    down = 3
+
+
+@dataclass
+class InPaths:
+    """
+    1. check folders for existence, fetch FOVs & times & planes
+        -> upon failure, simply show a list of inputs + update button.
+    """
+
+    TIFF_dir: Annotated[Path, {"mode": "d"}] = Path(".") / "TIFF"
+
+
+@dataclass
+class OutPaths:
+    experiment_name: str = ""
+    channel_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/channels")
+    analysis_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis")
+
+
+@dataclass
+class RunParams:
+    t_start: int
+    t_end: int
+    FOVs: FOVList
+    phase_plane: str
+    num_analyzers: int = multiprocessing.cpu_count()
+    image_orientation: Orientation = Orientation.auto
+    image_rotation: Annotated[int, {"max": 90, "min": -90, "widget_type": Slider}] = 0
+    channel_width: int = 10
+    channel_separation: int = 45
+    channel_detection_snr: float = 1.0
+    channel_length_pad: int = 10
+    channel_width_pad: int = 10
+    alignment_pad: int = 10
+    TIFF_source: str = "nd2"  # one of {'nd2', 'BioFormats / other TIFF'}
+
+
+def gen_default_run_params(in_files: InPaths):
+    try:
+        t_start, t_end = get_valid_times(in_files.TIFF_dir)
+        all_fovs = get_valid_fovs_folder(in_files.TIFF_dir)
+        # get the brightest channel as the default phase plane!
+        channels = get_valid_planes(in_files.TIFF_dir)
+        # move this into runparams somehow!
+        params = RunParams(
+            phase_plane=channels[0],
+            t_start=t_start,
+            t_end=t_end,
+            FOVs=all_fovs,
+        )
+        params.__annotations__["phase_plane"] = Annotated[str, {"choices": channels}]
+        return params
+    except FileNotFoundError:
+        raise FileNotFoundError("TIFF folder not found")
+    except ValueError:
+        raise ValueError(
+            "Invalid filenames. Make sure that timestamps are denoted as t[0-9]* and FOVs as xy[0-9]*"
+        )
+
+
+def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
     """
     Finds channels, and slices them up into individual tiffs.
     """
-    chnl_dir = analysis_dir / "channels"
 
-    if not analysis_dir.exists():
-        analysis_dir.mkdir()
-    if not chnl_dir.exists():
-        chnl_dir.mkdir()
-    if TIFF_source == "BioFormats / other TIFF":
-        merge_split_channels(TIFF_dir)
+    if not out_paths.analysis_dir.exists():
+        out_paths.analysis_dir.mkdir()
+    if not out_paths.channel_dir.exists():
+        out_paths.channel_dir.mkdir()
+    if p.TIFF_source == "BioFormats / other TIFF":
+        merge_split_channels(p.TIFF_dir)
 
     # load in filtered FOVs and time ranges.
     information("Finding image parameters.")
-    found_files = list(TIFF_dir.glob("*.tif"))
+    found_files = list(in_paths.TIFF_dir.glob("*.tif"))
     if len(found_files) == 0:
         return
     fov_to_files = {}
@@ -683,7 +768,7 @@ def compile(
         fov, time = get_fov(ff.name), get_time(ff.name)
         if (not time) or (not fov):
             raise Exception()
-        if (t_start <= time <= t_end) and (fov in FOVs):
+        if (p.t_start <= time <= p.t_end) and (fov in p.FOVs):
             if fov in fov_to_files:
                 fov_to_files[fov].append(ff)
             else:
@@ -700,19 +785,21 @@ def compile(
             with tiff.TiffFile(path) as tif:
                 image_data = tif.asarray().squeeze()
             # TODO: move this out of the loop
-            phase_idx = int(find_phase_idx(image_data, phase_plane))
+            phase_idx = int(find_phase_idx(image_data, p.phase_plane))
 
-            if image_rotation != 0:
-                image_data = fix_rotation(image_rotation, image_data)
-            image_data = fix_orientation(image_data, phase_idx, image_orientation)
+            if p.image_rotation != 0:
+                image_data = fix_rotation(p.image_rotation, image_data)
+            image_data = fix_orientation(
+                image_data, phase_idx, p.image_orientation.name
+            )
             phase_image = image_data[phase_idx]
 
             channel_locs = find_channel_locs(
                 phase_image,
-                channel_width_pad,
-                channel_width,
-                channel_detection_snr,
-                channel_separation,
+                p.channel_width_pad,
+                p.channel_width,
+                p.channel_detection_snr,
+                p.channel_separation,
             )
 
             chnl_timeseries.append(channel_locs)
@@ -724,9 +811,9 @@ def compile(
         max_len, max_wid, channel_masks = make_masks(
             img_timeseries[:, phase_idx, :, :],
             chnl_timeseries,
-            channel_width_pad,
-            channel_width,
-            channel_length_pad,
+            p.channel_width_pad,
+            p.channel_width,
+            p.channel_length_pad,
         )
 
         print(f"adjusting masks for FOV {fov + 1}", end="\n")
@@ -739,21 +826,25 @@ def compile(
 
         print(f"slicing channels for FOV {fov + 1}", end="\n")
         tiff_stack_slice_and_write(
-            img_timeseries, fov, all_channels[fov], experiment_name, chnl_dir
+            img_timeseries,
+            fov,
+            all_channels[fov],
+            out_paths.experiment_name,
+            out_paths.channel_dir,
         )
         print(f"finished analyzing FOV {fov+1}")
 
     compute_xcorr(
-        analysis_dir,
-        experiment_name,
-        phase_plane,
+        out_paths.analysis_dir,
+        out_paths.experiment_name,
+        p.phase_plane,
         all_channels,
-        FOVs,
-        num_analyzers,
-        alignment_pad,
+        p.FOVs,
+        p.num_analyzers,
+        p.alignment_pad,
     )
 
-    with open(analysis_dir / "channel_masks.yaml", "w") as cmask_file:
+    with open(out_paths.analysis_dir / "channel_masks.yaml", "w") as cmask_file:
         yaml.dump(
             data=all_channels,
             stream=cmask_file,
@@ -762,177 +853,52 @@ def compile(
         )
 
 
-class Compile(MM3Container):
-    def __init__(self, napari_viewer: Viewer):
-        super().__init__(napari_viewer=napari_viewer, validate_folders=False)
+class Compile(MM3Container2):
+    """
+    the pipeline is as follows.
+      1. check folders for existence, fetch FOVs & times & planes
+          -> upon failure, simply show a list of inputs + update button.
+      2. create a 'params' object whose params are valuemapped to widgets contained in our main list (a la guiclass)
+          -> input directories, again, have a special status.
+      3.
+    """
 
-    def create_widgets(self):
-        """Override method. Serves as the widget constructor. See MM3Container for more details."""
-        self.viewer.text_overlay.visible = False
+    def __init__(self, viewer: Viewer):
+        super().__init__()
+        self.viewer = viewer
 
-        self.fov_widget = FOVChooser(self.valid_fovs)
-        # TODO: Auto-infer?
-        self.image_source_widget = ComboBox(
-            label="image source",
-            choices=["nd2", "BioFormats / other TIFF"],
-        )
-        self.split_channels_widget = CheckBox(
-            label="separate image plane files",
-            tooltip="Check this box if you have separate tiffs for phase / fluorescence channels. Used for display only.",
-        )
-        self.phase_plane_widget = PlanePicker(
-            self.valid_planes, label="phase plane channel"
-        )
-        self.time_range_widget = TimeRangeSelector(self.valid_times)
-        self.seconds_per_frame_widget = SpinBox(
-            value=150,
-            label="seconds per frame",
-            tooltip="Required if TIFF source is not .nd2. Time interval in seconds "
-            + "between consecutive imaging rounds.",
-            min=1,
-            max=60 * 60 * 24,
-        )
-        self.image_rotation_widget = Slider(
-            label="image rotation", value=0, min=-90, max=90, step=1
-        )
-        self.channel_orientation_widget = ComboBox(
-            label="trap orientation", choices=["auto", "up", "down"]
-        )
-
-        self.channel_width_widget = SpinBox(
-            value=10,
-            label="channel width",
-            tooltip="Required. approx. width of traps in pixels.",
-            min=1,
-            max=10000,
-        )
-        self.channel_separation_widget = SpinBox(
-            value=45,
-            label="channel separation",
-            tooltip="Required. Center-to-center distance between traps in pixels.",
-            min=1,
-            max=10000,
-        )
-
-        self.inspect_widget = PushButton(text="visualize all FOVs (from .nd2)")
-
-        self.fov_widget.connect_callback(self.set_fovs)
-        self.image_source_widget.changed.connect(self.set_image_source)
-        self.split_channels_widget.changed.connect(self.set_split_channels)
-        self.phase_plane_widget.changed.connect(self.set_phase_plane)
-        self.time_range_widget.changed.connect(self.set_range)
-        self.seconds_per_frame_widget.changed.connect(self.set_seconds_per_frame)
-        self.channel_width_widget.changed.connect(self.set_channel_width)
-        self.channel_separation_widget.changed.connect(self.set_channel_separation)
-        self.inspect_widget.clicked.connect(self.display_all_fovs)
-        self.channel_orientation_widget.changed.connect(self.set_channel_orientation)
-        self.image_rotation_widget.changed.connect(self.set_image_rotation)
-
-        self.append(self.fov_widget)
-        self.append(self.image_source_widget)
-        self.append(self.split_channels_widget)
-        self.append(self.phase_plane_widget)
-        self.append(self.time_range_widget)
-        self.append(self.seconds_per_frame_widget)
-        self.append(self.channel_orientation_widget)
-        self.append(self.image_rotation_widget)
-        self.append(self.channel_width_widget)
-        self.append(self.channel_separation_widget)
-        self.append(self.inspect_widget)
-
-        self.set_image_source()
-        self.set_split_channels()
-        self.set_phase_plane()
-        self.set_fovs(self.valid_fovs)
-        self.set_range()
-        self.set_seconds_per_frame()
-        self.set_channel_width()
-        self.set_channel_separation()
-        self.set_channel_orientation()
-        self.set_image_rotation()
-
-        # self.display_single_fov()
+        self.in_folders = InPaths()
+        try:
+            self.run_params = gen_default_run_params(self.in_folders)
+            self.out_paths = OutPaths()
+            self.initialized = True
+            self.display_fov_full()
+            self.regen_widgets()
+        except FileNotFoundError | ValueError:
+            self.initialized = False
+            self.regen_widgets()
 
     def run(self):
-        """Overriding method. Performs Mother Machine Analysis"""
-        self.viewer.window._status_bar._toggle_activity_dock(True)
+        compile(self.in_folders, self.run_params, self.out_paths)
 
-        compile(
-            TIFF_dir=self.TIFF_folder,
-            num_analyzers=multiprocessing.cpu_count(),
-            analysis_dir=self.analysis_folder,
-            t_start=self.time_range[0],
-            t_end=self.time_range[1] + 1,
-            image_orientation=self.channel_orientation,
-            image_rotation=self.image_rotation,
-            channel_width=self.channel_width,
-            channel_separation=self.channel_separation,
-            channel_detection_snr=1,
-            channel_length_pad=10,
-            channel_width_pad=10,
-            alignment_pad=10,
-            experiment_name=self.experiment_name,
-            phase_plane=self.phase_plane,
-            FOVs=self.fovs,
-            TIFF_source=self.image_source,
-        )
-
-    def display_single_fov(self):
-        self.viewer.layers.clear()
+    def display_fov_full(self):
         self.viewer.text_overlay.visible = False
-        if self.split_channels:
-            # should not be getting executred.
-            image_fov_stack = load_fov(
-                self.TIFF_folder, min(self.valid_fovs), filter_str="c0*1"
-            )
-        else:
-            image_fov_stack = load_fov(self.TIFF_folder, min(self.valid_fovs))
-        image_fov_stack = np.squeeze(image_fov_stack)  # type:ignore
-        images = self.viewer.add_image(image_fov_stack.astype(np.float32))
-        self.viewer.dims.current_step = (0, 0)
-        images.reset_contrast_limits()  # type:ignore
-        # images.gamma = 0.5
-
-    def display_all_fovs(self):
-        pass
-
-    def set_image_source(self):
-        self.image_source = self.image_source_widget.value
-
-    def set_phase_plane(self):
-        self.phase_plane = self.phase_plane_widget.value
-
-    # NOTE! This is different from the other functions in that it requires a parameter.
-    def set_fovs(self, new_fovs):
-        self.fovs = list(
-            set(new_fovs)
-        )  # set(new_fovs).intersection(set(self.valid_fovs))
-
-    def set_range(self):
-        self.time_range = (
-            self.time_range_widget.start.value,
-            self.time_range_widget.stop.value,
+        self.viewer.layers.clear()
+        low_fov = self.run_params.FOVs[0]
+        image_fov_worker = load_fov(self.in_folders.TIFF_dir, low_fov)
+        image_fov_worker.returned.connect(lambda _: self.viewer.layers.clear())
+        image_fov_worker.returned.connect(self.viewer.add_image)
+        image_fov_worker.returned.connect(
+            lambda _: setattr(self.viewer.dims, "current_step", (0, 0))
         )
-
-    def set_seconds_per_frame(self):
-        self.seconds_per_frame = self.seconds_per_frame_widget.value
-
-    def set_channel_width(self):
-        self.channel_width = self.channel_width_widget.value
-
-    def set_channel_separation(self):
-        self.channel_separation = self.channel_separation_widget.value
-
-    def set_channel_orientation(self):
-        self.channel_orientation = self.channel_orientation_widget.value
-
-    def set_split_channels(self):
-        self.split_channels = self.split_channels_widget.value
-        self.display_single_fov()
-
-    def set_image_rotation(self):
-        self.image_rotation = self.image_rotation_widget.value
-        print(self.image_rotation)
+        image_fov_worker.returned.connect(
+            lambda _: self.viewer.layers[0].reset_contrast_limits()
+        )
+        image_fov_worker.returned.connect(
+            lambda _: setattr(self.viewer.layers[0], "gamma", 0.5)
+        )
+        image_fov_worker.start()
+        print(self.viewer.layers)
 
 
 if __name__ == "__main__":
@@ -970,7 +936,7 @@ if __name__ == "__main__":
         analysis_dir=cur_dir / "analysis",
         t_start=p.start_time - 1,
         t_end=p.end_time - 1,
-        image_orientation="auto",
+        image_orientation=Orientation.auto,
         image_rotation=0,
         channel_width=10,
         channel_separation=45,
