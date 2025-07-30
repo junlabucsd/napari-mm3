@@ -3,16 +3,21 @@ import copy
 import datetime
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
 import napari
 import nd2
 import numpy as np
 import tifffile as tiff
 from magicgui.widgets import Container, FileEdit, FloatSpinBox, PushButton
+from napari import Viewer
 
 from ._deriving_widgets import (
     FOVChooser,
+    FOVList,
+    MM3Container2,
     TimeRangeSelector,
     information,
     range_string_to_indices,
@@ -96,14 +101,46 @@ def write_timetable(nd2f: nd2.ND2File, path: Path):
         json.dump(timetable, f, indent=4)
 
 
+@dataclass
+class InPaths:
+    nd2_file: Path
+
+    def __init__(self):
+        nd2files = list(Path(".").glob("*.nd2"))
+        self.nd2_file = nd2files[0]
+
+
+@dataclass
+class RunParams:
+    image_start: int
+    image_end: int
+    fov_list: FOVList
+    vertical_crop_lower: float = 0.0
+    vertical_crop_upper: float = 1.0
+    horizontal_crop_lower: float = 0.0
+    horizontal_crop_upper: float = 1.0
+
+
+@dataclass
+class OutPaths:
+    tiff_folder: Annotated[Path, {"mode": "d"}] = Path("./TIFF/")
+
+
+# TODO: Make the imaging consistent!
+def gen_default_run_params(in_paths: InPaths):
+    end_time = get_nd2_times(in_paths.nd2_file)
+    total_fovs = get_nd2_fovs(in_paths.nd2_file)
+    return RunParams(
+        image_start=1,
+        image_end=end_time,
+        fov_list=FOVList(range(1, total_fovs + 1)),
+    )
+
+
 def nd2ToTIFF(
-    data_path: Path,
-    tif_dir: str,
-    image_start: int,
-    image_end: int,
-    vertical_crop=None,
-    horizontal_crop=None,
-    fov_list=[],
+    in_paths: InPaths,
+    run_params: RunParams,
+    out_paths: OutPaths,
 ):
     """
     This script converts a Nikon Elements .nd2 file to individual TIFF files per time point.
@@ -119,13 +156,13 @@ def nd2ToTIFF(
         image_start, image_end: Image range that we want to turn into TIFFs (inclusive)
     """
     # set up image folders if they do not already exist
-    if not os.path.exists(tif_dir):
-        os.makedirs(tif_dir)
+    if not os.path.exists(out_paths.tif_dir):
+        os.makedirs(out_paths.tif_dir)
 
     if not os.path.exists(Path(".") / "analysis"):
         os.makedirs(Path(".") / "analysis")
 
-    nd2file = data_path
+    nd2file = in_paths.nd2_file
     file_prefix = os.path.split(os.path.splitext(nd2file)[0])[1]
     information("Extracting {file_prefix} ...")
     with nd2.ND2File(str(nd2file)) as nd2f:
@@ -138,9 +175,9 @@ def nd2ToTIFF(
         planes = nd2f.sizes["C"]
 
         # Extraction range is the time points that will be taken out.
-        time_range = range(image_start, image_end)
+        time_range = range(run_params.image_start, run_params.image_end)
         for t_id, fov_id, image_data in nd2_iter(
-            nd2f, time_range=time_range, fov_list=fov_list
+            nd2f, time_range=time_range, fov_list=run_params.fov_list
         ):
             # timepoint and fov output name (1 indexed rather than 0 indexed)
             t, fov = t_id + 1, fov_id + 1
@@ -169,23 +206,29 @@ def nd2ToTIFF(
                 image_data = np.expand_dims(image_data, axis=0)
 
             # for just a simple crop
-            if vertical_crop:
+            if (
+                run_params.vertical_crop_lower != 0.0
+                or run_params.vertical_crop_upper != 1.0
+            ):
                 _, nc, H, W = image_data.shape
                 ## convert from xy to row-column coordinates for numpy slicing
-                yhi = int((1 - vertical_crop[0]) * H)
-                ylo = int((1 - vertical_crop[1]) * H)
+                yhi = int((1 - run_params.vertical_crop_lower) * H)
+                ylo = int((1 - run_params.vertical_crop_upper) * H)
                 image_data = image_data[:, ylo:yhi, :]
 
-            if horizontal_crop:
+            if (
+                run_params.horizontal_crop_lower != 0.0
+                or run_params.horizontal_crop_upper != 1.0
+            ):
                 _, nc, H, W = image_data.shape
-                xlo = int(horizontal_crop[0] * W)
-                xhi = int(horizontal_crop[1] * W)
+                xlo = int(run_params.horizontal_crop_lower * W)
+                xhi = int(run_params.horizontal_crop_upper * W)
                 image_data = image_data[:, :, xlo:xhi]
 
             tif_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}.tif"
             information("Saving %s." % tif_filename)
             tiff.imwrite(
-                tif_dir / tif_filename,
+                out_paths.tif_dir / tif_filename,
                 data=image_data,
                 description=metadata_json,
                 compression="zlib",
@@ -193,7 +236,78 @@ def nd2ToTIFF(
             )
 
 
-class TIFFExport(Container):
+class TIFFExport(MM3Container2):
+    """
+    the pipeline is as follows.
+      1. check folders for existence, fetch FOVs & times & planes
+          -> upon failure, simply show a list of inputs + update button.
+      2. create a 'params' object whose params are valuemapped to widgets contained in our main list (a la guiclass)
+          -> input directories, again, have a special status.
+      3.
+    """
+
+    def __init__(self, viewer: Viewer):
+        super().__init__()
+        self.viewer = viewer
+
+        self.in_paths = InPaths()
+        try:
+            self.run_params = gen_default_run_params(self.in_paths)
+            self.out_paths = OutPaths()
+            self.initialized = True
+            # self.render_nd2()
+            self.regen_widgets()
+        except FileNotFoundError | ValueError:
+            self.initialized = False
+            self.regen_widgets()
+
+    def run(self):
+        print(self.run_params)
+        nd2ToTIFF(self.in_paths, self.run_params, self.out_paths)
+
+    # TODO: Fix this one up.
+    # def render_nd2(self):
+    #     viewer = self.viewer
+    #     viewer.layers.clear()
+    #     viewer.grid.enabled = True
+
+    #     nd2file = self.in_paths.nd2_file
+
+    #     with nd2.ND2File(str(nd2file)) as ndx:
+    #         sizes = ndx.sizes
+
+    #         if "T" not in sizes:
+    #             sizes["T"] = 1
+    #         if "P" not in sizes:
+    #             sizes["P"] = 1
+    #         if "C" not in sizes:
+    #             sizes["C"] = 1
+    #         ndx.bundle_axes = "zcyx"
+    #         ndx.iter_axes = "t"
+    #         n = len(ndx)
+
+    #         shape = (
+    #             sizes["t"],
+    #             sizes["z"],
+    #             sizes["v"],
+    #             sizes["c"],
+    #             sizes["y"],
+    #             sizes["x"],
+    #         )
+    #         image = np.zeros(shape, dtype=np.float32)
+
+    #         for i in range(n):
+    #             image[i] = ndx.get_frame(i)
+
+    #     image = np.squeeze(image)
+
+    #     viewer.add_image(image, channel_axis=1, colormap="gray")
+    #     viewer.grid.shape = (-1, 3)
+    #     viewer.dims.current_step = (0, 0)
+    #     viewer.layers.link_layers()  ## allows user to set contrast limits for all FOVs at once
+
+
+class TIFFExport2(Container):
     """No good way to make this derive MM3Widget; have to roll a custom version here."""
 
     def __init__(self):
@@ -279,8 +393,10 @@ class TIFFExport(Container):
             self.exp_dir / "TIFF",
             image_start=self.time_range[0] - 1,
             image_end=self.time_range[1],
-            vertical_crop=[self.lower_crop, self.upper_crop],
-            horizontal_crop=[self.left_crop, self.right_crop],
+            vertical_crop_lower=self.lower_crop,
+            vertical_crop_upper=self.upper_crop,
+            horizontal_crop_lower=self.left_crop,
+            horizontal_crop_upper=self.right_crop,
             fov_list=self.fovs,
         )
 

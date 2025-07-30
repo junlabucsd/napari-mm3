@@ -763,6 +763,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
     found_files = list(in_paths.TIFF_dir.glob("*.tif"))
     if len(found_files) == 0:
         return
+    print(found_files)
     fov_to_files = {}
     for ff in found_files:
         fov, time = get_fov(ff.name), get_time(ff.name)
@@ -867,9 +868,9 @@ class Compile(MM3Container2):
         super().__init__()
         self.viewer = viewer
 
-        self.in_folders = InPaths()
+        self.in_paths = InPaths()
         try:
-            self.run_params = gen_default_run_params(self.in_folders)
+            self.run_params = gen_default_run_params(self.in_paths)
             self.out_paths = OutPaths()
             self.initialized = True
             self.display_fov_full()
@@ -879,13 +880,14 @@ class Compile(MM3Container2):
             self.regen_widgets()
 
     def run(self):
-        compile(self.in_folders, self.run_params, self.out_paths)
+        print(self.run_params)
+        compile(self.in_paths, self.run_params, self.out_paths)
 
     def display_fov_full(self):
         self.viewer.text_overlay.visible = False
         self.viewer.layers.clear()
         low_fov = self.run_params.FOVs[0]
-        image_fov_worker = load_fov(self.in_folders.TIFF_dir, low_fov)
+        image_fov_worker = load_fov(self.in_paths.TIFF_dir, low_fov)
         image_fov_worker.returned.connect(lambda _: self.viewer.layers.clear())
         image_fov_worker.returned.connect(self.viewer.add_image)
         image_fov_worker.returned.connect(
