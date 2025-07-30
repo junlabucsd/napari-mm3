@@ -4,9 +4,9 @@ import re
 import sys
 import time
 import traceback
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from functools import partial
 from pathlib import Path
 
 import h5py
@@ -511,12 +511,15 @@ class MM3Container2(Container):
             )
             self.append(folder_widget)
 
-            def map_value():
-                # should get the relative path is possible!
-                vars(self.in_paths)[folder_field] = folder_widget.value
+            def update_value(field, val):
+                vars(self.run_params)[field] = val
+
+            # doing it this way (instead of referring to param_field locally inside update_value)
+            # gets around python's late-binding.
+            update_value_p = partial(update_value, folder_field)
 
             # careful about method resolution order here!
-            folder_widget.changed.connect(map_value)
+            folder_widget.changed.connect(update_value_p)
             folder_widget.changed.connect(self.regen_widgets)
 
     def add_dependent_widgets(self):
@@ -529,12 +532,12 @@ class MM3Container2(Container):
             )
             self.append(param_widget)
 
-            def map_value():
-                # should get the relative path is possible!
-                vars(self.run_params)[param_field] = param_widget.value
+            def update_value(field, val):
+                vars(self.run_params)[field] = val
 
+            update_value_p = partial(update_value, param_field)
             # is there a nice way to wire up changes to a preview update
-            param_widget.changed.connect(map_value)
+            param_widget.changed.connect(update_value_p)
 
         for folder_field, annotation in self.out_paths.__annotations__.items():
             # equivalent to in_folders.folder_field
@@ -544,12 +547,12 @@ class MM3Container2(Container):
             )
             self.append(folder_widget)
 
-            def map_value():
-                # should get the relative path is possible!
-                vars(self.out_paths)[folder_field] = folder_widget.value
+            def update_value(field, val):
+                print(val, field)
+                vars(self.run_params)[field] = val
 
-            # careful about method resolution order here!
-            folder_widget.changed.connect(map_value)
+            update_value_p = partial(update_value, param_field)
+            folder_widget.changed.connect(update_value_p)
 
     def run(self):
         pass
