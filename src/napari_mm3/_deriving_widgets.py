@@ -466,6 +466,14 @@ class MM3Container(Container):
             json.dump(history, h, indent=2)
 
 
+def ez_serialize(f):
+    kv = vars(f).copy()
+    for k, v in kv.items():
+        kv[k] = str(v)
+
+    return kv
+
+
 class MM3Container2(Container):
     """
     _compile.py is a good example of how to use this
@@ -503,7 +511,27 @@ class MM3Container2(Container):
 
         self.run_button = PushButton(text="run")
         self.append(self.run_button)
+        self.run_button.changed.connect(self.write_to_history)
         self.run_button.changed.connect(self.run)
+
+    def write_to_history(self):
+        name = type(self).__name__
+        timestamp = str(datetime.now())
+        in_folder_vars = ez_serialize(self.in_paths)
+        run_param_vars = ez_serialize(self.run_params)
+        out_folder_vars = ez_serialize(self.out_paths)
+
+        line = (name, timestamp, in_folder_vars, run_param_vars, out_folder_vars)
+        history = []
+        if Path("./history.json").exists():
+            with open("./history.json", "r") as h:
+                history = json.load(h)
+
+        # TODO: If the most recent run has the same parameters as our current run, do nothing.
+        history.append(line)
+
+        with open("./history.json", "w") as h:
+            json.dump(history, h, indent=2)
 
     def add_in_folders(self):
         for folder_field, annotation in self.in_paths.__annotations__.items():
