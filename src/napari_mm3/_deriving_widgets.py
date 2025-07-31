@@ -24,6 +24,8 @@ from magicgui.widgets import (
     RangeEdit,
     create_widget,
 )
+
+# from magicgui.widgets.bases._container_widget import ContainerKwargs
 from napari import Viewer
 
 
@@ -197,6 +199,7 @@ def _apply_seralized_widget(widget, value):
 
 def range_string_to_indices(range_string):
     """Convert a range string to a list of indices."""
+    print(f"'{range_string}'")
     try:
         range_string = range_string.replace(" ", "")
         split = range_string.split(",")
@@ -525,8 +528,7 @@ class MM3Container2(Container):
     def add_dependent_widgets(self):
         for param_field, annotation in self.run_params.__annotations__.items():
             param_default_value = vars(self.run_params)[param_field]
-            print(param_field)
-            print(annotation)
+            print(f"{param_default_value}")
             param_widget = create_widget(
                 value=param_default_value, annotation=annotation, name=param_field
             )
@@ -715,28 +717,60 @@ class PlanePicker(ComboBox):
 
 
 class FOVList(list):
-    pass
+    def __init__(self, v):
+        if isinstance(v, str):
+            real_list = range_string_to_indices(v)
+        elif isinstance(v, list):
+            real_list = v
+        else:
+            raise ValueError(
+                f"Tried to initialize FOVList with incorrect type {type(v)}: {v}"
+            )
+        super().__init__(real_list)
+
+    def __str__(self):
+        return f"{min(self)}-{max(self)}"
 
 
-class FOVChooser(LineEdit):
-    """
-    Widget for choosing multiple FOVs.
-    Use connect_callback(...) instead of super().changed.connect(...).
-    Additionally, the input function for connect_callback accepts a single
-    parameter (the range of FOVs)
-    """
+class FOVChooser(Container):
+    """Picks an FOV. For some godforsaken reason, making this a ValueWidget[FOVList] causes hell."""
 
-    def __init__(self, value=[], **kwargs):
-        super().__init__(value=f"{min(value)}-{max(value)}", **kwargs)
+    def __init__(
+        self,
+        nullable: bool = False,
+        **kwargs,
+    ) -> None:
+        # use empty string as a null value
+        value = kwargs.pop("value", None)  # type: ignore [typeddict-item]
+        if value is None:
+            value = ""
+        self.line_edit = LineEdit(value=value)
+        self._nullable = nullable
+        kwargs["widgets"] = [self.line_edit]
+        kwargs["labels"] = False
+        kwargs["layout"] = "horizontal"
+        super().__init__(**kwargs)
+        self.margins = (0, 0, 0, 0)
 
-    def get_value(self):
-        fov_str = super().get_value()
-        return range_string_to_indices(fov_str)  # example postprocessing
+        self.line_edit.changed.disconnect()
+        self.line_edit.changed.connect(lambda: self.changed.emit(self.value))
 
-    def set_value(self):
-        lo = min(super().get_value())
-        hi = max(super().get_value())
-        super().set_value(f"{lo}-{hi}")
+    @property
+    def value(self) -> tuple[Path, ...] | Path | None:
+        """Return current value of the widget.  This may be interpreted by backends."""
+        text = self.line_edit.value
+        if self._nullable and not text:
+            return None
+        return FOVList(text)
+
+    @value.setter
+    def value(self, value: FOVList | None) -> None:
+        """Set current file path."""
+        self.line_edit.value = value
+
+    def __repr__(self) -> str:
+        """Return string representation."""
+        return f"FOVChooser(mode={self.mode.value!r}, value={self.value!r})"
 
 
 #    def set_value(self, value):

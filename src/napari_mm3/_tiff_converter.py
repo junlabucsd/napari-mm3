@@ -133,7 +133,7 @@ def gen_default_run_params(in_paths: InPaths):
     return RunParams(
         image_start=1,
         image_end=end_time,
-        fov_list=FOVList(range(1, total_fovs + 1)),
+        fov_list=FOVList(list(range(1, total_fovs + 1))),
     )
 
 
@@ -156,8 +156,8 @@ def nd2ToTIFF(
         image_start, image_end: Image range that we want to turn into TIFFs (inclusive)
     """
     # set up image folders if they do not already exist
-    if not os.path.exists(out_paths.tif_dir):
-        os.makedirs(out_paths.tif_dir)
+    if not os.path.exists(out_paths.tiff_folder):
+        os.makedirs(out_paths.tiff_folder)
 
     if not os.path.exists(Path(".") / "analysis"):
         os.makedirs(Path(".") / "analysis")
@@ -228,7 +228,7 @@ def nd2ToTIFF(
             tif_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}.tif"
             information("Saving %s." % tif_filename)
             tiff.imwrite(
-                out_paths.tif_dir / tif_filename,
+                out_paths.tiff_folder / tif_filename,
                 data=image_data,
                 description=metadata_json,
                 compression="zlib",
@@ -305,189 +305,6 @@ class TIFFExport(MM3Container2):
     #     viewer.grid.shape = (-1, 3)
     #     viewer.dims.current_step = (0, 0)
     #     viewer.layers.link_layers()  ## allows user to set contrast limits for all FOVs at once
-
-
-class TIFFExport2(Container):
-    """No good way to make this derive MM3Widget; have to roll a custom version here."""
-
-    def __init__(self):
-        super().__init__()
-
-        self.viewer = napari.current_viewer()
-
-        nd2files = list(Path(".").glob("*.nd2"))
-        self.nd2files_found = len(nd2files) != 0
-
-        self.nd2file = nd2files[0]
-        self.valid_times = [1, get_nd2_times(self.nd2file)]
-        self.valid_fovs = [1, get_nd2_fovs(self.nd2file)]
-
-        self.data_path_widget = FileEdit(
-            label="data_path",
-            value=self.nd2file,
-            mode="r",
-            tooltip="Path to raw data (.nd2 or other Bio-Formats supported type)",
-        )
-        self.exp_dir_widget = FileEdit(
-            label="experiment_directory",
-            value=Path("."),
-            mode="d",
-            tooltip="Directory within which to put your TIFFs",
-        )
-        self.FOVs_range_widget = FOVChooser(self.valid_fovs)
-        self.time_range_widget = TimeRangeSelector(self.valid_times)
-        self.upper_crop_widget = FloatSpinBox(
-            label="Crop y max", value=1, min=0, max=1, step=0.01
-        )
-        self.lower_crop_widget = FloatSpinBox(
-            label="Crop y min", value=0, min=0, max=1, step=0.01
-        )
-
-        self.left_crop_widget = FloatSpinBox(
-            label="Crop x min", value=0, min=0, max=1, step=0.01
-        )
-        self.right_crop_widget = FloatSpinBox(
-            label="Crop x max", value=1, min=0, max=1, step=0.01
-        )
-
-        self.display_nd2_widget = PushButton(text="visualize all FOVs (.nd2 only)")
-        self.run_widget = PushButton(text="run")
-
-        self.data_path_widget.changed.connect(self.set_data_path)
-        self.data_path_widget.changed.connect(self.set_widget_bounds)
-        self.exp_dir_widget.changed.connect(self.set_exp_dir)
-        self.FOVs_range_widget.connect_callback(self.set_fovs)
-        self.time_range_widget.changed.connect(self.set_time_range)
-        self.upper_crop_widget.changed.connect(self.set_upper_crop)
-        self.lower_crop_widget.changed.connect(self.set_lower_crop)
-        self.left_crop_widget.changed.connect(self.set_left_crop)
-        self.right_crop_widget.changed.connect(self.set_right_crop)
-        self.run_widget.clicked.connect(self.run)
-        self.display_nd2_widget.clicked.connect(self.render_nd2)
-
-        self.append(self.data_path_widget)
-        self.append(self.exp_dir_widget)
-        self.append(self.FOVs_range_widget)
-        self.append(self.time_range_widget)
-        self.append(self.lower_crop_widget)
-        self.append(self.upper_crop_widget)
-        self.append(self.left_crop_widget)
-        self.append(self.right_crop_widget)
-        self.append(self.display_nd2_widget)
-        self.append(self.run_widget)
-
-        self.set_data_path()
-        self.set_fovs(list(range(self.valid_fovs[0], self.valid_fovs[1])))
-        self.set_time_range()
-        self.set_exp_dir()
-        self.set_upper_crop()
-        self.set_lower_crop()
-        self.set_left_crop()
-        self.set_right_crop()
-
-        napari.current_viewer().window._status_bar._toggle_activity_dock(True)
-
-    def run(self):
-        nd2ToTIFF(
-            self.data_path,
-            self.exp_dir / "TIFF",
-            image_start=self.time_range[0] - 1,
-            image_end=self.time_range[1],
-            vertical_crop_lower=self.lower_crop,
-            vertical_crop_upper=self.upper_crop,
-            horizontal_crop_lower=self.left_crop,
-            horizontal_crop_upper=self.right_crop,
-            fov_list=self.fovs,
-        )
-
-        information("Finished TIFF export")
-
-    # TODO: Fix this one up.
-    def render_nd2(self):
-        viewer = self.viewer
-        viewer.layers.clear()
-        viewer.grid.enabled = True
-
-        nd2file = self.data_path
-
-        with nd2.ND2Reader(str(nd2file)) as ndx:
-            sizes = ndx.sizes
-
-            if "T" not in sizes:
-                sizes["T"] = 1
-            if "P" not in sizes:
-                sizes["P"] = 1
-            if "C" not in sizes:
-                sizes["C"] = 1
-            ndx.bundle_axes = "zcyx"
-            ndx.iter_axes = "t"
-            n = len(ndx)
-
-            shape = (
-                sizes["t"],
-                sizes["z"],
-                sizes["v"],
-                sizes["c"],
-                sizes["y"],
-                sizes["x"],
-            )
-            image = np.zeros(shape, dtype=np.float32)
-
-            for i in range(n):
-                image[i] = ndx.get_frame(i)
-
-        image = np.squeeze(image)
-
-        viewer.add_image(image, channel_axis=1, colormap="gray")
-        viewer.grid.shape = (-1, 3)
-        viewer.dims.current_step = (0, 0)
-        viewer.layers.link_layers()  ## allows user to set contrast limits for all FOVs at once
-
-    def set_widget_bounds(self):
-        self.valid_fovs = [1, get_nd2_fovs(self.data_path)]
-        self.valid_times = [1, get_nd2_times(self.data_path)]
-        self.FOVs_range_widget.max_FOV = min(self.valid_fovs)
-        self.FOVs_range_widget.max_FOV = max(self.valid_fovs)
-        self.FOVs_range_widget.label = (
-            f"FOVs ({min(self.valid_fovs)}-{max(self.valid_fovs)}"
-        )
-        self.FOVs_range_widget.value = f"{min(self.valid_fovs)}-{max(self.valid_fovs)}"
-        self.time_range_widget.label = (
-            f"time range (frames {self.valid_times[0]}-{self.valid_times[1]})"
-        )
-        self.time_range_widget.start.min = min(self.valid_times)
-        self.time_range_widget.start.max = max(self.valid_times)
-        self.time_range_widget.stop.min = min(self.valid_times)
-        self.time_range_widget.stop.max = max(self.valid_times)
-        self.time_range_widget.start.value = min(self.valid_times)
-        self.time_range_widget.stop.value = max(self.valid_times)
-
-    def set_fovs(self, fovs):
-        self.fovs = fovs
-
-    def set_exp_dir(self):
-        self.exp_dir = self.exp_dir_widget.value
-
-    def set_data_path(self):
-        self.data_path = self.data_path_widget.value
-
-    def set_time_range(self):
-        self.time_range = (
-            self.time_range_widget.value.start,
-            self.time_range_widget.value.stop,
-        )
-
-    def set_upper_crop(self):
-        self.upper_crop = self.upper_crop_widget.value
-
-    def set_lower_crop(self):
-        self.lower_crop = self.lower_crop_widget.value
-
-    def set_left_crop(self):
-        self.left_crop = self.left_crop_widget.value
-
-    def set_right_crop(self):
-        self.right_crop = self.right_crop_widget.value
 
 
 if __name__ == "__main__":
