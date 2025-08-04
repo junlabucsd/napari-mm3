@@ -894,50 +894,12 @@ class Compile(MM3Container2):
 
 
 if __name__ == "__main__":
-    cur_dir = Path(".")
-    end_time = get_valid_times(cur_dir / "TIFF")
-    all_fovs = get_valid_fovs_folder(cur_dir / "TIFF")
+    """
+    Would be good to add real arguments here.
+    This could likely be done dynamically, but I'm not feeling it right now.
+    """
+    in_files = InPaths()
+    run_params: RunParams = gen_default_run_params(in_files)
+    out_paths = OutPaths()
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--start_time", help="1-indexed time to start at", default=1, type=int
-    )
-    parser.add_argument(
-        "--end_time",
-        help="1-indexed time to end at (exclusive)",
-        default=end_time,
-        type=int,
-    )
-    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
-    p = parser.parse_args()
-
-    if p.fovs == "":
-        fovs = all_fovs
-    else:
-        fovs = range_string_to_indices(p.fovs)
-        for fov in fovs:
-            if fov not in all_fovs:
-                raise ValueError("Some FOVs are out of range for your nd2 file.")
-
-    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
-        raise ValueError("Times out of range")
-
-    compile(
-        TIFF_dir=cur_dir / "TIFF",
-        num_analyzers=30,
-        analysis_dir=cur_dir / "analysis",
-        t_start=p.start_time - 1,
-        t_end=p.end_time - 1,
-        image_orientation=Orientation.auto,
-        image_rotation=0,
-        channel_width=10,
-        channel_separation=45,
-        channel_detection_snr=1,
-        channel_length_pad=10,
-        channel_width_pad=10,
-        alignment_pad=10,
-        experiment_name="",
-        phase_plane="c1",
-        FOVs=fovs,
-        TIFF_source="nd2",
-    )
+    compile(in_files, run_params, out_paths)
