@@ -720,7 +720,7 @@ class RunParams:
     channel_length_pad: int = 10
     channel_width_pad: int = 10
     alignment_pad: int = 10
-    TIFF_source: str = "nd2"  # one of {'nd2', 'BioFormats / other TIFF'}
+    TIFF_source: Annotated[str, {"choices": ["nd2", "BioFormats / other TIFF"]}] = "nd2"
 
 
 def gen_default_run_params(in_files: InPaths):
@@ -734,7 +734,7 @@ def gen_default_run_params(in_files: InPaths):
             phase_plane=channels[0],
             t_start=t_start,
             t_end=t_end,
-            FOVs=all_fovs,
+            FOVs=FOVList(all_fovs),
         )
         params.__annotations__["phase_plane"] = Annotated[str, {"choices": channels}]
         return params
@@ -763,7 +763,6 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
     found_files = list(in_paths.TIFF_dir.glob("*.tif"))
     if len(found_files) == 0:
         return
-    print(found_files)
     fov_to_files = {}
     for ff in found_files:
         fov, time = get_fov(ff.name), get_time(ff.name)
@@ -777,7 +776,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
 
     all_channels = {}  # index in by fov, peak #
     for fov, paths in fov_to_files.items():
-        print(f"analyzing FOV {fov + 1}", end="\n")
+        print(f"analyzing FOV {fov}", end="\n")
         chnl_timeseries = []
         img_timeseries = []
         sorted(paths)  # sort by timestamps
@@ -806,7 +805,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
             chnl_timeseries.append(channel_locs)
             img_timeseries.append(image_data)
 
-        print(f"making masks for FOV {fov + 1}", end="\n")
+        print(f"making masks for FOV {fov}", end="\n")
         img_timeseries = np.array(img_timeseries)
         # maybe clean this up in a sec
         max_len, max_wid, channel_masks = make_masks(
@@ -817,7 +816,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
             p.channel_length_pad,
         )
 
-        print(f"adjusting masks for FOV {fov + 1}", end="\n")
+        print(f"adjusting masks for FOV {fov}", end="\n")
         all_channels[fov] = {}
         for peak, mask in channel_masks.items():
             img_width = phase_image.shape[1]
@@ -825,7 +824,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
                 mask, channel_masks[peak], max_len, max_wid, img_width
             )
 
-        print(f"slicing channels for FOV {fov + 1}", end="\n")
+        print(f"slicing channels for FOV {fov}", end="\n")
         tiff_stack_slice_and_write(
             img_timeseries,
             fov,
@@ -833,7 +832,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
             out_paths.experiment_name,
             out_paths.channel_dir,
         )
-        print(f"finished analyzing FOV {fov+1}")
+        print(f"finished analyzing FOV {fov}")
 
     compute_xcorr(
         out_paths.analysis_dir,
@@ -855,15 +854,6 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
 
 
 class Compile(MM3Container2):
-    """
-    the pipeline is as follows.
-      1. check folders for existence, fetch FOVs & times & planes
-          -> upon failure, simply show a list of inputs + update button.
-      2. create a 'params' object whose params are valuemapped to widgets contained in our main list (a la guiclass)
-          -> input directories, again, have a special status.
-      3.
-    """
-
     def __init__(self, viewer: Viewer):
         super().__init__()
         self.viewer = viewer

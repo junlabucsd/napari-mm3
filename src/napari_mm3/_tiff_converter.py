@@ -38,7 +38,7 @@ def get_nd2_times(data_path):
         return nd2f.sizes["T"]
 
 
-def nd2_iter(nd2f: nd2.ND2File, time_range, fov_list):
+def nd2_iter(nd2f: nd2.ND2File, time_range_ids, fov_list_ids):
     """
     Iterates over the contents of an ND2File.
     If available, use fov_list/time_range. If not,
@@ -58,28 +58,26 @@ def nd2_iter(nd2f: nd2.ND2File, time_range, fov_list):
     if "P" not in nd2f.sizes:
         im = nd2f.asarray()
         for t in nd2_time_range:
-            if t not in time_range:
+            if t not in time_range_ids:
                 continue
             image_data = im[t]
             yield t, 0, image_data
         return
 
     nd2_fov_list = set(range(0, nd2f.sizes["P"]))
-    # TODO: Move this into the UI code.
-    fov_list = [fov - 1 for fov in fov_list]
-    if fov_list != []:
-        valid_fovs = set(fov_list).intersection(nd2_fov_list)
+    if fov_list_ids != []:
+        valid_fovs = set(fov_list_ids).intersection(nd2_fov_list)
     else:
         valid_fovs = nd2_fov_list
 
-    if valid_fovs != set(fov_list):
+    if valid_fovs != set(fov_list_ids):
         information("The following FOVs were not in the nd2, and thus were omitted:")
-        information(set(fov_list) - valid_fovs)
+        information(set(fov_list_ids) - valid_fovs)
 
     for fov in valid_fovs:
         im = nd2f.asarray(fov)
         for t in nd2_time_range:
-            if t not in time_range:
+            if t not in time_range_ids:
                 continue
             image_data = im[t]
             yield t, fov, image_data
@@ -175,28 +173,18 @@ def nd2ToTIFF(
         planes = nd2f.sizes["C"]
 
         # Extraction range is the time points that will be taken out.
-        time_range = range(run_params.image_start, run_params.image_end)
+        time_range_ids = range(run_params.image_start - 1, run_params.image_end)
+        fov_list_ids = [fov_id - 1 for fov_id in run_params.fov_list]
         for t_id, fov_id, image_data in nd2_iter(
-            nd2f, time_range=time_range, fov_list=run_params.fov_list
+            nd2f, time_range_ids=time_range_ids, fov_list_ids=fov_list_ids
         ):
             # timepoint and fov output name (1 indexed rather than 0 indexed)
-            t, fov = t_id + 1, fov_id + 1
             try:
                 milliseconds = copy.deepcopy(nd2f.events()[t_id * 2]["Time [s]"])
                 acq_days = milliseconds / 60.0 / 60.0 / 24.0
                 acq_time = starttime.timestamp() + acq_days
             except IndexError:
                 acq_time = None
-
-            # make dictionary which will be the metdata for this TIFF
-            metadata_json = json.dumps(
-                {
-                    "fov": fov,
-                    "t": t,
-                    "jd": acq_time,
-                    "planes": planes,
-                }
-            )
 
             # add extra axis to make below slicing simpler. removed automatically if only one color
             if len(image_data.shape) <= 3:
@@ -225,7 +213,16 @@ def nd2ToTIFF(
                 xhi = int(run_params.horizontal_crop_upper * W)
                 image_data = image_data[:, :, xlo:xhi]
 
-            tif_filename = f"{file_prefix}_t{t:04d}xy{fov:02d}.tif"
+            # make dictionary which will be the metdata for this TIFF
+            metadata_json = json.dumps(
+                {
+                    "fov": fov_id + 1,
+                    "t": t_id + 1,
+                    "jd": acq_time,
+                    "planes": planes,
+                }
+            )
+            tif_filename = f"{file_prefix}_t{t_id + 1:04d}xy{fov_id + 1:02d}.tif"
             information("Saving %s." % tif_filename)
             tiff.imwrite(
                 out_paths.tiff_folder / tif_filename,

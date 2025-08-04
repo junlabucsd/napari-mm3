@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "napari-mm3"
+version = "2025.07.29"
+dependencies = [
+  "python<=3.12",
+  "numpy<2.0.0",
+  "tensorflow<=2.12",
+  "pyqt",
+  "napari",
+  "nd2",
+  "scikit-learn",
+  "scikit-image",
+  "h5py",
+  "seaborn",
+  "elasticdeform",
+  "pip",
+]
+requires-python = ">=3.8"
+authors = [
+  {name = "Michael Sandler"},
+  {name = "Ryan Thiermann"},
+  {name = "Gursharan Ahir"},
+  {email = "different.person@example.com"},
+]
+description = "For analysis of mother machine adata (E. coli microfluidics)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+  "Programming Language :: Python"
+]
+
+[project.urls]
+Homepage = "https://github.com/junlabucsd/napari-mm3"
+Repository = "https://github.com/junlabucsd/napari-mm3.git"
+"Bug Tracker" = "https://github.com/junlabucsd/napari-mm3/issues"
+
+[project.scripts] # TODO: How does this work?
+spam-cli = "spam:main_cli"
+
+[project.gui-scripts] # TODO: How does this work?
+spam-gui = "spam:main_gui"
+
+[project.entry-points."spam.magical"] # TODO: HOW DOES THIS WORK
+tomatoes = "spam:main_tomatoes"
+
+[project.entry-points."napari.manifest"]
+napari-mm3 = "napari-mm3:napari.yaml"
+
+
+# For more information about tox, see https://tox.readthedocs.io/en/latest/
+# TODO: Figure this out -- add some kind of basic automated testing.
