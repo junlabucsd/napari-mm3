@@ -20,7 +20,6 @@ This [napari] plugin was generated with [Cookiecutter] using [@napari]'s [cookie
 https://github.com/junlabucsd/napari-mm3/assets/40699438/1b3e6121-f5e1-475f-aca3-c6ed1b5bab3a
 
 
-
 ## Installation
 
 We describe installation with conda. First, clone with git and navigate inside the folder.
@@ -39,13 +38,8 @@ Finally, switch to the environment you've created, and install the plugin itself
 conda activate napari-mm3
 pip install -e . --no-dependencies
 ```
+Finally, if you would like to use UNet segmentation, please download [our segmentation model](https://drive.google.com/file/d/1uJIYU6Ze5goC3GJtZ4dMTfUPQVuaM_4Z/view?usp=drive_link), and place it in the repo's `src/napari_mm3`.
 This supplies you with the latest, most recent version of our code.
-
-napari-MM3 can use the [python-bioformats](https://pypi.org/project/python-bioformats/) library to import various image file formats. It can be installed with pip:
-```
-pip install python-bioformats
-```
-If your raw images are in the .nd2 format, they will be read in with the nd2 package. In this case, Bio-Formats is not required.
 
 ## Contributing
 
