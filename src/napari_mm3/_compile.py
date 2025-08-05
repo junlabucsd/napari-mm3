@@ -4,7 +4,6 @@ Can be run headless with parameters; if left unspecified it will analyze the ful
 and use the default UI parameters.
 """
 
-import argparse
 import multiprocessing
 import os
 import pickle
@@ -13,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Annotated, Optional, Union, overload
+from typing import Annotated, Optional, Union
 
 import numpy as np
 import six
@@ -36,7 +35,6 @@ from ._deriving_widgets import (
     get_valid_times,
     information,
     load_tiff,
-    range_string_to_indices,
     warning,
 )
 from .utils import TIFF_FILE_FORMAT_PEAK
