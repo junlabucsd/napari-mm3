@@ -2,8 +2,9 @@ import argparse
 import multiprocessing
 import os
 import pickle
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Annotated, Tuple
 
 import matplotlib as mpl
 import matplotlib.patches as mpatches
@@ -13,15 +14,19 @@ import numpy as np
 import seaborn as sns
 import six
 from magicgui.widgets import ComboBox, FloatSpinBox, PushButton, SpinBox
+from napari import Viewer
 from napari.utils import progress
 from skimage import io
 from skimage.measure import regionprops
 
 from ._deriving_widgets import (
     FOVChooser,
+    FOVList,
     MM3Container,
+    MM3Container2,
     PlanePicker,
     get_valid_fovs_folder,
+    get_valid_planes,
     get_valid_times,
     information,
     load_specs,
@@ -938,45 +943,126 @@ class LineagePlotter:
         return fig, ax
 
 
-def track_cells(
-    experiment_name: str,
-    fovs: list[int],
-    phase_plane: str,
-    pxl2um: float,
-    num_analyzers: int,
-    lost_cell_time: int,
-    new_cell_y_cutoff: int,
-    new_cell_region_cutoff: int,
-    max_growth_length: float,  # Max allowed growth length ratio.
-    min_growth_length: float,  # Minimum allowed growth length ratio.
-    max_growth_area: float,  # Max allowed growth area ratio.
-    min_growth_area: float,  # Min allowed growth area ratio.
-    seg_img: str,
-    ana_dir: Path,
-    seg_dir: Path,
-    cell_dir: Path,
-):
+@dataclass
+class InPaths:
+    """
+    1. check folders for existence, fetch FOVs & times & planes
+        -> upon failure, simply show a list of inputs + update button.
+    """
+
+    ana_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis")
+    seg_img: Annotated[str, {"choices": ["seg_unet", "seg_otsu"]}] = "seg_unet"
+    seg_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/segmented")
+
+
+@dataclass
+class OutPaths:
+    cell_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/cell_data")
+    experiment_name: str = ""
+
+
+@dataclass
+class RunParams:
+    fovs: FOVList
+    phase_plane: str
+    pxl2um: Annotated[
+        float,
+        {"min": 0.0, "max": 2.0, "step": 0.001, "tooltip": "Micrometers per pixel"},
+    ] = 0.11
+    num_analyzers: int = multiprocessing.cpu_count()
+    lost_cell_time: Annotated[
+        int,
+        {
+            "min": 1,
+            "max": 20,
+            "tooltip": "Number of frames after which a cell is dropped if no new regions connect to it.",
+        },
+    ] = 3
+    new_cell_y_cutoff: Annotated[
+        int,
+        {
+            "min": 1,
+            "tooltip": "How far from the top (pixels) to consider cells for starting new lineages",
+        },
+    ] = 150
+    new_cell_region_cutoff: Annotated[
+        int,
+        {
+            "min": 0,
+            "tooltip": "how many cells from the top to consider for starting new lineages",
+        },
+    ] = 4
+    max_growth_length: Annotated[
+        float,
+        {
+            "min": 0,
+            "max": 20,
+            "step": 0.1,
+            "tooltip": "max change in length allowed when linking regions. Ratio.",
+        },
+    ] = 1.3  # Max allowed growth length ratio.
+    min_growth_length: Annotated[
+        float,
+        {
+            "min": 0,
+            "step": 0.1,
+            "tooltip": "min change in length allowed when linking regions. Ratio.",
+        },
+    ] = 0.8
+    max_growth_area: Annotated[
+        float,
+        {
+            "min": 0,
+            "step": 0.1,
+            "tooltip": "max change in length allowed when linking regions. Ratio.",
+        },
+    ] = 1.3
+    min_growth_area: Annotated[
+        float,
+        {
+            "min": 0,
+            "step": 0.1,
+            "tooltip": "min change in length allowed when linking regions. Ratio.",
+        },
+    ] = 0.8
+
+
+def gen_default_run_params(in_files: InPaths):
+    try:
+        all_fovs = get_valid_fovs_folder(in_files.seg_dir)
+        # get the brightest channel as the default phase plane!
+        # TODO: Bad! In the long run i'd like to eliminate this.
+        channels = get_valid_planes(in_files.ana_dir / "channels")
+        # move this into runparams somehow!
+        params = RunParams(
+            phase_plane=channels[0],
+            fovs=FOVList(all_fovs),
+        )
+        params.__annotations__["phase_plane"] = Annotated[str, {"choices": channels}]
+        return params
+    except FileNotFoundError:
+        raise FileNotFoundError("TIFF folder not found")
+    except ValueError:
+        raise ValueError(
+            "Invalid filenames. Make sure that timestamps are denoted as t[0-9]* and FOVs as xy[0-9]*"
+        )
+
+
+def track_cells(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     """Track cells in a set of FOVs"""
     # Load the project parameters file
     information("Loading experiment parameters.")
-    information("Using {} threads for multiprocessing.".format(num_analyzers))
-    information("Using {} images for tracking.".format(seg_img))
+    information(f"Using {run_params.num_analyzers} threads for multiprocessing.")
+    information(f"Using {in_paths.seg_img} images for tracking.")
 
     # create segmentation and cell data folder if they don't exist
-    if not os.path.exists(seg_dir):
-        os.makedirs(seg_dir)
-    if not os.path.exists(cell_dir):
-        os.makedirs(cell_dir)
+    if not out_paths.cell_dir.exists():
+        out_paths.cell_dir.mkdir()
 
     # load specs file
-    specs = load_specs(ana_dir)
-
-    # make list of FOVs to process (keys of channel_mask file)
+    specs = load_specs(in_paths.ana_dir)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
-
-    # remove fovs if the user specified so
-    if fovs:
-        fov_id_list[:] = [fov for fov in fov_id_list if fov in fovs]
+    fov_id_list[:] = [fov for fov in fov_id_list if fov in run_params.fovs]
 
     ### Create cell lineages from segmented images
     information("Creating cell lineages using standard algorithm.")
@@ -990,277 +1076,95 @@ def track_cells(
         # dict of Cell entries, into cells
         cells.update(
             make_lineages_fov(
-                ana_dir,
-                experiment_name,
+                in_paths.ana_dir,
+                out_paths.experiment_name,
                 fov_id,
                 specs,
-                lost_cell_time,
-                new_cell_y_cutoff,
-                new_cell_region_cutoff,
-                max_growth_length,
-                min_growth_length,
-                max_growth_area,
-                min_growth_area,
-                pxl2um,
-                seg_img,
-                phase_plane,
+                run_params.lost_cell_time,
+                run_params.new_cell_y_cutoff,
+                run_params.new_cell_region_cutoff,
+                run_params.max_growth_length,
+                run_params.min_growth_length,
+                run_params.max_growth_area,
+                run_params.min_growth_area,
+                run_params.pxl2um,
+                in_paths.seg_img,
+                run_params.phase_plane,
             )
         )
     information("Finished lineage creation.")
 
-    ### Now prune and save the data.
-    information("Curating and saving cell data.")
-
-    # this returns only cells with a parent and daughters
-    complete_cells = find_complete_cells(cells)
-
-    ### save the cell data
-    # All cell data (includes incomplete cells)
-    with open(cell_dir / "all_cells.pkl", "wb") as cell_file:
+    # save the cell data
+    # a cell is 'complete' if it has a daughter and a mother.
+    with open(out_paths.cell_dir / "all_cells.pkl", "wb") as cell_file:
         pickle.dump(cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
+    write_cells_to_json(cells, out_paths.cell_dir / "all_cells.json")
 
-    ### save to .json
-    write_cells_to_json(cells, cell_dir / "all_cells.json")
-
-    # Just the complete cells, those with mother and daughter
-    # This is a dictionary of cell objects.
-    with open(cell_dir / "complete_cells.pkl", "wb") as cell_file:
+    complete_cells = find_complete_cells(cells)
+    with open(out_paths.cell_dir / "complete_cells.pkl", "wb") as cell_file:
         pickle.dump(complete_cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
-
-    ### save to .json
-    write_cells_to_json(complete_cells, cell_dir / "complete_cells.json")
+    write_cells_to_json(complete_cells, out_paths.cell_dir / "complete_cells.json")
 
     information("Finished curating and saving cell data.")
 
 
-class Track(MM3Container):
-    def create_widgets(self):
-        self.viewer.text_overlay.visible = False
-        """Overriding method. Widget constructor. See _deriving_widgets.MM3Container for more details."""
-        self.fov_widget = FOVChooser(self.valid_fovs)
-        self.pxl2um_widget = FloatSpinBox(
-            label="um per pixel",
-            min=0.0,
-            max=2.0,
-            step=0.001,
-            value=0.11,
-            tooltip="Micrometers per pixel",
-        )
-        self.phase_plane_widget = PlanePicker(
-            self.valid_planes,
-            label="phase plane",
-            tooltip="The phase plane in the experiment.",
-        )
-        self.lost_cell_time_widget = SpinBox(
-            label="lost cell time",
-            min=1,
-            max=10000,
-            value=3,
-            tooltip="Number of frames after which a cell is dropped if no new regions "
-            "connect to it",
-        )
-        self.new_cell_y_cutoff_widget = SpinBox(
-            label="new cell y cutoff",
-            min=1,
-            max=20000,
-            value=150,
-            tooltip="regions only less than this value down the channel from the"
-            "closed end will be considered to start potential new cells."
-            "Does not apply to daughters. unit is pixels",
-        )
-        self.new_cell_region_cutoff_widget = FloatSpinBox(
-            label="new cell region cutoff",
-            value=4,
-            min=0,
-            max=1000,
-            step=1,
-            tooltip="only regions with labels less than or equal to this value will "
-            "be considered to start potential new cells. Does not apply to daughters",
-        )
-        self.max_growth_length_widget = FloatSpinBox(
-            label="max growth length (ratio)",
-            value=1.3,
-            min=0,
-            max=20,
-            step=0.1,
-            tooltip="Maximum increase in length allowed when linked new region to "
-            "existing potential cell. Unit is ratio.",
-        )
-        self.min_growth_length_widget = FloatSpinBox(
-            label="min growth length (ratio)",
-            value=0.8,
-            min=0,
-            max=20,
-            step=0.1,
-            tooltip="Minimum change in length allowed when linked new region to "
-            "existing potential cell. Unit is ratio.",
-        )
-        self.max_growth_area_widget = FloatSpinBox(
-            label="max growth area (ratio)",
-            value=1.3,
-            min=0,
-            max=20,
-            step=0.1,
-            tooltip="Maximum change in area allowed when linked new region to "
-            "existing potential cell. Unit is ratio.",
-        )
-        self.min_growth_area_widget = FloatSpinBox(
-            label="min growth area (ratio)",
-            value=0.8,
-            min=0,
-            max=20,
-            step=0.1,
-            tooltip="Minimum change in area allowed when linked new region to existing potential cell. Unit is ratio.",
-        )
-        self.segmentation_method_widget = ComboBox(
-            label="segmentation method", choices=["Otsu", "U-net"]
-        )
+class Track(MM3Container2):
+    def __init__(self, viewer: Viewer):
+        super().__init__()
+        self.viewer = viewer
 
-        self.run_widget.text = "Construct lineages"
-        self.display_widget = PushButton(text="Display results")
-        self.set_display_fovs_widget = FOVChooser(
-            self.valid_fovs, custom_label="Display results from FOVs "
-        )
+        self.in_paths = InPaths()
+        try:
+            self.run_params = gen_default_run_params(self.in_paths)
+            self.out_paths = OutPaths()
+            self.initialized = True
+            self.regen_widgets()
 
-        self.fov_widget.connect_callback(self.set_fovs)
-        self.pxl2um_widget.changed.connect(self.set_pxl2um)
-        self.phase_plane_widget.changed.connect(self.set_phase_plane)
-        self.lost_cell_time_widget.changed.connect(self.set_lost_cell_time)
-        self.new_cell_y_cutoff_widget.changed.connect(self.set_new_cell_y_cutoff)
-        self.new_cell_region_cutoff_widget.changed.connect(
-            self.set_new_cell_region_cutoff
-        )
-        self.max_growth_length_widget.changed.connect(self.set_max_growth_length)
-        self.min_growth_length_widget.changed.connect(self.set_min_growth_length)
-        self.max_growth_area_widget.changed.connect(self.set_max_growth_area)
-        self.min_growth_area_widget.changed.connect(self.set_min_growth_area)
-        self.segmentation_method_widget.changed.connect(self.set_segmentation_method)
-
-        self.run_widget.clicked.connect(self.run)
-        self.display_widget.clicked.connect(self.display_fovs)
-        self.set_display_fovs_widget.connect_callback(self.set_display_fovs)
-
-        self.append(self.fov_widget)
-        self.append(self.pxl2um_widget)
-        self.append(self.phase_plane_widget)
-        self.append(self.lost_cell_time_widget)
-        self.append(self.new_cell_y_cutoff_widget)
-        self.append(self.new_cell_region_cutoff_widget)
-        self.append(self.max_growth_length_widget)
-        self.append(self.min_growth_length_widget)
-        self.append(self.max_growth_area_widget)
-        self.append(self.min_growth_area_widget)
-        self.append(self.segmentation_method_widget)
-        self.append(self.run_widget)
-        self.append(self.display_widget)
-        self.append(self.set_display_fovs_widget)
-
-        self.set_fovs(self.valid_fovs)
-        self.set_pxl2um()
-        self.set_phase_plane()
-        self.set_lost_cell_time()
-        self.set_new_cell_y_cutoff()
-        self.set_new_cell_region_cutoff()
-        self.set_max_growth_length()
-        self.set_min_growth_length()
-        self.set_max_growth_area()
-        self.set_min_growth_area()
-        self.set_segmentation_method()
-        self.set_display_fovs(self.valid_fovs)
+            self.preview_widget = PushButton(label="generate preview")
+            self.append(self.preview_widget)
+            self.preview_widget.changed.connect(self.render_preview)
+        except FileNotFoundError | ValueError:
+            self.initialized = False
+            self.regen_widgets()
 
     def run(self):
-        """Overriding method. Performs Mother Machine Analysis"""
-        self.viewer.window._status_bar._toggle_activity_dock(True)
+        track_cells(self.in_paths, self.run_params, self.out_paths)
+
+    def render_preview(self):
         viewer = napari.current_viewer()
         viewer.layers.clear()
-        # need this to avoid vispy bug for some reason
-        # related to https://github.com/napari/napari/issues/2584
-        viewer.add_image(np.zeros((1, 1)))
-        viewer.layers.clear()
 
-        track_cells(
-            experiment_name=self.experiment_name,
-            fovs=self.fovs,
-            phase_plane=self.phase_plane,
-            pxl2um=self.pxl2um,
-            num_analyzers=multiprocessing.cpu_count(),
-            lost_cell_time=self.lost_cell_time,
-            new_cell_y_cutoff=self.new_cell_y_cutoff,
-            new_cell_region_cutoff=self.new_cell_region_cutoff,
-            max_growth_length=self.max_growth_length,
-            min_growth_length=self.min_growth_length,
-            max_growth_area=self.max_growth_area,
-            min_growth_area=self.min_growth_area,
-            seg_img="seg_otsu" if self.segmentation_method == "Otsu" else "seg_unet",
-            ana_dir=self.analysis_folder,
-            seg_dir=self.analysis_folder / "segmented",
-            cell_dir=self.analysis_folder / "cell_data",
+        specs = load_specs(self.in_paths.ana_dir)
+        fov = self.run_params.fovs[0]
+        for peak, status in specs[fov].items():
+            if status == 1:
+                break
+        fov_and_peak_id = (fov, peak)
+        # # there should really be a way of doing this sans side effects...
+        make_lineage_chnl_stack(
+            self.in_paths.ana_dir,
+            self.out_paths.experiment_name,
+            fov_and_peak_id,
+            self.run_params.lost_cell_time,
+            self.run_params.new_cell_y_cutoff,
+            self.run_params.new_cell_region_cutoff,
+            self.run_params.max_growth_length,
+            self.run_params.min_growth_length,
+            self.run_params.max_growth_length,
+            self.run_params.min_growth_area,
+            self.run_params.max_growth_area,
+            self.in_paths.seg_img,
+            self.run_params.phase_plane,
         )
+        img_stack = load_lineage_image(
+            self.in_paths.ana_dir, self.out_paths.experiment_name, fov, peak
+        )
+        lin_filename = f"{self.out_paths.experiment_name}_{fov}_{peak}.tif"
 
-    def display_fovs(self):
-        viewer = napari.current_viewer()
-        viewer.layers.clear()
+        viewer.grid.enabled = True
+        viewer.grid.shape = (-1, 1)
 
-        specs = load_specs(self.analysis_folder)
-
-        for fov_id in self.fovs_to_display:
-            ana_peak_ids = []  # channels to be analyzed
-            for peak_id, spec in six.iteritems(specs[int(fov_id)]):
-                if spec == 1:  # 1 means analyze
-                    ana_peak_ids.append(peak_id)
-            ana_peak_ids = sorted(ana_peak_ids)  # sort for repeatability
-
-            for peak_id in ana_peak_ids:
-                try:
-                    img_stack = load_lineage_image(
-                        self.analysis_folder, self.experiment_name, fov_id, peak_id
-                    )
-                    lin_filename = f"{self.experiment_name}_{fov_id}_{peak_id}.tif"
-
-                    viewer.grid.enabled = True
-                    viewer.grid.shape = (-1, 1)
-
-                    viewer.add_image(img_stack, name=lin_filename)
-                except Exception as e:
-                    warning(
-                        f"{e}. No lineage found for FOV {fov_id}, peak {peak_id}. Run lineage construction first!"
-                    )
-
-    def set_fovs(self, fovs):
-        self.fovs = fovs
-
-    def set_pxl2um(self):
-        self.pxl2um = self.pxl2um_widget.value
-
-    def set_phase_plane(self):
-        self.phase_plane = self.phase_plane_widget.value
-
-    def set_lost_cell_time(self):
-        self.lost_cell_time = self.lost_cell_time_widget.value
-
-    def set_new_cell_y_cutoff(self):
-        self.new_cell_y_cutoff = self.new_cell_y_cutoff_widget.value
-
-    def set_new_cell_region_cutoff(self):
-        self.new_cell_region_cutoff = self.new_cell_region_cutoff_widget.value
-
-    def set_max_growth_length(self):
-        self.max_growth_length = self.max_growth_length_widget.value
-
-    def set_min_growth_length(self):
-        self.min_growth_length = self.min_growth_length_widget.value
-
-    def set_max_growth_area(self):
-        self.max_growth_area = self.max_growth_area_widget.value
-
-    def set_min_growth_area(self):
-        self.min_growth_area = self.min_growth_area_widget.value
-
-    def set_segmentation_method(self):
-        self.segmentation_method = self.segmentation_method_widget.value
-
-    def set_display_fovs(self, fovs):
-        self.fovs_to_display = fovs
+        viewer.add_image(img_stack, name=lin_filename)
 
 
 if __name__ == "__main__":
