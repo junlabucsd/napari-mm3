@@ -484,7 +484,7 @@ def segment_peak_unet(
     Segments a peak using U-net model.
     """
     # arguments to predict
-    predict_args = dict(use_multiprocessing=True, workers=num_analyzers, verbose=1)
+    predict_args = {}  # dict(use_multiprocessing=True, workers=num_analyzers, verbose=1)
 
     if normalize_to_one:
         img_stack = normalize(img_stack)
@@ -588,7 +588,9 @@ def segmentUNet(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
         fov_id_list[:] = [fov for fov in fov_id_list if fov in run_params.FOVs]
 
     information("Loading model...")
-    seg_model = models.load_model(in_paths.model_file, custom_objects=custom_objects)
+    seg_model = models.load_model(
+        str(in_paths.model_file), custom_objects=custom_objects, compile=False
+    )
     information("Model loaded.")
 
     for fov_id in fov_id_list:
@@ -676,8 +678,7 @@ class SegmentUnet(MM3Container2):
 
         # *** Need parameter for weights
         seg_model = models.load_model(
-            model_file_path,
-            custom_objects=custom_objects,
+            model_file_path, custom_objects=custom_objects, compile=False
         )
 
         predictions = segment_peak_unet(
