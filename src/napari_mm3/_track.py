@@ -1,4 +1,3 @@
-import argparse
 import multiprocessing
 import os
 import pickle
@@ -13,26 +12,21 @@ import napari
 import numpy as np
 import seaborn as sns
 import six
-from magicgui.widgets import ComboBox, FloatSpinBox, PushButton, SpinBox
+from magicgui.widgets import PushButton
 from napari import Viewer
 from napari.utils import progress
 from skimage import io
 from skimage.measure import regionprops
 
 from ._deriving_widgets import (
-    FOVChooser,
     FOVList,
-    MM3Container,
     MM3Container2,
-    PlanePicker,
     get_valid_fovs_folder,
     get_valid_planes,
-    get_valid_times,
     information,
     load_specs,
     load_tiff,
-    load_time_table,
-    range_string_to_indices,
+    load_timetable,
     warning,
 )
 from .utils import (
@@ -384,7 +378,10 @@ class CellTracker:
 
 # Creates lineage for a single channel
 def make_lineage_chnl_stack(
-    ana_dir: Path,
+    timetable: Path,
+    lineages_dir: Path,
+    channels_dir: Path,
+    segmented_dir: Path,
     experiment_name: str,
     fov_and_peak_id: tuple,
     lost_cell_time: int,
@@ -417,14 +414,14 @@ def make_lineage_chnl_stack(
     fov_id, peak_id = fov_and_peak_id
 
     # TODO: Get this to be passed in?
-    time_table = load_time_table(ana_dir)
+    time_table = load_timetable(timetable)
     # start time is the first time point for this series of TIFFs.
     start_time_index = min(time_table[fov_id].keys())
 
     information("Creating lineage for FOV %d, channel %d." % (fov_id, peak_id))
 
     img_filename = TIFF_FILE_FORMAT_PEAK % (experiment_name, fov_id, peak_id, seg_img)
-    image_data_seg = load_tiff(ana_dir / "segmented" / img_filename)
+    image_data_seg = load_tiff(segmented_dir / img_filename)
 
     # Calculate all data for all time points.
     # this list will be length of the number of time points
@@ -465,7 +462,9 @@ def make_lineage_chnl_stack(
 
     ## plot kymograph with lineage overlay & save it out
     plotter = LineagePlotter(
-        ana_dir,
+        lineages_dir,
+        channels_dir,
+        segmented_dir,
         experiment_name,
         fov_id,
         peak_id,
@@ -482,7 +481,10 @@ def make_lineage_chnl_stack(
 
 # finds lineages for all peaks in a fov
 def make_lineages_fov(
-    ana_dir: Path,
+    timetable_path: Path,
+    lineages_path: Path,
+    channels_path: Path,
+    segmented_path: Path,
     experiment_name: str,
     fov_id: int,
     specs: dict,
@@ -538,7 +540,10 @@ def make_lineages_fov(
     for fov_and_peak_ids in progress(fov_and_peak_ids_list):
         lineages.append(
             make_lineage_chnl_stack(
-                ana_dir,
+                timetable_path,
+                lineages_path,
+                channels_path,
+                segmented_path,
                 experiment_name,
                 fov_and_peak_ids,
                 lost_cell_time,
@@ -562,7 +567,7 @@ def make_lineages_fov(
     return cells
 
 
-def load_lineage_image(ana_dir, experiment_name, fov_id, peak_id):
+def load_lineage_image(lin_dir, experiment_name, fov_id, peak_id):
     """Loads a lineage image for the given FOV and peak
 
     Returns
@@ -570,7 +575,6 @@ def load_lineage_image(ana_dir, experiment_name, fov_id, peak_id):
     img_stack : np.ndarray
         Image stack of lineage images
     """
-    lin_dir = ana_dir / "lineages"
 
     lin_filename = f"{experiment_name}_{fov_id}_{peak_id}.tif"
     lin_filepath = lin_dir / lin_filename
@@ -590,7 +594,9 @@ def load_lineage_image(ana_dir, experiment_name, fov_id, peak_id):
 class LineagePlotter:
     def __init__(
         self,
-        ana_dir: Path,
+        lineages_dir: Path,
+        channel_dir: Path,
+        segmented_dir: Path,
         experiment_name: str,
         fov_id: int,
         peak_id: int,
@@ -599,7 +605,9 @@ class LineagePlotter:
         phase_plane: str,
         seg_mode: str,
     ):
-        self.ana_dir = ana_dir
+        self.lineages_dir = lineages_dir
+        self.channel_dir = channel_dir
+        self.segmented_dir = segmented_dir
         self.experiment_name = experiment_name
         self.fov_id = fov_id
         self.peak_id = peak_id
@@ -613,7 +621,7 @@ class LineagePlotter:
         Produces a lineage image for the first valid FOV containing cells
         """
 
-        lin_dir = self.ana_dir / "lineages"
+        lin_dir = self.lineages_dir
         if not os.path.exists(lin_dir):
             os.makedirs(lin_dir)
 
@@ -922,7 +930,7 @@ class LineagePlotter:
             self.peak_id,
             self.phase_plane,
         )
-        image_data_bg = load_tiff(self.ana_dir / "channels" / img_filename)
+        image_data_bg = load_tiff(self.channel_dir / img_filename)
 
         img_filename = TIFF_FILE_FORMAT_PEAK % (
             self.experiment_name,
@@ -930,7 +938,7 @@ class LineagePlotter:
             self.peak_id,
             self.seg_mode,
         )
-        image_data_seg = load_tiff(self.ana_dir / "segmented" / img_filename)
+        image_data_seg = load_tiff(self.segmented_dir / img_filename)
 
         fig, ax = self.plot_cells(
             image_data_bg,
@@ -950,14 +958,17 @@ class InPaths:
         -> upon failure, simply show a list of inputs + update button.
     """
 
-    ana_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis")
+    timetable_path: Annotated[Path, {"mode": "d"}] = Path("./analysis/timetable.json")
+    specs_path: Annotated[Path, {"mode": "d"}] = Path("./analysis/specs.yaml")
+    segmented_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/segmented")
+    channels_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/channels")
     seg_img: Annotated[str, {"choices": ["seg_unet", "seg_otsu"]}] = "seg_unet"
-    seg_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/segmented")
 
 
 @dataclass
 class OutPaths:
     cell_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/cell_data")
+    lineages_path: Annotated[Path, {"mode": "d"}] = Path("./analysis/lineages")
     experiment_name: str = ""
 
 
@@ -1029,10 +1040,10 @@ class RunParams:
 
 def gen_default_run_params(in_files: InPaths):
     try:
-        all_fovs = get_valid_fovs_folder(in_files.seg_dir)
+        all_fovs = get_valid_fovs_folder(in_files.segmented_dir)
         # get the brightest channel as the default phase plane!
         # TODO: Bad! In the long run i'd like to eliminate this.
-        channels = get_valid_planes(in_files.ana_dir / "channels")
+        channels = get_valid_planes(in_files.channels_dir)
         # move this into runparams somehow!
         params = RunParams(
             phase_plane=channels[0],
@@ -1060,7 +1071,7 @@ def track_cells(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
         out_paths.cell_dir.mkdir()
 
     # load specs file
-    specs = load_specs(in_paths.ana_dir)
+    specs = load_specs(in_paths.specs_path)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
     fov_id_list[:] = [fov for fov in fov_id_list if fov in run_params.fovs]
 
@@ -1076,7 +1087,10 @@ def track_cells(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
         # dict of Cell entries, into cells
         cells.update(
             make_lineages_fov(
-                in_paths.ana_dir,
+                in_paths.timetable_path,
+                out_paths.lineages_path,
+                in_paths.channels_dir,
+                in_paths.segmented_dir,
                 out_paths.experiment_name,
                 fov_id,
                 specs,
@@ -1134,7 +1148,7 @@ class Track(MM3Container2):
         viewer = napari.current_viewer()
         viewer.layers.clear()
 
-        specs = load_specs(self.in_paths.ana_dir)
+        specs = load_specs(self.in_paths.specs_path)
         fov = self.run_params.fovs[0]
         for peak, status in specs[fov].items():
             if status == 1:
@@ -1142,7 +1156,10 @@ class Track(MM3Container2):
         fov_and_peak_id = (fov, peak)
         # # there should really be a way of doing this sans side effects...
         make_lineage_chnl_stack(
-            self.in_paths.ana_dir,
+            self.in_paths.timetable_path,
+            self.out_paths.lineages_path,
+            self.in_paths.channels_dir,
+            self.in_paths.segmented_dir,
             self.out_paths.experiment_name,
             fov_and_peak_id,
             self.run_params.lost_cell_time,
@@ -1157,7 +1174,7 @@ class Track(MM3Container2):
             self.run_params.phase_plane,
         )
         img_stack = load_lineage_image(
-            self.in_paths.ana_dir, self.out_paths.experiment_name, fov, peak
+            self.out_paths.lineages_path, self.out_paths.experiment_name, fov, peak
         )
         lin_filename = f"{self.out_paths.experiment_name}_{fov}_{peak}.tif"
 

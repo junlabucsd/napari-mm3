@@ -53,21 +53,21 @@ def load_hdf5(hdf5_location: Path, dataset_name: str):
         return h5f[dataset_name]
 
 
-def load_specs(analysis_dir: Path) -> dict:
+def load_specs(path: Path) -> dict:
     """
     Load specs file which indicates which channels should be analyzed,
     used as empties, or ignored.
     """
-    if analysis_dir.suffix == ".yaml":
-        with (analysis_dir).open("r") as specs_file:
+    if path.suffix == ".yaml":
+        with (path).open("r") as specs_file:
             specs = yaml.safe_load(specs_file)
         return specs
     try:
-        with (analysis_dir / "specs.yaml").open("r") as specs_file:
+        with (path / "specs.yaml").open("r") as specs_file:
             specs = yaml.safe_load(specs_file)
     except FileNotFoundError:
         try:
-            with (analysis_dir / "specs.pkl").open("rb") as specs_file:
+            with (path / "specs.pkl").open("rb") as specs_file:
                 specs = pickle.load(specs_file)
         except ValueError:
             warning("Could not load specs file.")
@@ -75,26 +75,33 @@ def load_specs(analysis_dir: Path) -> dict:
     return specs
 
 
+def parse_timetable(table):
+    new_timetable = {}
+    for fov, time_idxs in table.items():
+        new_timetable[int(fov)] = {}
+        for time_idx, real_time in time_idxs.items():
+            new_timetable[int(fov)][int(time_idx)] = real_time
+    return new_timetable
+
+
 # load the time table
-def load_time_table(ana_dir: Path) -> dict:
+def load_timetable(path: Path) -> dict:
     """
     Load the time table.
     This is so it can be used during Cell creation.
     """
-
+    if path.suffix == ".json":
+        with open(path, "r") as time_table_file:
+            timetable = json.load(time_table_file)  # loads in keys as strings.
+            return parse_timetable(timetable)
     # try first for yaml, then for pkl
     try:
-        with open(ana_dir / "timetable.json", "r") as time_table_file:
-            timetable = json.load(time_table_file)  # loads in keys as strings.
-            new_timetable = {}
-            for fov, time_idxs in timetable.items():
-                new_timetable[int(fov)] = {}
-                for time_idx, real_time in time_idxs.items():
-                    new_timetable[int(fov)][int(time_idx)] = real_time
-            return new_timetable
+        with open(path / "timetable.json", "r") as timetable_file:
+            timetable = json.load(timetable_file)  # loads in keys as strings.
+            return parse_timetable(timetable)
     except FileNotFoundError:
-        with open(ana_dir / "time_table.yaml", "rb") as time_table_file:
-            return yaml.safe_load(time_table_file)
+        with open(path / "time_table.yaml", "rb") as timetable_file:
+            return yaml.safe_load(timetable_file)
 
 
 def get_valid_planes_old(TIFF_folder):

@@ -18,7 +18,7 @@ from ._deriving_widgets import (
     information,
     load_specs,
     load_tiff,
-    load_time_table,
+    load_timetable,
     warning,
 )
 from .utils import TIFF_FILE_FORMAT_PEAK, organize_cells_by_channel
@@ -154,7 +154,7 @@ def find_cell_intensities_worker(
     seg_stack = load_tiff(analysis_dir / "segmented" / seg_filename)
 
     # determine absolute time index
-    time_table = load_time_table(analysis_dir)
+    time_table = load_timetable(analysis_dir)
     times_all = []
     for fov in time_table:
         times_all = np.append(times_all, [int(x) for x in fov.keys()])
@@ -240,7 +240,7 @@ def colors(
     specs = load_specs(analysis_dir)
 
     # load time table. Puts in params dictionary
-    time_table = load_time_table(analysis_dir)
+    time_table = load_timetable(analysis_dir)
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
