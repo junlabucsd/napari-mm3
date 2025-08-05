@@ -144,13 +144,12 @@ def subtract_fluor_helper(all_args):
 
 # this function is used when one FOV doesn't have an empty
 def copy_empty_stack(
-    ana_dir: Path,
-    experiment_name: str,
     empty_dir: Path,
+    experiment_name: str,
     from_fov: int,
     to_fov: int,
     color="c1",
-) -> None:
+):
     """
     Copy an empty stack from one FOV to another.
 
@@ -160,7 +159,6 @@ def copy_empty_stack(
     information(
         "Loading empty stack from FOV {} to save for FOV {}.".format(from_fov, to_fov)
     )
-    empty_dir = ana_dir / "empties"
     empty_filename = TIFF_FILE_FORMAT_NO_PEAK % (
         experiment_name,
         from_fov,
@@ -181,7 +179,8 @@ def copy_empty_stack(
 
 # Do subtraction for an fov over many timepoints
 def subtract_fov_stack(
-    ana_dir: Path,
+    empty_dir: Path,
+    channel_dir: Path,
     experiment_name: str,
     alignment_pad: int,
     num_analyzers: int,
@@ -199,7 +198,6 @@ def subtract_fov_stack(
 
     information("Subtracting peaks for FOV %d." % fov_id)
 
-    empty_dir = ana_dir / "empties"
     empty_filename = TIFF_FILE_FORMAT_NO_PEAK % (
         experiment_name,
         fov_id,
@@ -228,7 +226,7 @@ def subtract_fov_stack(
             peak_id,
             color,
         )
-        image_data = load_tiff(ana_dir / "channels" / image_filename)
+        image_data = load_tiff(channel_dir / image_filename)
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
         # # set up multiprocessing pool to do subtraction. Should wait until finished
@@ -349,7 +347,7 @@ def average_empties(alignment_pad: int, imgs: list, align: bool = True) -> np.nd
 
 # average empty channels from stacks, making another TIFF stack
 def average_empties_stack(
-    ana_dir: Path,
+    channels_dir: Path,
     experiment_name: str,
     empty_dir: Path,
     fov_id: int,
@@ -389,7 +387,7 @@ def average_empties_stack(
             peak_id,
             color,
         )
-        avg_empty_stack = load_tiff(ana_dir / "channels" / avg_empty_stack_filename)
+        avg_empty_stack = load_tiff(channels_dir / avg_empty_stack_filename)
 
     # but if there is more than one empty you need to align and average them per timepoint
     elif len(empty_peak_ids) > 1:
@@ -403,7 +401,7 @@ def average_empties_stack(
                 peak_id,
                 color,
             )
-            image_data = load_tiff(ana_dir / "channels" / empty_stack_filename)
+            image_data = load_tiff(channels_dir / empty_stack_filename)
             empty_stacks.append(image_data)
 
         information(
@@ -445,7 +443,8 @@ class InPaths:
     channels_folder: Annotated[Path, {"mode": "d"}] = (
         Path(".") / "analysis" / "channels"
     )
-    analysis_folder: Annotated[Path, {"mode": "d"}] = Path(".") / "analysis"
+    specs_file: Path = Path("./analysis/specs.yaml")
+    empty_folder: Annotated[Path, {"mode": "d"}] = Path("./analysis/empties")
 
 
 @dataclass
@@ -509,7 +508,7 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     user_spec_fovs = set(run_params.FOVs)
 
     sub_plane = run_params.subtraction_plane
-    empty_dir = in_paths.analysis_folder / "empties"
+    empty_dir = in_paths.empty_folder
     sub_dir = out_paths.subtracted_dir
     # Create folders for subtracted info if they don't exist
     if not empty_dir.exists():
@@ -518,7 +517,7 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
         sub_dir.mkdir()
 
     # load specs file
-    specs = load_specs(in_paths.analysis_folder)
+    specs = load_specs(in_paths.specs_file)
 
     # make list of FOVs to process (keys of specs file)
     fov_id_list = set(sorted(specs.keys()))
@@ -540,7 +539,7 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     for fov_id in fov_id_list:
         # send to function which will create empty stack for each fov.
         averaging_result = average_empties_stack(
-            in_paths.analysis_folder,
+            in_paths.channels_folder,
             out_paths.experiment_name,
             empty_dir,
             fov_id,
@@ -564,9 +563,8 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
             have_empty, key=lambda x: abs(x - fov_id)
         )  # find closest FOV with an empty
         _ = copy_empty_stack(
-            in_paths.analysis_folder,
-            out_paths.experiment_name,
             empty_dir,
+            out_paths.experiment_name,
             from_fov,
             fov_id,
             color=sub_plane,
@@ -577,7 +575,8 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     for fov_id in fov_id_list:
         # send to function which will create empty stack for each fov.
         subtract_fov_stack(
-            in_paths.analysis_folder,
+            empty_dir,
+            in_paths.channels_folder,
             out_paths.experiment_name,
             run_params.alignment_pad,
             run_params.num_analyzers,

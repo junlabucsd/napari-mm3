@@ -58,6 +58,10 @@ def load_specs(analysis_dir: Path) -> dict:
     Load specs file which indicates which channels should be analyzed,
     used as empties, or ignored.
     """
+    if analysis_dir.suffix == ".yaml":
+        with (analysis_dir).open("r") as specs_file:
+            specs = yaml.safe_load(specs_file)
+        return specs
     try:
         with (analysis_dir / "specs.yaml").open("r") as specs_file:
             specs = yaml.safe_load(specs_file)
