@@ -31,7 +31,7 @@ from ._deriving_widgets import (
     FOVList,
     MM3Container2,
     get_valid_fovs_folder,
-    get_valid_planes,
+    get_valid_planes_old,
     get_valid_times,
     information,
     load_tiff,
@@ -726,7 +726,7 @@ def gen_default_run_params(in_files: InPaths):
         t_start, t_end = get_valid_times(in_files.TIFF_dir)
         all_fovs = get_valid_fovs_folder(in_files.TIFF_dir)
         # get the brightest channel as the default phase plane!
-        channels = get_valid_planes(in_files.TIFF_dir)
+        channels = get_valid_planes_old(in_files.TIFF_dir)
         # move this into runparams somehow!
         params = RunParams(
             phase_plane=channels[0],
