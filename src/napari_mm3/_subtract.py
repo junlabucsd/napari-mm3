@@ -1,4 +1,3 @@
-import argparse
 import multiprocessing
 from dataclasses import dataclass
 from multiprocessing.pool import Pool
@@ -9,23 +8,17 @@ import napari
 import numpy as np
 import six
 import tifffile as tiff
-from magicgui.widgets import CheckBox, ComboBox, SpinBox
 from napari import Viewer
 from skimage.feature import match_template
 
 from ._deriving_widgets import (
-    FOVChooser,
     FOVList,
-    MM3Container,
     MM3Container2,
-    PlanePicker,
     get_valid_fovs_folder,
     get_valid_planes,
-    get_valid_times,
     information,
     load_specs,
     load_tiff,
-    range_string_to_indices,
     warning,
 )
 from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
