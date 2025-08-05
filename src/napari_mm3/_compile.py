@@ -777,7 +777,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
         print(f"analyzing FOV {fov}", end="\n")
         chnl_timeseries = []
         img_timeseries = []
-        sorted(paths)  # sort by timestamps
+        paths.sort()  # sort by timestamps
         for path in paths:
             time = get_time(ff.name)
             with tiff.TiffFile(path) as tif:
