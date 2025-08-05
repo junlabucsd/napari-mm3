@@ -1,20 +1,26 @@
 import argparse
 import multiprocessing
+from dataclasses import dataclass
 from multiprocessing.pool import Pool
 from pathlib import Path
+from typing import Annotated
 
 import napari
 import numpy as np
 import six
 import tifffile as tiff
 from magicgui.widgets import CheckBox, ComboBox, SpinBox
+from napari import Viewer
 from skimage.feature import match_template
 
 from ._deriving_widgets import (
     FOVChooser,
+    FOVList,
     MM3Container,
+    MM3Container2,
     PlanePicker,
     get_valid_fovs_folder,
+    get_valid_planes,
     get_valid_times,
     information,
     load_specs,
@@ -429,16 +435,66 @@ def average_empties_stack(
     return True
 
 
-def subtract(
-    ana_dir: Path,
-    experiment_name: str,
-    fovs: list,
-    alignment_pad: int,
-    num_analyzers: int,
-    subtraction_plane: str,
-    fluor_mode: bool,
-    preview=False,
-):
+@dataclass
+class InPaths:
+    """
+    1. check folders for existence, fetch FOVs & times & planes
+        -> upon failure, simply show a list of inputs + update button.
+    """
+
+    channels_folder: Annotated[Path, {"mode": "d"}] = (
+        Path(".") / "analysis" / "channels"
+    )
+    analysis_folder: Annotated[Path, {"mode": "d"}] = Path(".") / "analysis"
+
+
+@dataclass
+class OutPaths:
+    experiment_name: str = ""
+    subtracted_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/subtracted")
+
+
+@dataclass
+class RunParams:
+    FOVs: FOVList
+    subtraction_plane: str
+    alignment_pad: Annotated[
+        int,
+        {
+            "tooltip": "Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image."
+        },
+    ] = 10
+    num_analyzers: int = multiprocessing.cpu_count()
+    fluor_mode: Annotated[str, {"choices": ["phase", "fluorescence"]}] = "phase"
+    preview: bool = True
+
+
+def gen_default_run_params(in_files: InPaths):
+    """Initializes RunParams from a given in_files.
+    Probably better to do this in __new__, but..."""
+    # TODO: combine all planes into one click
+    try:
+        all_fovs = get_valid_fovs_folder(in_files.channels_folder)
+        # TODO: get the brightest channel as the default phase plane!
+        channels = get_valid_planes(in_files.channels_folder)
+        # move this into runparams somehow!
+        params = RunParams(
+            subtraction_plane=channels[0],
+            FOVs=FOVList(all_fovs),
+        )
+        params.__annotations__["subtraction_plane"] = Annotated[
+            str, {"choices": channels}
+        ]
+        return params
+    except FileNotFoundError:
+        raise FileNotFoundError("TIFF folder not found")
+    except ValueError:
+        raise ValueError(
+            "Invalid filenames. Make sure that timestamps are denoted as t[0-9]* and FOVs as xy[0-9]*"
+        )
+
+
+def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     """subtract averages empty channels and then subtracts them from channels with cells"""
 
     # Load the project parameters file
@@ -450,11 +506,11 @@ def subtract(
     # Set the shape better here.
     viewer.grid.shape = (-1, 20)
 
-    user_spec_fovs = set(fovs)
+    user_spec_fovs = set(run_params.FOVs)
 
-    sub_plane = subtraction_plane
-    empty_dir = ana_dir / "empties"
-    sub_dir = ana_dir / "subtracted"
+    sub_plane = run_params.subtraction_plane
+    empty_dir = in_paths.analysis_folder / "empties"
+    sub_dir = out_paths.subtracted_dir
     # Create folders for subtracted info if they don't exist
     if not empty_dir.exists():
         empty_dir.mkdir()
@@ -462,7 +518,7 @@ def subtract(
         sub_dir.mkdir()
 
     # load specs file
-    specs = load_specs(ana_dir)
+    specs = load_specs(in_paths.analysis_folder)
 
     # make list of FOVs to process (keys of specs file)
     fov_id_list = set(sorted(specs.keys()))
@@ -475,10 +531,7 @@ def subtract(
 
     # determine if we are doing fluorescence or phase subtraction, and set flags
     align = True
-    sub_method = "phase"
-    if fluor_mode:
-        align = False
-        sub_method = "fluor"
+    sub_method = "phase" if run_params.fluor_mode == "phase" else "fluor"
 
     ### Make average empty channels ###############################################################
     information("Calculating averaged empties for channel {}.".format(sub_plane))
@@ -487,12 +540,12 @@ def subtract(
     for fov_id in fov_id_list:
         # send to function which will create empty stack for each fov.
         averaging_result = average_empties_stack(
-            ana_dir,
-            experiment_name,
+            in_paths.analysis_folder,
+            out_paths.experiment_name,
             empty_dir,
             fov_id,
             specs,
-            alignment_pad,
+            run_params.alignment_pad,
             color=sub_plane,
             align=align,
         )
@@ -511,7 +564,12 @@ def subtract(
             have_empty, key=lambda x: abs(x - fov_id)
         )  # find closest FOV with an empty
         _ = copy_empty_stack(
-            ana_dir, experiment_name, empty_dir, from_fov, fov_id, color=sub_plane
+            in_paths.analysis_folder,
+            out_paths.experiment_name,
+            empty_dir,
+            from_fov,
+            fov_id,
+            color=sub_plane,
         )
 
     ### Subtract ###########
@@ -519,126 +577,43 @@ def subtract(
     for fov_id in fov_id_list:
         # send to function which will create empty stack for each fov.
         subtract_fov_stack(
-            ana_dir,
-            experiment_name,
-            alignment_pad,
-            num_analyzers,
+            in_paths.analysis_folder,
+            out_paths.experiment_name,
+            run_params.alignment_pad,
+            run_params.num_analyzers,
             sub_dir,
             fov_id,
             specs,
             color=sub_plane,
             method=sub_method,
-            preview=preview,
+            preview=run_params.preview,
         )
     information("Finished subtraction.")
 
     viewer = napari.current_viewer()
 
 
-class Subtract(MM3Container):
-    def create_widgets(self):
-        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
-        self.viewer.text_overlay.visible = False
-        self.fov_widget = FOVChooser(self.valid_fovs)
-        self.alignment_pad_widget = SpinBox(
-            label="alignment pad",
-            value=10,
-            min=0,
-            tooltip="Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image.",
-        )
-        self.mode_widget = ComboBox(
-            choices=[
-                "phase",
-                "fluorescence",
-            ],
-            label="subtraction mode",
-        )
-        self.subtraction_plane_widget = PlanePicker(
-            self.valid_planes, label="subtraction plane"
-        )
-        self.output_display_widget = CheckBox(label="display output")
-
-        self.fov_widget.connect_callback(self.set_fovs)
-        self.alignment_pad_widget.changed.connect(self.set_alignment_pad)
-        self.subtraction_plane_widget.changed.connect(self.set_subtraction_plane)
-        self.mode_widget.changed.connect(self.set_mode)
-
-        self.append(self.fov_widget)
-        self.append(self.alignment_pad_widget)
-        self.append(self.mode_widget)
-        self.append(self.subtraction_plane_widget)
-        self.append(self.output_display_widget)
-
-        self.set_fovs(self.valid_fovs)
-        self.set_alignment_pad()
-        self.set_mode()
-        self.set_subtraction_plane()
-        self.set_view_result()
+class Subtract(MM3Container2):
+    def __init__(self, viewer: Viewer):
+        super().__init__()
+        self.viewer = viewer
+        self.in_paths = InPaths()
+        try:
+            self.run_params = gen_default_run_params(self.in_paths)
+            self.out_paths = OutPaths()
+            self.initialized = True
+            self.regen_widgets()
+        except FileNotFoundError | ValueError:
+            self.initialized = False
+            self.regen_widgets()
 
     def run(self):
-        """Overriding method. Perform mother machine analysis."""
-        subtract(
-            ana_dir=self.analysis_folder,
-            experiment_name=self.experiment_name,
-            fovs=self.fovs,
-            alignment_pad=self.alignment_pad,
-            num_analyzers=multiprocessing.cpu_count(),
-            subtraction_plane=self.subtraction_plane,
-            fluor_mode=self.fluor_mode,
-            preview=self.view_result,
-        )
-
-    def set_fovs(self, fovs):
-        self.fovs = fovs
-
-    def set_alignment_pad(self):
-        self.alignment_pad = self.alignment_pad_widget.value
-
-    def set_subtraction_plane(self):
-        self.subtraction_plane = self.subtraction_plane_widget.value
-
-    def set_mode(self):
-        self.fluor_mode = self.mode_widget.value == "fluorescence"
-
-    def set_view_result(self):
-        self.view_result = self.output_display_widget.value
+        print(self.run_params)
+        subtract(self.in_paths, self.run_params, self.out_paths)
 
 
 if __name__ == "__main__":
-    cur_dir = Path(".")
-    end_time = get_valid_times(cur_dir / "analysis" / "channels")
-    all_fovs = get_valid_fovs_folder(cur_dir / "analysis" / "channels")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--start_time", help="1-indexed time to start at", default=1, type=int
-    )
-    parser.add_argument(
-        "--end_time",
-        help="1-indexed time to end at (exclusive)",
-        default=end_time,
-        type=int,
-    )
-    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
-    p = parser.parse_args()
-
-    if p.fovs == "":
-        fovs = all_fovs
-    else:
-        fovs = range_string_to_indices(p.fovs)
-        for fov in fovs:
-            if fov not in all_fovs:
-                raise ValueError("Some FOVs are out of range for your nd2 file.")
-
-    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
-        raise ValueError("Times out of range")
-
-    subtract(
-        ana_dir=cur_dir / "analysis",
-        experiment_name="",
-        fovs=fovs,
-        alignment_pad=10,
-        num_analyzers=1,  # the assumption is you're running headless to debug
-        subtraction_plane="c1",
-        fluor_mode=False,
-    )
+    in_paths = InPaths()
+    run_params: RunParams = gen_default_run_params(in_paths)
+    out_paths = OutPaths()
+    subtract(in_paths, run_params, out_paths)
