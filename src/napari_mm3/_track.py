@@ -1168,51 +1168,7 @@ class Track(MM3Container2):
 
 
 if __name__ == "__main__":
-    experiment_name = ""
-    cur_dir = Path(".")
-    analysis_folder = cur_dir / "analysis"
-    end_time = get_valid_times(analysis_folder / "channels")
-    all_fovs = get_valid_fovs_folder(analysis_folder / "channels")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--start_time", help="1-indexed time to start at", default=1, type=int
-    )
-    parser.add_argument(
-        "--end_time",
-        help="1-indexed time to end at (exclusive)",
-        default=end_time,
-        type=int,
-    )
-    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
-    p = parser.parse_args()
-
-    if p.fovs == "":
-        fovs = all_fovs
-    else:
-        fovs = range_string_to_indices(p.fovs)
-        for fov in fovs:
-            if fov not in all_fovs:
-                raise ValueError("Some FOVs are out of range for your nd2 file.")
-
-    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
-        raise ValueError("Times out of range")
-
-    track_cells(
-        experiment_name=experiment_name,
-        fovs=fovs,
-        phase_plane="c1",
-        pxl2um=0.11,
-        num_analyzers=multiprocessing.cpu_count(),
-        lost_cell_time=3,
-        new_cell_y_cutoff=150,
-        new_cell_region_cutoff=4,
-        max_growth_length=1.3,
-        min_growth_length=0.8,
-        max_growth_area=1.3,
-        min_growth_area=0.8,
-        seg_img="seg_otsu",
-        ana_dir=analysis_folder,
-        seg_dir=analysis_folder / "segmented",
-        cell_dir=analysis_folder / "cell_data",
-    )
+    in_paths = InPaths()
+    run_params = gen_default_run_params(in_paths)
+    out_paths = OutPaths()
+    track_cells(in_paths, run_params, out_paths)
