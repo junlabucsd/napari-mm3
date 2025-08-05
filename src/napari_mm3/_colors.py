@@ -1,20 +1,20 @@
-import argparse
 import multiprocessing
 import os
 import pickle
+from dataclasses import dataclass
 from functools import partial
 from multiprocessing import Pool
 from pathlib import Path
+from typing import Annotated
 
 import numpy as np
-from magicgui.widgets import ComboBox, FileEdit
+from napari import Viewer
 from skimage import morphology
 
 from ._deriving_widgets import (
-    FOVChooser,
-    MM3Container,
-    PlanePicker,
+    MM3Container2,
     SegmentationMode,
+    get_valid_planes,
     information,
     load_specs,
     load_tiff,
@@ -210,48 +210,22 @@ def colors(
     experiment_name: str,
     analysis_dir: Path,
     num_analyzers: int,
-    fl_channel,
-    seg_method,
-    cellfile_path,
+    fl_channel: str,
+    seg_method: str,
+    cellfile_path: Path,
 ):
     """
     Finds fluorescenct information for cells.
-    Parameters
-    ----------
-    params : dict
-        Dictionary of parameters
-    fl_channel : str
-        Fluorescent channel to analyze
-    seg_method : str
-        Segmentation method to use
-    cellfile_path : str
-        Path to cell file
-
-    Returns
-    -------
-    None
     """
     information("Loading cell data.")
 
     with open(cellfile_path, "rb") as cell_file:
         complete_cells = pickle.load(cell_file)
 
-    # load specs file
     specs = load_specs(analysis_dir)
-
-    # load time table. Puts in params dictionary
     time_table = load_timetable(analysis_dir)
-
-    # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
-
-    # remove fovs if the user specified so
-    # if user_spec_fovs:
-    #     fov_id_list[:] = [fov for fov in fov_id_list if fov in user_spec_fovs]
-
     information("Processing %d FOVs." % len(fov_id_list))
-
-    # create dictionary which organizes cells by fov and peak_id
     cells_by_peak = organize_cells_by_channel(complete_cells, specs)
 
     # multiprocessing
@@ -314,64 +288,70 @@ def colors(
     information("Finished.")
 
 
-class Colors(MM3Container):
-    def create_widgets(self):
-        self.cellfile_widget = FileEdit(
-            label="cell_file",
-            value=Path("./analysis/cell_data/complete_cells.pkl"),
-            tooltip="cell file to be analyzed",
+@dataclass
+class InPaths:
+    cell_file: Path = Path("./analysis/cell_data/complete_cells.pkl")
+    cell_data_folder: Path = Path("./analysis/cell_data")
+    analysis_folder: Path = Path("./analysis")
+    channels_dir: Path = Path("./analysis/channels")
+    segmented_dir: Path = Path("./analysis/segmented")
+    seg_method: Annotated[str, {"choices": ["Otsu", "U-net"]}] = "U-net"
+
+
+@dataclass
+class OutPaths:
+    experiment_name: str = ""
+
+
+@dataclass
+class RunParams:
+    analysis_plane: Annotated[str, {"tooltip": "fluorescence plane to analyze"}]
+    num_analyzers: int = multiprocessing.cpu_count()
+
+
+def gen_default_run_params(in_files: InPaths):
+    try:
+        channels = get_valid_planes(in_files.channels_dir)
+        params = RunParams(
+            analysis_plane=channels[0],
+        )
+        params.__annotations__["analysis_plane"] = Annotated[str, {"choices": channels}]
+        return params
+    except FileNotFoundError:
+        raise FileNotFoundError("TIFF folder not found")
+    except ValueError:
+        raise ValueError(
+            "Invalid filenames. Make sure that timestamps are denoted as t[0-9]* and FOVs as xy[0-9]*"
         )
 
-        ## allow user to choose multiple planes to analyze
-        self.plane_widget = PlanePicker(
-            self.valid_planes,
-            label="analysis plane",
-            tooltip="Fluoresence plane that you would like to analyze",
-        )
-        self.segmentation_method_widget = ComboBox(
-            label="segmentation method", choices=["Otsu", "U-net"]
-        )
-        self.fov_widget = FOVChooser(self.valid_fovs)
 
-        self.set_plane()
-        self.set_segmentation_method()
-        self.set_cellfile()
-        self.set_fovs(self.valid_fovs)
+class Colors(MM3Container2):
+    def __init__(self, viewer: Viewer):
+        super().__init__()
+        self.viewer = viewer
 
-        self.plane_widget.changed.connect(self.set_plane)
-        self.segmentation_method_widget.changed.connect(self.set_segmentation_method)
-        self.cellfile_widget.changed.connect(self.set_cellfile)
-        self.fov_widget.connect_callback(self.set_fovs)
+        self.in_paths = InPaths()
+        try:
+            self.run_params = gen_default_run_params(self.in_paths)
+            self.out_paths = OutPaths()
+            self.initialized = True
+            self.regen_widgets()
 
-        self.append(self.plane_widget)
-        self.append(self.segmentation_method_widget)
-        self.append(self.cellfile_widget)
-        self.append(self.fov_widget)
+        except FileNotFoundError | ValueError:
+            self.initialized = False
+            self.regen_widgets()
 
     def run(self):
         self.viewer.window._status_bar._toggle_activity_dock(True)
-
         colors(
-            self.analysis_folder / "cell_data",
-            self.experiment_name,
-            self.analysis_folder,
-            multiprocessing.cpu_count(),
-            self.fl_plane,
-            self.segmentation_method,
-            str(self.cellfile),
+            self.in_paths.cell_data_folder,
+            self.out_paths.experiment_name,
+            self.in_paths.analysis_folder,
+            self.run_params.num_analyzers,
+            self.run_params.analysis_plane,
+            self.in_paths.seg_method,
+            self.in_paths.cell_file,
         )
-
-    def set_plane(self):
-        self.fl_plane = self.plane_widget.value
-
-    def set_segmentation_method(self):
-        self.segmentation_method = self.segmentation_method_widget.value
-
-    def set_cellfile(self):
-        self.cellfile = self.cellfile_widget.value
-
-    def set_fovs(self, fovs):
-        self.fovs = list(set(fovs))
 
 
 if __name__ == "__main__":
