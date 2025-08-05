@@ -86,7 +86,7 @@ def bce_dice_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         ground truth labels
     y_pred: Tensor
         predicted labels"""
-    loss = losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
+    losses.binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
 
 
 def pixelwise_weighted_bce(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
@@ -114,7 +114,7 @@ def pixelwise_weighted_bce(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
 
         seg = tf.expand_dims(seg, -1)
         weight = tf.expand_dims(weight, -1)
-    except:
+    except:  # noqa: E722
         pass
 
     # Make background weights be equal to the model's prediction
@@ -167,7 +167,7 @@ def binary_acc(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
 
         seg = tf.expand_dims(seg, -1)
         weight = tf.expand_dims(weight, -1)
-    except:
+    except:  # noqa: E722
         pass
 
     return keras.metrics.binary_accuracy(seg, y_pred)
