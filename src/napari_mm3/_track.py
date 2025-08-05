@@ -698,11 +698,11 @@ class LineagePlotter:
         self,
         fig: plt.Figure,
         ax: np.ndarray[plt.Axes],
-        cell_id: str,
+        mother_cell_id: str,
         t: int,
         t_adj: int,
-        x: int,
-        y: int,
+        centroid_x: int,
+        centroid_y: int,
     ) -> Tuple[plt.Figure, np.ndarray[plt.Axes]]:
         """
         Draw lines linking mother to its daughters
@@ -733,8 +733,8 @@ class LineagePlotter:
         ax: plt.Axes
             updated axis
         """
-        d1_id = self.cells[cell_id].daughters[0]
-        d2_id = self.cells[cell_id].daughters[1]
+        d1_id = self.cells[mother_cell_id].daughters[0]
+        d2_id = self.cells[mother_cell_id].daughters[1]
 
         t_next = self.cells[d1_id].times[0] - t_adj
 
@@ -745,7 +745,9 @@ class LineagePlotter:
 
         transFigure = fig.transFigure.inverted()
 
-        coord1 = transFigure.transform(ax[t].transData.transform([x, y]))
+        coord1 = transFigure.transform(
+            ax[t].transData.transform([centroid_x, centroid_y])
+        )
         coordd1 = transFigure.transform(ax[t_next].transData.transform([x_d1, y_d1]))
         coordd2 = transFigure.transform(ax[t_next].transData.transform([x_d2, y_d2]))
 
