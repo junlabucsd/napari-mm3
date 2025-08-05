@@ -489,9 +489,6 @@ def gen_default_run_params(in_files: InPaths):
 def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     """subtract averages empty channels and then subtracts them from channels with cells"""
 
-    # Load the project parameters file
-    information("Loading experiment parameters.")
-
     viewer = napari.current_viewer()
     viewer.layers.clear()
     viewer.grid.enabled = True
@@ -500,22 +497,15 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
 
     user_spec_fovs = set(run_params.FOVs)
 
-    sub_plane = run_params.subtraction_plane
-    empty_dir = in_paths.empty_folder
-    sub_dir = out_paths.subtracted_dir
-    # Create folders for subtracted info if they don't exist
-    if not empty_dir.exists():
-        empty_dir.mkdir()
-    if not sub_dir.exists():
-        sub_dir.mkdir()
+    if not in_paths.empty_folder.exists():
+        in_paths.empty_folder.mkdir()
+    if not out_paths.subtracted_dir.exists():
+        out_paths.subtracted_dir.mkdir()
 
-    # load specs file
     specs = load_specs(in_paths.specs_file)
 
     # make list of FOVs to process (keys of specs file)
     fov_id_list = set(sorted(specs.keys()))
-
-    # remove fovs if the user specified so
     if user_spec_fovs:
         fov_id_list = fov_id_list.intersection(user_spec_fovs)
 
@@ -525,8 +515,11 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     align = True
     sub_method = "phase" if run_params.fluor_mode == "phase" else "fluor"
 
-    ### Make average empty channels ###############################################################
-    information("Calculating averaged empties for channel {}.".format(sub_plane))
+    information(
+        "Calculating averaged empties for channel {}.".format(
+            run_params.subtraction_plane
+        )
+    )
 
     need_empty = []  # list holds fov_ids of fov's that did not have empties
     for fov_id in fov_id_list:
@@ -534,11 +527,11 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
         averaging_result = average_empties_stack(
             in_paths.channels_folder,
             out_paths.experiment_name,
-            empty_dir,
+            in_paths.empty_folder,
             fov_id,
             specs,
             run_params.alignment_pad,
-            color=sub_plane,
+            color=run_params.subtraction_plane,
             align=align,
         )
         # add to list for FOVs that need to be given empties from other FOVs
@@ -556,27 +549,29 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
             have_empty, key=lambda x: abs(x - fov_id)
         )  # find closest FOV with an empty
         _ = copy_empty_stack(
-            empty_dir,
+            in_paths.empty_folder,
             out_paths.experiment_name,
             from_fov,
             fov_id,
-            color=sub_plane,
+            color=run_params.subtraction_plane,
         )
 
     ### Subtract ###########
-    information("Subtracting channels for channel {}.".format(sub_plane))
+    information(
+        "Subtracting channels for channel {}.".format(run_params.subtraction_plane)
+    )
     for fov_id in fov_id_list:
         # send to function which will create empty stack for each fov.
         subtract_fov_stack(
-            empty_dir,
+            in_paths.empty_folder,
             in_paths.channels_folder,
             out_paths.experiment_name,
             run_params.alignment_pad,
             run_params.num_analyzers,
-            sub_dir,
+            out_paths.subtracted_dir,
             fov_id,
             specs,
-            color=sub_plane,
+            color=run_params.subtraction_plane,
             method=sub_method,
             preview=run_params.preview,
         )
