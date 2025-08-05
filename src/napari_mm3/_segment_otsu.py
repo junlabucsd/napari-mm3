@@ -1,37 +1,36 @@
-import argparse
 import multiprocessing
 import os
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
 import napari
 import numpy as np
 import six
 import tifffile as tiff
-from magicgui.widgets import CheckBox, FloatSpinBox, PushButton, SpinBox
+from magicgui.widgets import PushButton
+from napari import Viewer
 from napari.utils import progress
 from scipy import ndimage as ndi
 from skimage import morphology, segmentation
 from skimage.filters import threshold_otsu
 
 from ._deriving_widgets import (
-    FOVChooser,
-    MM3Container,
-    PlanePicker,
+    FOVList,
+    MM3Container2,
     get_valid_fovs_folder,
-    get_valid_times,
+    get_valid_planes,
     information,
     load_specs,
     load_tiff,
-    range_string_to_indices,
-    warning,
 )
 from .utils import TIFF_FILE_FORMAT_PEAK
 
 
 # Do segmentation for a channel time stack
 def segment_chnl_stack(
-    ana_dir,
+    subtracted_dir,
     experiment_name,
     phase_plane,
     seg_dir,  # The directory where the segmented images will be saved.
@@ -67,7 +66,7 @@ def segment_chnl_stack(
         peak_id,
         f"sub_{phase_plane}",
     )
-    sub_stack = load_tiff(ana_dir / "subtracted" / sub_filename)
+    sub_stack = load_tiff(subtracted_dir / sub_filename)
 
     # # set up multiprocessing pool to do segmentation. Will do everything before going on.
     # pool = Pool(processes=params['num_analyzers'])
@@ -219,19 +218,59 @@ def segment_image(
     return labeled_image
 
 
+@dataclass
+class InPaths:
+    specs_path: Path = Path("./analysis/specs.yaml")
+    subtracted_folder: Annotated[Path, {"mode": "d"}] = Path("./analysis/subtracted")
+    experiment_name: str = ""
+
+
+@dataclass
+class OutPaths:
+    segment_folder: Annotated[Path, {"mode": "d"}] = Path("./analysis/segmented")
+    cell_data_folder: Annotated[Path, {"mode": "d"}] = Path("./analysis/cell_data")
+
+
+@dataclass
+class RunParams:
+    FOVs: FOVList
+    phase_plane: str
+    num_analyzers: int = multiprocessing.cpu_count()
+    OTSU_threshold: float = 1.00
+    first_opening_size: Annotated[int, {"min": 0}] = 2
+    distance_threshold: Annotated[int, {"min": 0}] = 2
+    second_opening_size: Annotated[int, {"min": 0}] = 1
+    min_object_size: Annotated[int, {"min": 0}] = 25
+    view_result: bool = True
+
+
+def gen_default_run_params(in_paths: InPaths):
+    """Initializes RunParams from a given in_files.
+    Probably better to do this in __new__, but..."""
+    # TODO: combine all planes into one click
+    try:
+        all_fovs = get_valid_fovs_folder(in_paths.subtracted_folder)
+        # TODO: get the brightest channel as the default phase plane!
+        channels = get_valid_planes(in_paths.subtracted_folder)
+        # move this into runparams somehow!
+        params = RunParams(
+            phase_plane=channels[0],
+            FOVs=FOVList(all_fovs),
+        )
+        params.__annotations__["phase_plane"] = Annotated[str, {"choices": channels}]
+        return params
+    except FileNotFoundError:
+        raise FileNotFoundError("TIFF folder not found")
+    except ValueError:
+        raise ValueError(
+            "Invalid filenames. Make sure that timestamps are denoted as t[0-9]* and FOVs as xy[0-9]*"
+        )
+
+
 def segmentOTSU(
-    ana_dir,
-    experiment_name,
-    phase_plane,
-    seg_dir,
-    num_analyzers,
-    FOV,
-    OTSU_threshold,
-    first_opening_size,
-    distance_threshold,
-    second_opening_size,
-    min_object_size,
-    view_result: bool = False,
+    in_paths: InPaths,
+    run_params: RunParams,
+    out_paths: OutPaths,
 ):
     """
     Segments all channels in all FOVs using the OTSU method.
@@ -239,25 +278,16 @@ def segmentOTSU(
 
     information("Loading experiment parameters.")
 
-    user_spec_fovs = FOV
-
     # create segmentation and cell data folder if they don't exist
-    if not os.path.exists(seg_dir):
-        os.makedirs(seg_dir)
-    if not os.path.exists(ana_dir / "cell_data"):
-        os.makedirs(ana_dir / "cell_data")
+    if not out_paths.segment_folder.exists():
+        out_paths.segment_folder.mkdir()
+    if not out_paths.cell_data_folder.exists():
+        out_paths.cell_data_folder.mkdir()
 
     # load specs file
-    specs = load_specs(ana_dir)
-
-    # make list of FOVs to process (keys of channel_mask file)
+    specs = load_specs(in_paths.specs_path)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
-
-    # remove fovs if the user specified so
-    if user_spec_fovs:
-        fov_id_list[:] = [fov for fov in fov_id_list if fov in user_spec_fovs]
-
-    information("Segmenting %d FOVs." % len(fov_id_list))
+    fov_id_list[:] = [fov for fov in fov_id_list if fov in run_params.FOVs]
 
     ### Do Segmentation by FOV and then peak #######################################################
     information("Segmenting channels using Otsu method.")
@@ -275,133 +305,71 @@ def segmentOTSU(
         for peak_id in ana_peak_ids:
             # send to segmentation
             segment_chnl_stack(
-                ana_dir,
-                experiment_name,
-                phase_plane,
-                seg_dir,
-                num_analyzers,
+                in_paths.subtracted_folder,
+                in_paths.experiment_name,
+                run_params.phase_plane,
+                out_paths.segment_folder,
+                run_params.num_analyzers,
                 fov_id,
                 peak_id,
-                OTSU_threshold,
-                first_opening_size,
-                distance_threshold,
-                second_opening_size,
-                min_object_size,
-                view_result,
+                run_params.OTSU_threshold,
+                run_params.first_opening_size,
+                run_params.distance_threshold,
+                run_params.second_opening_size,
+                run_params.min_object_size,
+                run_params.view_result,
             )
 
     information("Finished segmentation.")
 
 
-class SegmentOtsu(MM3Container):
-    def create_widgets(self):
-        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
-        self.viewer.grid.enabled = False
-        self.viewer.grid.shape = (-1, 20)
-
-        self.plane_picker_widget = PlanePicker(self.valid_planes, label="phase plane")
-        self.otsu_threshold_widget = FloatSpinBox(
-            label="OTSU threshold", min=0.0, max=2.0, step=0.01, value=1
-        )
-        self.first_opening_size_widget = SpinBox(
-            label="first opening size", min=0, value=2
-        )
-        self.distance_threshold_widget = SpinBox(
-            label="distance threshold", min=0, value=2
-        )
-        self.second_opening_size_widget = SpinBox(
-            label="second opening size", min=0, value=1
-        )
-        self.min_object_size_widget = SpinBox(label="min object size", min=0, value=25)
-        self.preview_widget = PushButton(label="generate preview")
-        self.fov_widget = FOVChooser(self.valid_fovs)
-        self.view_result_widget = CheckBox(label="display output", value=True)
-
-        self.plane_picker_widget.changed.connect(self.set_phase_plane)
-        self.fov_widget.connect_callback(self.set_fovs)
-        self.otsu_threshold_widget.changed.connect(self.set_OTSU_threshold)
-        self.first_opening_size_widget.changed.connect(self.set_first_opening_size)
-        self.distance_threshold_widget.changed.connect(self.set_distance_threshold)
-        self.second_opening_size_widget.changed.connect(self.set_second_opening_size)
-        self.min_object_size_widget.changed.connect(self.set_min_object_size)
-        self.preview_widget.clicked.connect(self.render_preview)
-        self.view_result_widget.changed.connect(self.set_view_result)
-
-        self.append(self.plane_picker_widget)
-        self.append(self.otsu_threshold_widget)
-        self.append(self.first_opening_size_widget)
-        self.append(self.distance_threshold_widget)
-        self.append(self.second_opening_size_widget)
-        self.append(self.min_object_size_widget)
-        self.append(self.preview_widget)
-        self.append(self.fov_widget)
-        self.append(self.view_result_widget)
-
-        self.set_fovs(self.valid_fovs)
-        self.set_phase_plane()
-        self.set_OTSU_threshold()
-        self.set_first_opening_size()
-        self.set_distance_threshold()
-        self.set_second_opening_size()
-        self.set_min_object_size()
-        self.set_view_result()
-
+class SegmentOtsu(MM3Container2):
+    def __init__(self, viewer: Viewer):
+        super().__init__()
+        self.viewer = viewer
+        self.in_paths = InPaths()
         try:
-            self.render_preview()
-        except FileNotFoundError:
-            warning(f"Failed to render preview from plane {self.phase_plane}")
+            self.run_params = gen_default_run_params(self.in_paths)
+            self.out_paths = OutPaths()
+            self.initialized = True
+            self.regen_widgets()
 
-    def set_phase_plane(self):
-        self.phase_plane = self.plane_picker_widget.value
+            self.preview_widget = PushButton(label="generate preview")
+            self.append(self.preview_widget)
+            self.preview_widget.changed.connect(self.render_preview)
+        except FileNotFoundError | ValueError:
+            self.initialized = False
+            self.regen_widgets()
 
-    def set_fovs(self, fovs):
-        self.fovs = fovs
-
-    def set_OTSU_threshold(self):
-        self.OTSU_threshold = self.otsu_threshold_widget.value
-
-    def set_first_opening_size(self):
-        self.first_opening_size = self.first_opening_size_widget.value
-
-    def set_distance_threshold(self):
-        self.distance_threshold = self.distance_threshold_widget.value
-
-    def set_second_opening_size(self):
-        self.second_opening_size = self.second_opening_size_widget.value
-
-    def set_min_object_size(self):
-        self.min_object_size = self.min_object_size_widget.value
-
-    def set_view_result(self):
-        self.view_result = self.view_result_widget.value
+    def run(self):
+        segmentOTSU(self.in_paths, self.run_params, self.out_paths)
 
     def render_preview(self):
         self.viewer.layers.clear()
-        # TODO: Add ability to change these to other FOVs
-        valid_fov = self.valid_fovs[0]
-        specs = load_specs(self.analysis_folder)
+        valid_fov = self.run_params.FOVs[0]
+        specs = load_specs(self.in_paths.specs_path)
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         ## pull out first fov & peak id with cells
 
         sub_filename = TIFF_FILE_FORMAT_PEAK % (
-            self.experiment_name,
+            self.in_paths.experiment_name,
             valid_fov,
             valid_peak,
-            f"sub_{self.phase_plane}",
+            f"sub_{self.run_params.phase_plane}",
         )
-        sub_stack = load_tiff(self.analysis_folder / "subtracted" / sub_filename)
+        sub_stack = load_tiff(self.in_paths.subtracted_folder / sub_filename)
 
         # image by image for debug
         segmented_imgs = []
         for sub_image in sub_stack:
             segmented_imgs.append(
                 segment_image(
-                    self.OTSU_threshold,
-                    self.first_opening_size,
-                    self.distance_threshold,
-                    self.second_opening_size,
-                    self.min_object_size,
+                    self.run_params.OTSU_threshold,
+                    self.run_params.first_opening_size,
+                    self.run_params.distance_threshold,
+                    self.run_params.second_opening_size,
+                    self.run_params.min_object_size,
                     sub_image,
                 )
             )
@@ -415,63 +383,9 @@ class SegmentOtsu(MM3Container):
         labels = self.viewer.add_labels(segmented_imgs, name="Labels")
         labels.opacity = 0.5
 
-    def run(self):
-        self.viewer.window._status_bar._toggle_activity_dock(True)
-        segmentOTSU(
-            self.analysis_folder,
-            self.experiment_name,
-            self.phase_plane,
-            self.analysis_folder / "segmented",
-            multiprocessing.cpu_count(),
-            self.fovs,
-            self.OTSU_threshold,
-            self.first_opening_size,
-            self.distance_threshold,
-            self.second_opening_size,
-            self.min_object_size,
-            self.view_result,
-        )
-
 
 if __name__ == "__main__":
-    cur_dir = Path(".")
-    end_time = get_valid_times(cur_dir / "analysis" / "channels")
-    all_fovs = get_valid_fovs_folder(cur_dir / "analysis" / "channels")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--start_time", help="1-indexed time to start at", default=1, type=int
-    )
-    parser.add_argument(
-        "--end_time",
-        help="1-indexed time to end at (exclusive)",
-        default=end_time,
-        type=int,
-    )
-    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
-    p = parser.parse_args()
-
-    if p.fovs == "":
-        fovs = all_fovs
-    else:
-        fovs = range_string_to_indices(p.fovs)
-        for fov in fovs:
-            if fov not in all_fovs:
-                raise ValueError("Some FOVs are out of range for your nd2 file.")
-
-    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
-        raise ValueError("Times out of range")
-
-    segmentOTSU(
-        analysis_folder=cur_dir / "analysis",
-        experiment_name="",
-        phase_plane="c1",
-        segmentation_folder=cur_dir / "analysis" / "segmented",
-        num_analyzers=multiprocessing.cpu_count(),
-        fovs=fovs,
-        OTSU_threshold=1,
-        first_opening_size=2,
-        distance_threshold=1,
-        second_opening_size=2,
-        min_object_size=0,
-    )
+    in_paths = InPaths()
+    run_params = gen_default_run_params(in_paths)
+    out_paths = OutPaths()
+    segmentOTSU(in_paths, run_params, out_paths)
