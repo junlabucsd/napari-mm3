@@ -1,11 +1,10 @@
 from __future__ import division, print_function
 
-import argparse
 import multiprocessing
-import os
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
-import h5py
 import napari
 import numpy as np
 import six
@@ -14,27 +13,22 @@ import tifffile as tiff
 from keras import backend as K
 from keras import losses, models
 from magicgui.widgets import (
-    CheckBox,
-    ComboBox,
-    FileEdit,
     FloatSlider,
     PushButton,
-    SpinBox,
 )
+from napari import Viewer
 from skimage import morphology, segmentation
 from tensorflow import keras
 from tensorflow.python.ops import array_ops, math_ops
 
 from ._deriving_widgets import (
-    FOVChooser,
-    MM3Container,
-    PlanePicker,
+    FOVList,
+    MM3Container2,
     get_valid_fovs_folder,
-    get_valid_times,
+    get_valid_planes,
     information,
     load_specs,
     load_tiff,
-    range_string_to_indices,
 )
 from .utils import TIFF_FILE_FORMAT_PEAK
 
@@ -340,8 +334,8 @@ def segment_fov_unet(
     model,
     experiment_name: str,
     phase_plane: str,
-    ana_dir: str,
-    seg_dir: str,
+    channels_dir: str,
+    seg_dir: Path,
     seg_img,
     trained_model_image_height,
     trained_model_image_width,
@@ -363,8 +357,6 @@ def segment_fov_unet(
     """
 
     information("Segmenting FOV {} with U-net.".format(fov_id))
-
-    color = phase_plane
 
     # load segmentation parameters
     unet_shape = (trained_model_image_height, trained_model_image_width)
@@ -390,7 +382,7 @@ def segment_fov_unet(
         model,
         experiment_name,
         phase_plane,
-        ana_dir,
+        channels_dir,
         seg_dir,
         seg_img,
         batch_size,
@@ -413,7 +405,7 @@ def segment_cells_unet(
     model: keras.Model,
     experiment_name: str,
     phase_plane: str,
-    ana_dir: str,
+    channels_dir: str,
     seg_dir: str,
     seg_img: str,
     batch_size: int,
@@ -436,7 +428,7 @@ def segment_cells_unet(
             peak_id,
             phase_plane,
         )
-        img_stack = load_tiff(ana_dir / "channels" / img_stack_filename)
+        img_stack = load_tiff(channels_dir / img_stack_filename)
 
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
@@ -509,59 +501,94 @@ def segment_peak_unet(
     return predictions
 
 
-def segmentUNet(
-    experiment_name: str,
-    fovs: list,
-    phase_plane: str,
-    model_file: str,
-    trained_model_image_height: int,
-    trained_model_image_width: int,
-    batch_size: int,
-    cell_class_threshold: float,
-    min_object_size: int,
-    normalize_to_one: bool,
-    num_analyzers: int,
-    ana_dir: str,
-    seg_dir: str,
-    cell_dir: str,
-    custom_objects: dict,
-    view_result: bool,
-) -> None:
+@dataclass
+class InPaths:
+    """
+    1. check folders for existence, fetch FOVs & times & planes
+        -> upon failure, simply show a list of inputs + update button.
+    """
+
+    model_file: Path = Path(__file__).parent / "default_unet_model.hdf5"
+    channel_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/channels")
+    specs_file: Path = Path("./analysis/specs.yaml")
+    experiment_name: str = ""
+
+
+@dataclass
+class OutPaths:
+    seg_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/segmented")
+    cell_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/cell_data")
+
+
+@dataclass
+class RunParams:
+    FOVs: FOVList
+    phase_plane: str
+    trained_model_image_height: Annotated[int, {"min": 1, "max": 8192}] = 256
+    trained_model_image_width: Annotated[int, {"min": 1, "max": 8192}] = 32
+    batch_size: Annotated[
+        int,
+        {"tooltip": "different speeds are faster on different computers.", "min": 1},
+    ] = 20
+    cell_class_threshold: Annotated[
+        float, {"min": 0, "max": 1, "widget_type": FloatSlider}
+    ] = 0.5
+    min_object_size: Annotated[int, {"min": 0, "max": 100}] = 25
+    normalize_to_one: Annotated[
+        bool, {"tooltip": "Whether or not to normalize pixel intensities."}
+    ] = True
+    num_analyzers: int = multiprocessing.cpu_count()
+    model_source: Annotated[str, {"choices": ["Pixelwise weighted", "Unweighted"]}] = (
+        "Pixelwise weighted"
+    )
+    view_result: bool = True
+
+
+def gen_default_run_params(in_files: InPaths):
+    try:
+        all_fovs = get_valid_fovs_folder(in_files.channel_dir)
+        # TODO: get the brightest channel as the default phase plane!
+        channels = get_valid_planes(in_files.channel_dir)
+        # move this into runparams somehow!
+        params = RunParams(FOVs=FOVList(all_fovs), phase_plane=channels[0])
+        params.__annotations__["phase_plane"] = Annotated[str, {"choices": channels}]
+        return params
+    except FileNotFoundError:
+        raise FileNotFoundError("TIFF folder not found")
+    except ValueError:
+        raise ValueError(
+            "Invalid filenames. Make sure that timestamps are denoted as t[0-9]* and FOVs as xy[0-9]*"
+        )
+
+
+def segmentUNet(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
+    if run_params.model_source == "Pixelwise weighted":
+        custom_objects = {
+            "binary_acc": binary_acc,
+            "pixelwise_weighted_bce": pixelwise_weighted_bce,
+        }
+
+    elif run_params.model_source == "Unweighted":
+        custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
     information("Loading experiment parameters.")
 
-    information("Using {} threads for multiprocessing.".format(num_analyzers))
-
     # create segmentation and cell data folder if they don't exist
-    if not os.path.exists(seg_dir):
-        os.makedirs(seg_dir)
-    if not os.path.exists(cell_dir):
-        os.makedirs(cell_dir)
+    if not out_paths.seg_dir.exists():
+        out_paths.seg_dir.mkdir()
+    if not out_paths.cell_dir.exists():
+        out_paths.cell_dir.mkdir()
 
     # set segmentation image name for saving and loading segmented images
     seg_img = "seg_unet"
-    pred_img = "pred_unet"
 
     # load specs file
-    specs = load_specs(ana_dir)
-    # print(specs) # for debugging
-
-    # make list of FOVs to process (keys of channel_mask file)
+    specs = load_specs(in_paths.specs_file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
+    if run_params.FOVs:
+        fov_id_list[:] = [fov for fov in fov_id_list if fov in run_params.FOVs]
 
-    # remove fovs if the user specified so
-    if fovs:
-        fov_id_list[:] = [fov for fov in fov_id_list if fov in fovs]
-
-    information("Processing %d FOVs." % len(fov_id_list))
-
-    ### Do Segmentation by FOV and then peak ######
-    information("Segmenting channels using U-net.")
-
-    # load model to pass to algorithm
     information("Loading model...")
-
-    # *** Need parameter for weights
-    seg_model = models.load_model(model_file, custom_objects=custom_objects)
+    seg_model = models.load_model(in_paths.model_file, custom_objects=custom_objects)
     information("Model loaded.")
 
     for fov_id in fov_id_list:
@@ -569,178 +596,50 @@ def segmentUNet(
             fov_id,
             specs,
             seg_model,
-            experiment_name,
-            phase_plane,
-            ana_dir,
-            seg_dir,
+            in_paths.experiment_name,
+            run_params.phase_plane,
+            in_paths.channel_dir,
+            out_paths.seg_dir,
             seg_img,
-            trained_model_image_height,
-            trained_model_image_width,
-            batch_size,
-            cell_class_threshold,
-            min_object_size,
-            num_analyzers,
-            normalize_to_one,
-            view_result,
+            run_params.trained_model_image_height,
+            run_params.trained_model_image_width,
+            run_params.batch_size,
+            run_params.cell_class_threshold,
+            run_params.min_object_size,
+            run_params.num_analyzers,
+            run_params.normalize_to_one,
+            run_params.view_result,
         )
 
     del seg_model
     information("Finished segmentation.")
 
 
-class SegmentUnet(MM3Container):
-    def create_widgets(self):
-        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
-        self.viewer.text_overlay.visible = False
+class SegmentUnet(MM3Container2):
+    def __init__(self, viewer: Viewer):
+        super().__init__()
+        self.viewer = viewer
+        self.in_paths = InPaths()
+        try:
+            self.run_params = gen_default_run_params(self.in_paths)
+            self.out_paths = OutPaths()
+            self.initialized = True
+            self.regen_widgets()
 
-        self.fov_widget = FOVChooser(self.valid_fovs)
-        self.plane_widget = PlanePicker(
-            self.valid_planes,
-            label="phase plane",
-            tooltip="pick the phase plane. first channel is c1, second is c2, etc.",
-        )
-        self.model_file_widget = FileEdit(
-            mode="r",
-            label="model file",
-            tooltip="required. denotes where the model file is stored.",
-        )
-        self.min_object_size_widget = SpinBox(
-            label="min object size",
-            tooltip="the minimum size for an object to be recognized",
-            value=25,
-            min=0,
-            max=100,
-        )
-        self.batch_size_widget = SpinBox(
-            label="batch size",
-            tooltip="how large to make the batches. different speeds are faster on different computers.",
-            value=20,
-            min=1,
-            max=9999,
-        )
-        self.cell_class_threshold_widget = FloatSlider(
-            label="cell class threshold", min=0, max=1.0, value=0.5
-        )
-        self.normalize_widget = CheckBox(label="Rescale pixel intensity", value=True)
-        self.height_widget = SpinBox(label="image height", min=1, max=5000, value=256)
-        self.width_widget = SpinBox(label="image width", min=1, max=5000, value=32)
-        self.model_source_widget = ComboBox(
-            label="Model source", choices=["Pixelwise weighted", "Unweighted"]
-        )
-        self.preview_widget = PushButton(label="generate preview", value=False)
-        self.display_widget = CheckBox(label="Display results", value=True)
-
-        self.append(self.fov_widget)
-        self.append(self.plane_widget)
-        self.append(self.model_file_widget)
-        self.append(self.min_object_size_widget)
-        self.append(self.batch_size_widget)
-        self.append(self.cell_class_threshold_widget)
-        self.append(self.normalize_widget)
-        self.append(self.height_widget)
-        self.append(self.width_widget)
-        self.append(self.model_source_widget)
-        self.append(self.preview_widget)
-        self.append(self.display_widget)
-
-        self.fov_widget.connect_callback(self.set_fovs)
-        self.preview_widget.clicked.connect(self.render_preview)
-        self.display_widget.clicked.connect(self.set_view_result)
-        self.model_source_widget.changed.connect(self.set_model_source)
-        self.model_file_widget.changed.connect(self.set_model_file)
-        self.min_object_size_widget.changed.connect(self.set_min_object_size)
-        self.batch_size_widget.changed.connect(self.set_batch_size)
-        self.cell_class_threshold_widget.changed.connect(self.set_cell_class_threshold)
-        self.normalize_widget.changed.connect(self.set_normalize_to_one)
-        self.height_widget.changed.connect(self.set_trained_model_image_height)
-        self.width_widget.changed.connect(self.set_trained_model_image_width)
-
-        self.set_fovs(self.valid_fovs)
-        self.set_view_result()
-        self.set_model_source()
-        self.set_phase_plane()
-        self.set_model_file()
-        self.set_trained_model_image_height()
-        self.set_trained_model_image_width()
-        self.set_batch_size()
-        self.set_cell_class_threshold()
-        self.set_min_object_size()
-        self.set_normalize_to_one()
-        self.set_num_analyzers()
+            self.preview_widget = PushButton(label="generate preview")
+            self.append(self.preview_widget)
+            self.preview_widget.changed.connect(self.render_preview)
+        except FileNotFoundError | ValueError:
+            self.initialized = False
+            self.regen_widgets()
 
     def run(self):
-        """Overriding method. Perform mother machine analysis."""
-        self.viewer.layers.clear()
-
-        if self.model_source == "Pixelwise weighted":
-            custom_objects = {
-                "binary_acc": binary_acc,
-                "pixelwise_weighted_bce": pixelwise_weighted_bce,
-            }
-
-        elif self.model_source == "Unweighted":
-            custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
-
-        segmentUNet(
-            experiment_name=self.experiment_name,
-            fovs=self.fovs,
-            phase_plane=self.phase_plane,
-            model_file=self.model_file,
-            trained_model_image_height=self.trained_model_image_height,
-            trained_model_image_width=self.trained_model_image_width,
-            batch_size=self.batch_size,
-            cell_class_threshold=self.cell_class_threshold,
-            min_object_size=self.min_object_size,
-            normalize_to_one=self.normalize_to_one,
-            num_analyzers=self.num_analyzers,
-            ana_dir=self.analysis_folder,
-            seg_dir=self.analysis_folder / "segmented",
-            cell_dir=self.analysis_folder / "cell_data",
-            custom_objects=custom_objects,
-            view_result=self.view_result,
-        )
-
-    def set_fovs(self, fovs):
-        self.fovs = fovs
-
-    def set_view_result(self):
-        self.view_result = self.display_widget.value
-
-    def set_model_source(self):
-        self.model_source = self.model_source_widget.value
-
-    def set_phase_plane(self):
-        self.phase_plane = self.plane_widget.value
-
-    def set_model_file(self):
-        self.model_file = self.model_file_widget.value
-
-    def set_trained_model_image_height(self):
-        self.trained_model_image_height = self.height_widget.value
-
-    def set_trained_model_image_width(self):
-        self.trained_model_image_width = self.width_widget.value
-
-    def set_batch_size(self):
-        self.batch_size = self.batch_size_widget.value
-
-    def set_cell_class_threshold(self):
-        self.cell_class_threshold = self.cell_class_threshold_widget.value
-
-    def set_min_object_size(self):
-        self.min_object_size = self.min_object_size_widget.value
-
-    def set_normalize_to_one(self):
-        self.normalize_to_one = self.normalize_widget.value
-
-    def set_num_analyzers(self):
-        self.num_analyzers = multiprocessing.cpu_count()
+        segmentUNet(self.in_paths, self.run_params, self.out_paths)
 
     def render_preview(self):
         self.viewer.layers.clear()
-        self.model_source = self.model_source_widget.value
 
-        if self.model_source == "Pixelwise weighted":
+        if self.run_params.model_source == "Pixelwise weighted":
             custom_objects = {
                 "binary_acc": binary_acc,
                 "pixelwise_weighted_bce": pixelwise_weighted_bce,
@@ -750,30 +649,30 @@ class SegmentUnet(MM3Container):
             custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
 
         # TODO: Add ability to change these to other FOVs
-        valid_fov = self.valid_fovs[0]
-        specs = load_specs(self.analysis_folder)
+        valid_fov = self.run_params.FOVs[0]
+        specs = load_specs(self.in_paths.specs_file)
         # Find first cell-containing peak
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
         ## pull out first fov & peak id with cells
         # load segmentation parameters
         unet_shape = (
-            self.trained_model_image_height,
-            self.trained_model_image_width,
+            self.run_params.trained_model_image_height,
+            self.run_params.trained_model_image_width,
         )
         img_stack_filename = TIFF_FILE_FORMAT_PEAK % (
-            self.experiment_name,
+            self.in_paths.experiment_name,
             valid_fov,
             valid_peak,
-            self.phase_plane,
+            self.run_params.phase_plane,
         )
-        img_stack = load_tiff(self.analysis_folder / "channels" / img_stack_filename)
+        img_stack = load_tiff(self.in_paths.channel_dir / img_stack_filename)
 
         img_height = img_stack.shape[1]
         img_width = img_stack.shape[2]
 
         pad_dict = get_pad_distances(unet_shape, img_height, img_width)
 
-        model_file_path = self.model_file
+        model_file_path = self.in_paths.model_file
 
         # *** Need parameter for weights
         seg_model = models.load_model(
@@ -786,9 +685,9 @@ class SegmentUnet(MM3Container):
             unet_shape,
             pad_dict,
             seg_model,
-            self.batch_size,
-            multiprocessing.cpu_count(),
-            self.normalize_to_one,
+            self.run_params.batch_size,
+            self.run_params.num_analyzers,
+            self.run_params.normalize_to_one,
         )
 
         del seg_model
@@ -796,8 +695,8 @@ class SegmentUnet(MM3Container):
         # binarized and label (if there is a threshold value, otherwise, save a grayscale for debug)
         segmented_imgs = binarize_and_label(
             predictions,
-            self.cellClassThreshold,
-            self.min_object_size,
+            self.run_params.cell_class_threshold,
+            self.run_params.min_object_size,
         )
         # segmented_imgs = predictions.astype("uint8")
         images = self.viewer.add_image(img_stack)
@@ -807,65 +706,7 @@ class SegmentUnet(MM3Container):
 
 
 if __name__ == "__main__":
-    cur_dir = Path(".")
-    end_time = get_valid_times(cur_dir / "analysis" / "channels")
-    all_fovs = get_valid_fovs_folder(cur_dir / "analysis" / "channels")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--start_time", help="1-indexed time to start at", default=1, type=int
-    )
-    parser.add_argument(
-        "--end_time",
-        help="1-indexed time to end at (exclusive)",
-        default=end_time,
-        type=int,
-    )
-    parser.add_argument(
-        "--model_path",
-        help="path to the model",
-        type=int,
-        required=True,
-    )
-    parser.add_argument("--fovs", help="Which FOVs to include?", default="", type=str)
-    p = parser.parse_args()
-
-    if p.fovs == "":
-        fovs = all_fovs
-    else:
-        fovs = range_string_to_indices(p.fovs)
-        for fov in fovs:
-            if fov not in all_fovs:
-                raise ValueError("Some FOVs are out of range for your nd2 file.")
-
-    if (p.start_time < 0) or (p.end_time > end_time) or (p.start_time > p.end_time):
-        raise ValueError("Times out of range")
-
-    model_path = Path(p.model_path)
-
-    model_source = "Pixelwise weighted"
-    if model_source == "Pixelwise weighted":
-        custom_objects = {
-            "binary_acc": binary_acc,
-            "pixelwise_weighted_bce": pixelwise_weighted_bce,
-        }
-    elif model_source == "Unweighted":
-        custom_objects = {"bce_dice_loss": bce_dice_loss, "dice_loss": dice_loss}
-
-    segmentUNet(
-        experiment_name="",
-        fovs=fovs,
-        phase_plane="c1",
-        model_file=model_path,
-        trained_model_image_height=256,
-        trained_model_image_width=32,
-        batch_size=20,
-        cell_class_threshold=0.5,
-        min_object_size=25,
-        normalize_to_one=True,
-        num_analyzers=multiprocessing.cpu_count(),
-        ana_dir=cur_dir / "analysis",
-        seg_dir=cur_dir / "analysis" / "segmented",
-        cell_dir=cur_dir / "analysis" "cell_data",
-        custom_objects=custom_objects,
-    )
+    in_paths = InPaths()
+    run_params = gen_default_run_params(in_paths)
+    out_paths = OutPaths()
+    segmentUNet(in_paths, run_params, out_paths)
