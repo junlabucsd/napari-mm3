@@ -355,24 +355,15 @@ class Colors(MM3Container2):
 
 
 if __name__ == "__main__":
-    cur_dir = Path(".")
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        "--seg_method",
-        help="Otsu or U-net",
-        type=str,
-    )
-    p = parser.parse_args()
-    if p.seg_method not in ("seg_unet", "seg_otsu"):
-        raise ValueError("seg method must be either Otsu or U-net")
-
+    in_paths = InPaths()
+    run_params = gen_default_run_params(in_paths)
+    out_paths = OutPaths()
     colors(
-        Path(".") / "analysis" / "cell_data",
-        "",
-        Path(".") / "analysis",
-        multiprocessing.cpu_count(),
-        "c1",
-        p.seg_method,
-        Path(".") / "analysis" / "cell_data" / "complete_cells.pkl",
+        in_paths.cell_data_folder,
+        out_paths.experiment_name,
+        in_paths.analysis_folder,
+        run_params.num_analyzers,
+        run_params.analysis_plane,
+        in_paths.seg_method,
+        in_paths.cell_file,
     )
