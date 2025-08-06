@@ -1,6 +1,8 @@
 import pathlib
 import pickle
 import re
+from dataclasses import dataclass
+from pathlib import Path
 
 import napari
 import numpy as np
@@ -11,8 +13,10 @@ from napari import Viewer
 from ._deriving_widgets import (
     FOVChooserSingle,
     InteractiveSpinBox,
-    MM3Container,
+    MM3Container2,
     PlanePicker,
+    get_valid_fovs_folder,
+    get_valid_planes,
     information,
     warning,
 )
@@ -257,20 +261,27 @@ def regenerate_fov_specs(
     return new_specs
 
 
-class ChannelPicker(MM3Container):
-    def create_widgets(self):
-        """Overriding method. Serves as the widget constructor. See MM3Container for more details."""
+@dataclass
+class InPaths:
+    ana_dir: Path = Path("./analysis")
+    tiff_dir: Path = Path("./TIFF")
 
-        self.experiment_name_widget.hide()
-        self.load_recent_widget.hide()
-        self.run_widget.hide()
+
+class ChannelPicker(MM3Container2):
+    def __init__(self, viewer: Viewer):
+        super().__init__()
+        self.viewer = viewer
+
+        self.in_paths = InPaths()
+        self.add_in_folders()
 
         # Set up viewer
         self.viewer.grid.enabled = False
         self.viewer.text_overlay.text = OVERLAY_TEXT
         self.viewer.text_overlay.visible = True
         self.viewer.text_overlay.color = "white"
-
+        self.valid_fovs = get_valid_fovs_folder(self.in_paths.ana_dir / "channels")
+        self.valid_planes = get_valid_planes(self.in_paths.ana_dir / "channels")
         self.fov_picker_widget = FOVChooserSingle(self.valid_fovs)
         self.fov_picker_widget.connect(self.update_fov)
         self.append(self.fov_picker_widget)
@@ -305,13 +316,13 @@ class ChannelPicker(MM3Container):
     def update_fov(self):
         self.cur_fov = self.fov_picker_widget.value
         self.specs = regenerate_fov_specs(
-            self.analysis_folder, self.cur_fov, self.threshold, overwrite=False
+            self.in_paths.ana_dir, self.cur_fov, self.threshold, overwrite=False
         )
-        image_fov_stack = load_fov(self.TIFF_folder, self.cur_fov)
+        image_fov_stack = load_fov(self.in_paths.tiff_dir, self.cur_fov)
         self.sorted_peaks = list(sorted(self.specs[self.cur_fov].keys()))
         self.sorted_specs = [self.specs[self.cur_fov][p] for p in self.sorted_peaks]
 
-        self.crosscorrs = load_crosscorrs(self.analysis_folder, self.cur_fov)
+        self.crosscorrs = load_crosscorrs(self.in_paths.ana_dir, self.cur_fov)
 
         self.viewer.layers.clear()
 
@@ -327,6 +338,7 @@ class ChannelPicker(MM3Container):
         self.coords = [
             [[0, p - spread], [channel_height, p + spread]] for p in self.sorted_peaks
         ]
+
         shapes_layer = display_rectangles(
             self.viewer,
             self.coords,
@@ -367,12 +379,12 @@ class ChannelPicker(MM3Container):
         self.specs[self.cur_fov][self.sorted_peaks[shape_i]] = self.sorted_specs[
             shape_i
         ]
-        save_specs(self.analysis_folder, self.specs)
+        save_specs(self.in_paths.ana_dir, self.specs)
 
     def update_threshold(self, shapes_layer):
         self.threshold = self.threshold_widget.value
         self.specs = regenerate_fov_specs(
-            self.analysis_folder, self.cur_fov, self.threshold, overwrite=True
+            self.in_paths.ana_dir, self.cur_fov, self.threshold, overwrite=True
         )
         self.sorted_peaks = list(sorted(self.specs[self.cur_fov].keys()))
         self.sorted_specs = [self.specs[self.cur_fov][p] for p in self.sorted_peaks]
