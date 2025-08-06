@@ -429,11 +429,11 @@ class MM3Container(Container):
 
     def _set_valid_planes(self):
         try:
-            self.valid_planes = get_valid_planes(self.TIFF_folder)
+            self.valid_planes = get_valid_planes_old(self.TIFF_folder)
             self.found_planes = True
         except ValueError:
             try:
-                self.valid_planes = get_valid_planes(
+                self.valid_planes = get_valid_planes_old(
                     self.analysis_folder / "subtracted"
                 )
                 self.found_planes = True
