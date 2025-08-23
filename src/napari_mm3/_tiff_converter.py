@@ -2,7 +2,12 @@ import argparse
 import copy
 import datetime
 import json
+import multiprocessing
 import os
+import re
+import traceback
+from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -13,15 +18,150 @@ import numpy as np
 import tifffile as tiff
 from magicgui.widgets import Container, FileEdit, FloatSpinBox, PushButton
 from napari import Viewer
+from scipy.ndimage import shift
+from skimage.registration import phase_cross_correlation
+from tifffile import imread, imwrite
+from tqdm import tqdm
 
 from ._deriving_widgets import (
-    FOVChooser,
     FOVList,
     MM3Container2,
-    TimeRangeSelector,
     information,
-    range_string_to_indices,
 )
+
+# === User Parameters ===
+# DATA_DIR = "/Users/haochen/Documents/Data/20250521_SJ2624_Mgly_mm/TIFF_0ara_channel1610_1735"  # e.g., "./tif_images"
+# OUTPUT_STACK_DIR = "/Users/haochen/Documents/Data/20250521_SJ2624_Mgly_mm/TIFF_0ara_channel1610_1735_drift_corrected_stacks"
+# OUTPUT_FRAME_DIR = "/Users/haochen/Documents/Data/20250521_SJ2624_Mgly_mm/TIFF_0ara_channel1610_1735_drift_corrected"
+# UPSAMPLE_FACTOR = 5  # Reduce from 10 to 5 for faster run
+# COMPRESSION = "zlib"  # or "lzma" for stronger compression
+# CROP = True  # Crop edges after registration
+# MAX_WORKERS = multiprocessing.cpu_count()  # Limit for multiprocessing
+#
+# os.makedirs(OUTPUT_STACK_DIR, exist_ok=True)
+# os.makedirs(OUTPUT_FRAME_DIR, exist_ok=True)
+#
+#
+# # === Define Per-FOV Processing Function ===
+#
+#
+# def process_fov(
+#     xy_idx,
+#     frames,
+#     data_dir,
+#     output_dir_stack,
+#     output_dir_frames,
+#     upsample_factor=10,
+#     crop=True,
+# ):
+#     frames.sort()
+#     raw_stack = []
+#
+#     for _, _, fname, _ in frames:
+#         img = imread(os.path.join(data_dir, fname))  # [2, H, W]
+#         raw_stack.append(img)
+#
+#     raw_stack = np.stack(raw_stack)  # [T, 2, H, W]
+#     T, C, H, W = raw_stack.shape
+#     corrected_stack = np.empty_like(raw_stack)
+#     shifts = []
+#
+#     ref = raw_stack[T // 2, 0]  # Reference frame from channel 0
+#
+#     for i in range(T):
+#         shift_est, _, _ = phase_cross_correlation(
+#             ref, raw_stack[i, 0], upsample_factor=upsample_factor
+#         )
+#         shifts.append(shift_est)
+#         for ch in range(C):
+#             corrected_stack[i, ch] = shift(
+#                 raw_stack[i, ch], shift=shift_est, mode="constant", cval=0
+#             )
+#
+#     if crop:
+#         shifts = np.array(shifts)
+#         dy = shifts[:, 0]
+#         dx = shifts[:, 1]
+#
+#         top_crop = int(np.ceil(np.max(dy)))
+#         bottom_crop = int(np.ceil(-np.min(dy)))
+#         left_crop = int(np.ceil(np.max(dx)))
+#         right_crop = int(np.ceil(-np.min(dx)))
+#
+#         crop_top = top_crop
+#         crop_bottom = H - bottom_crop
+#         crop_left = left_crop
+#         crop_right = W - right_crop
+#
+#         corrected_stack = corrected_stack[
+#             :, :, crop_top:crop_bottom, crop_left:crop_right
+#         ]
+#
+#     # === Save multi-page stacks per channel ===
+#     for ch in range(C):
+#         stack_file = os.path.join(output_dir_stack, f"xy{xy_idx}_ch{ch}.tif")
+#         imwrite(
+#             stack_file,
+#             corrected_stack[:, ch],
+#             dtype=raw_stack.dtype,
+#             compression="zlib",
+#             photometric="minisblack",
+#         )
+#
+#     # === Save individual dual-channel frames ===
+#     for i, (_, t_str, _, base_name) in enumerate(frames):
+#         frame_file = os.path.join(
+#             output_dir_frames, f"{base_name}_t{t_str}xy{xy_idx}.tif"
+#         )
+#         imwrite(
+#             frame_file, corrected_stack[i], dtype=raw_stack.dtype, compression="zlib"
+#         )
+#
+#     print(f"[DONE] xy{xy_idx} ({T} timepoints)")
+#
+#
+# # === Main Function ===
+# def main():
+#     # Parse all TIFFs and group by FOV
+#     file_pattern = re.compile(r"(.*)_t(\d{4})xy(\d{2})\.tif$")
+#     fov_files = defaultdict(list)
+#
+#     for fname in os.listdir(DATA_DIR):
+#         if not fname.lower().endswith(".tif"):
+#             continue
+#         match = file_pattern.match(fname)
+#         if match:
+#             base, t_str, xy_idx = match.groups()
+#             fov_files[xy_idx].append((int(t_str), t_str, fname, base))
+#
+#     print(f"Found {len(fov_files)} FOVs. Starting parallel processing...")
+#
+#     # Run parallel processing
+#     with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+#         futures = []
+#         for xy_idx, frames in fov_files.items():
+#             futures.append(
+#                 executor.submit(
+#                     process_fov,
+#                     xy_idx,
+#                     frames,
+#                     DATA_DIR,
+#                     OUTPUT_STACK_DIR,
+#                     OUTPUT_FRAME_DIR,
+#                     UPSAMPLE_FACTOR,
+#                     COMPRESSION,
+#                     CROP,
+#                 )
+#             )
+#
+#         # Ensure all complete and capture exceptions
+#         for f in tqdm(futures):
+#             f.result()
+#
+#
+# if __name__ == "__main__":
+#     main()
+#
 
 
 def get_nd2_fovs(data_path):
@@ -35,7 +175,10 @@ def get_nd2_fovs(data_path):
 
 def get_nd2_times(data_path):
     with nd2.ND2File(str(data_path)) as nd2f:
-        return nd2f.sizes["T"]
+        try:
+            return nd2f.sizes["T"]
+        except KeyError:
+            return 1
 
 
 def nd2_iter(nd2f: nd2.ND2File, time_range_ids, fov_list_ids):
@@ -52,7 +195,10 @@ def nd2_iter(nd2f: nd2.ND2File, time_range_ids, fov_list_ids):
         fov: the fov-index of the returned frame.
         image_data: the image at the given time/fov.
     """
-    nd2_time_range = set(range(0, nd2f.sizes["T"]))
+    try:
+        nd2_time_range = set(range(0, nd2f.sizes["T"]))
+    except KeyError:
+        nd2_time_range = set([1])
 
     # if only 1 fov, then just yield the single FOV.
     if "P" not in nd2f.sizes:
@@ -162,7 +308,7 @@ def nd2ToTIFF(
 
     nd2file = in_paths.nd2_file
     file_prefix = os.path.split(os.path.splitext(nd2file)[0])[1]
-    information("Extracting {file_prefix} ...")
+    information(f"Extracting {file_prefix} ...")
     with nd2.ND2File(str(nd2file)) as nd2f:
         # load in the time table.
         # TODO: Add analysis
