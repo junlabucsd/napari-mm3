@@ -316,7 +316,10 @@ def nd2ToTIFF(
         starttime = nd2f.text_info["date"]
         starttime = datetime.datetime.strptime(starttime, "%m/%d/%Y %I:%M:%S %p")
 
-        planes = nd2f.sizes["C"]
+        try:
+            planes = nd2f.sizes["C"]
+        except KeyError:
+            planes = 1
 
         # Extraction range is the time points that will be taken out.
         time_range_ids = range(run_params.image_start - 1, run_params.image_end)
