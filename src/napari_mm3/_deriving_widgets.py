@@ -551,6 +551,7 @@ class MM3Container2(Container):
 
     def __init__(self):
         super().__init__()
+        viewer.window._status_bar._toggle_activity_dock(True)
 
     def regen_widgets(self):
         self.clear()
