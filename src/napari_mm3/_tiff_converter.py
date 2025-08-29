@@ -300,11 +300,11 @@ def nd2ToTIFF(
         image_start, image_end: Image range that we want to turn into TIFFs (inclusive)
     """
     # set up image folders if they do not already exist
-    if not os.path.exists(out_paths.tiff_folder):
-        os.makedirs(out_paths.tiff_folder)
+    if not out_paths.tiff_folder.exists():
+        out_paths.tiff_folder.exists()
 
-    if not os.path.exists(Path(".") / "analysis"):
-        os.makedirs(Path(".") / "analysis")
+    if not Path("./analysis").exists():
+        Path("./analysis").mkdir()
 
     nd2file = in_paths.nd2_file
     file_prefix = os.path.split(os.path.splitext(nd2file)[0])[1]
@@ -312,7 +312,7 @@ def nd2ToTIFF(
     with nd2.ND2File(str(nd2file)) as nd2f:
         # load in the time table.
         # TODO: Add analysis
-        write_timetable(nd2f, Path(".") / "analysis" / "timetable.json")
+        write_timetable(nd2f, out_paths.timetable)
         starttime = nd2f.text_info["date"]
         starttime = datetime.datetime.strptime(starttime, "%m/%d/%Y %I:%M:%S %p")
 
@@ -406,6 +406,21 @@ class TIFFExport(MM3Container2):
         except FileNotFoundError | ValueError:
             self.initialized = False
             self.regen_widgets()
+
+    def regen_widgets(self):
+        super().regen_widgets()
+
+        self.gen_timetable = PushButton(text="gen_timetable")
+        self.append(self.gen_timetable)
+        self.gen_timetable.changed.connect(self.gen_timetable_run)
+
+    def gen_timetable_run(self):
+        # make analysis folder if it doesn't exist already
+        if not self.out_paths.timetable.parent.exists():
+            self.out_paths.timetable.parent.mkdir()
+
+        with nd2.ND2File(str(self.in_paths.nd2_file)) as nd2f:
+            write_timetable(nd2f, self.out_paths.timetable)
 
     def run(self):
         print(self.run_params)
