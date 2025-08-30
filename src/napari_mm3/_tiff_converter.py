@@ -1,4 +1,3 @@
-import argparse
 import copy
 import datetime
 import json
@@ -127,6 +126,7 @@ class RunParams:
 @dataclass
 class OutPaths:
     tiff_folder: Annotated[Path, {"mode": "d"}] = Path("./TIFF/")
+    timetable: Annotated[Path, {"mode": "d"}] = Path("./analysis/timetable.json")
 
 
 # TODO: Make the imaging consistent!
@@ -140,11 +140,7 @@ def gen_default_run_params(in_paths: InPaths):
     )
 
 
-def nd2ToTIFF(
-    in_paths: InPaths,
-    run_params: RunParams,
-    out_paths: OutPaths,
-):
+def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     """
     This script converts a Nikon Elements .nd2 file to individual TIFF files per time point.
     Multiple color planes are stacked in each time point to make a multipage TIFF.
@@ -195,10 +191,7 @@ def nd2ToTIFF(
                 acq_time = None
 
             # add extra axis to make below slicing simpler. removed automatically if only one color
-            if len(image_data.shape) <= 3:
-                image_data = np.expand_dims(image_data, axis=0)
-            # in case one channel, one fov.
-            if len(image_data.shape) == 3:
+            if len(image_data.shape) < 3:
                 image_data = np.expand_dims(image_data, axis=0)
 
             # for just a simple crop
@@ -231,7 +224,7 @@ def nd2ToTIFF(
                 }
             )
             tif_filename = f"{file_prefix}_t{t_id + 1:04d}xy{fov_id + 1:02d}.tif"
-            information("Saving %s." % tif_filename)
+            #     information("Saving %s." % tif_filename)
             tiff.imwrite(
                 out_paths.tiff_folder / tif_filename,
                 data=image_data,
@@ -239,6 +232,19 @@ def nd2ToTIFF(
                 compression="zlib",
                 photometric="minisblack",
             )
+            #
+            # for plane in range(planes):
+            #     tif_filename = (
+            #         f"{file_prefix}_t{t_id + 1:04d}xy{fov_id + 1:02d}c{plane + 1}.tif"
+            #     )
+            #     information("Saving %s." % tif_filename)
+            #     tiff.imwrite(
+            #         out_paths.tiff_folder / tif_filename,
+            #         data=image_data[plane],
+            #         description=metadata_json,
+            #         compression="zlib",
+            #         photometric="minisblack",
+            #     )
 
 
 class TIFFExport(MM3Container2):

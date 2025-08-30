@@ -154,11 +154,8 @@ def fix_orientation(
 
     image_data = np.squeeze(image_data)  # remove singleton dimensions
 
-    # if this is just a phase image give in an extra layer so rest of code is fine
-    flat = False
     if len(image_data.shape) == 2:
         image_data = np.expand_dims(image_data, 0)
-        flat = True
 
     if image_orientation == "up":
         return image_data[:, ::-1, :]
@@ -173,14 +170,12 @@ def fix_orientation(
         else:
             pass
 
-    # just return that first layer if it's that single phase layer.
-    if flat:
-        image_data = image_data[0]
-
     return image_data
 
 
 def find_phase_idx(image_data: np.ndarray, phase_plane: str):
+    if image_data.shape[0] == 1:
+        return 0
     # use 'phase_plane' to find the phase plane in image_data, assuming c1, c2, c3... naming scheme here.
     try:
         return int(re.search("[0-9]", phase_plane).group(0)) - 1  # type:ignore
@@ -590,7 +585,7 @@ def tiff_stack_slice_and_write(
         #     paddings = [[0, 0], [0, 0], [0, y_difference], [0, 0]]  # t  # y  # x  # c
         #     channel_slice = np.pad(channel_slice, paddings, mode="edge")
 
-        channel_stack = channel_stack.squeeze()
+        # channel_stack = channel_stack.squeeze()
         for color_index in range(channel_stack.shape[1]):
             # save stack
             # this is the filename for the channel
@@ -779,9 +774,12 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
         img_timeseries = []
         paths.sort()  # sort by timestamps
         for path in paths:
+            print(path)
             time = get_time(ff.name)
             with tiff.TiffFile(path) as tif:
-                image_data = tif.asarray().squeeze()
+                image_data = tif.asarray()
+            print(image_data.shape)
+
             # TODO: move this out of the loop
             phase_idx = int(find_phase_idx(image_data, p.phase_plane))
 
@@ -853,7 +851,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
 
 class Compile(MM3Container2):
     def __init__(self, viewer: Viewer):
-        super().__init__()
+        super().__init__(viewer)
         self.viewer = viewer
 
         self.in_paths = InPaths()

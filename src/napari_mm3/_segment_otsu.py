@@ -325,7 +325,7 @@ def segmentOTSU(
 
 class SegmentOtsu(MM3Container2):
     def __init__(self, viewer: Viewer):
-        super().__init__()
+        super().__init__(viewer)
         self.viewer = viewer
         self.in_paths = InPaths()
         try:

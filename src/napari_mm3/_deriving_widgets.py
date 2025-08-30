@@ -129,16 +129,14 @@ def get_valid_planes_old(TIFF_folder):
     # pull out first tiff to extract dims
     filepath = filepaths[0]
     test_file = tiff.imread(filepath)
+    print(test_file.shape)
     test_file = np.squeeze(test_file)
     dim = test_file.ndim
     num_channels = test_file.shape[0]
     if dim == 3:
         num_channels = test_file.shape[0]
     elif dim == 2:
-        pattern = r"(c\d+)"
-        num_channels = len(
-            set([re.search(pattern, str(f), re.IGNORECASE).group(1) for f in filepaths])  # type:ignore
-        )
+        num_channels = 1
     else:
         raise ValueError(f"Expected 2 or 3 dimensions but found {dim}.")
 
@@ -549,7 +547,7 @@ class MM3Container2(Container):
     Refer to magicgui.type_map for more details.
     """
 
-    def __init__(self):
+    def __init__(self, viewer: Viewer):
         super().__init__()
         viewer.window._status_bar._toggle_activity_dock(True)
 
