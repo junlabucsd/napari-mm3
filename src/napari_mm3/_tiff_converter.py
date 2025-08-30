@@ -160,7 +160,7 @@ def nd2ToTIFF(
     """
     # set up image folders if they do not already exist
     if not out_paths.tiff_folder.exists():
-        out_paths.tiff_folder.exists()
+        out_paths.tiff_folder.mkdir()
 
     if not Path("./analysis").exists():
         Path("./analysis").mkdir()
