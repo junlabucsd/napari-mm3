@@ -1,7 +1,8 @@
-import multiprocessing
+import multiprocessing as mp
 import os
 import pickle
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Annotated, Tuple
 
@@ -383,7 +384,6 @@ def make_lineage_chnl_stack(
     channels_dir: Path,
     segmented_dir: Path,
     experiment_name: str,
-    fov_and_peak_id: tuple,
     lost_cell_time: int,
     new_cell_y_cutoff: int,
     new_cell_region_cutoff: int,
@@ -394,6 +394,7 @@ def make_lineage_chnl_stack(
     pxl2um: float,
     seg_img: str,
     phase_plane: str,
+    fov_and_peak_id: tuple,
 ) -> dict:
     """
     Create the lineage for a set of segmented images for one channel.
@@ -498,6 +499,8 @@ def make_lineages_fov(
     pxl2um: float,
     seg_img: str,
     phase_plane: str,
+    num_analyzers: int,
+    debug: bool = False,
 ) -> dict:
     """
     For a given fov, create the lineages from the segmented images.
@@ -524,40 +527,41 @@ def make_lineages_fov(
 
     ## This is a list of tuples (fov_id, peak_id) to send to the Pool command
     fov_and_peak_ids_list = [(fov_id, peak_id) for peak_id in ana_peak_ids]
+    # use up all parameters EXCEPT fov_and_peak_ids
+    lineage_chnl_stack_helper = partial(
+        make_lineage_chnl_stack,
+        timetable_path,
+        lineages_path,
+        channels_path,
+        segmented_path,
+        experiment_name,
+        lost_cell_time,
+        new_cell_y_cutoff,
+        new_cell_region_cutoff,
+        max_growth_length,
+        min_growth_length,
+        max_growth_area,
+        min_growth_area,
+        pxl2um,
+        seg_img,
+        phase_plane,
+    )
+    if debug:
+        # # This is the non-parallelized version (useful for debug)
+        lineages = []
+        for fov_and_peak_ids in progress(fov_and_peak_ids_list):
+            lineages.append(lineage_chnl_stack_helper(fov_and_peak_ids))
+    else:
+        # # set up multiprocessing pool. will complete pool before going on
 
-    # # set up multiprocessing pool. will complete pool before going on
-    # pool = Pool(processes=params['num_analyzers'])
+        ctx = mp.get_context("spawn")
+        pool = ctx.Pool(processes=num_analyzers)
+        # # create the lineages for each peak individually
+        # # the output is a list of dictionaries
+        lineages = pool.map(lineage_chnl_stack_helper, fov_and_peak_ids_list)
 
-    # # create the lineages for each peak individually
-    # # the output is a list of dictionaries
-    # lineages = pool.map(make_lineage_chnl_stack, params, fov_and_peak_ids_list, chunksize=8)
-
-    # pool.close() # tells the process nothing more will be added.
-    # pool.join() # blocks script until everything has been processed and workers exit
-
-    # # This is the non-parallelized version (useful for debug)
-    lineages = []
-    for fov_and_peak_ids in progress(fov_and_peak_ids_list):
-        lineages.append(
-            make_lineage_chnl_stack(
-                timetable_path,
-                lineages_path,
-                channels_path,
-                segmented_path,
-                experiment_name,
-                fov_and_peak_ids,
-                lost_cell_time,
-                new_cell_y_cutoff,
-                new_cell_region_cutoff,
-                max_growth_length,
-                min_growth_length,
-                max_growth_area,
-                min_growth_area,
-                pxl2um,
-                seg_img,
-                phase_plane,
-            )
-        )
+        pool.close()  # tells the process nothing more will be added.
+        pool.join()  # blocks script until everything has been processed and workers exit
 
     # combine all dictionaries into one dictionary
     cells = {}  # create dictionary to hold all information
@@ -1106,6 +1110,7 @@ def track_cells(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
                 run_params.pxl2um,
                 in_paths.seg_img,
                 run_params.phase_plane,
+                run_params.num_analyzers,
             )
         )
     information("Finished lineage creation.")
@@ -1163,7 +1168,6 @@ class Track(MM3Container2):
             self.in_paths.channels_dir,
             self.in_paths.segmented_dir,
             self.out_paths.experiment_name,
-            fov_and_peak_id,
             self.run_params.lost_cell_time,
             self.run_params.new_cell_y_cutoff,
             self.run_params.new_cell_region_cutoff,
@@ -1174,6 +1178,7 @@ class Track(MM3Container2):
             self.run_params.max_growth_area,
             self.in_paths.seg_img,
             self.run_params.phase_plane,
+            fov_and_peak_id,
         )
         img_stack = load_lineage_image(
             self.out_paths.lineages_path, self.out_paths.experiment_name, fov, peak
