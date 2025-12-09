@@ -233,17 +233,15 @@ def subtract_fov_stack(
             subtract_phase_args = [
                 (alignment_pad, pair[0], pair[1]) for pair in subtract_pairs
             ]
-            subtracted_imgs = pool.map(
-                subtract_phase_helper, subtract_phase_args, chunksize=10
-            )
+            subtracted_imgs = pool.map(subtract_phase_helper, subtract_phase_args)
         elif method == "fluor":
             subtract_fl_args = [(pair[0], pair[1]) for pair in subtract_pairs]
             subtracted_imgs = pool.map(
                 subtract_fluor_helper, subtract_fl_args, chunksize=10
-            )
+            subtracted_imgs = pool.map(subtract_fluor_helper, subtract_fl_args)
 
-        pool.close()  # tells the process nothing more will be added.
-        pool.join()  # blocks script until everything has been processed and workers exit
+        pool.close()
+        pool.join()
 
         # linear loop for debug
         # # stack them up along a time axis
@@ -595,7 +593,6 @@ class Subtract(MM3Container2):
             self.regen_widgets()
 
     def run(self):
-        print(self.run_params)
         subtract(self.in_paths, self.run_params, self.out_paths)
 
 
