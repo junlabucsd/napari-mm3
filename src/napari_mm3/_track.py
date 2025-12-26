@@ -986,7 +986,7 @@ class RunParams:
         float,
         {"min": 0.0, "max": 2.0, "step": 0.001, "tooltip": "Micrometers per pixel"},
     ] = 0.11
-    num_analyzers: int = multiprocessing.cpu_count()
+    num_analyzers: int = mp.cpu_count()
     lost_cell_time: Annotated[
         int,
         {
