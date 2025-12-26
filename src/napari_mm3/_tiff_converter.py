@@ -56,7 +56,7 @@ def nd2_iter(nd2f: nd2.ND2File, time_range_ids, fov_list_ids):
     try:
         nd2_time_range = set(range(0, nd2f.sizes["T"]))
     except KeyError:
-        nd2_time_range = set([1])
+        nd2_time_range = set([0])
 
     # if only 1 fov, then just yield the single FOV.
     if "P" not in nd2f.sizes:
@@ -94,7 +94,11 @@ def write_timetable(nd2f: nd2.ND2File, path: Path):
             continue
         timestamp = float(int(event["Time [s]"]))
         fov_idx = int(event["P Index"])
-        t_idx = int(event["T Index"])
+        try:
+            t_idx = event["T Index"]
+        except KeyError:
+            t_idx = 0
+        t_idx = int(t_idx)
         if fov_idx not in timetable:
             timetable[fov_idx] = {t_idx: timestamp}
         else:
