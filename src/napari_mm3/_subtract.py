@@ -222,8 +222,6 @@ def subtract_fov_stack(
         image_data = load_tiff(channel_dir / image_filename)
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
-        # # set up multiprocessing pool to do subtraction. Should wait until finished
-        pool = Pool(processes=num_analyzers)
         subtract_pairs = zip(image_data, avg_empty_stack)
 
         # set up multiprocessing pool to do subtraction. Should wait until finished
