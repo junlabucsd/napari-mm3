@@ -964,8 +964,8 @@ class InPaths:
         -> upon failure, simply show a list of inputs + update button.
     """
 
-    timetable_path: Annotated[Path, {"mode": "d"}] = Path("./analysis/timetable.json")
-    specs_path: Annotated[Path, {"mode": "d"}] = Path("./analysis/specs.yaml")
+    timetable_path: Path = Path("./analysis/timetable.json")
+    specs_path: Path = Path("./analysis/specs.yaml")
     segmented_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/segmented")
     channels_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/channels")
     seg_img: Annotated[str, {"choices": ["seg_unet", "seg_otsu"]}] = "seg_unet"
