@@ -327,7 +327,7 @@ def gen_default_run_params(in_files: InPaths):
 
 class Colors(MM3Container2):
     def __init__(self, viewer: Viewer):
-        super().__init__()
+        super().__init__(viewer)
         self.viewer = viewer
 
         self.in_paths = InPaths()
