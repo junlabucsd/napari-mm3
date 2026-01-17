@@ -290,11 +290,11 @@ def colors(
 
 @dataclass
 class InPaths:
-    cell_file: Path = Path("./analysis/cell_data/complete_cells.pkl")
-    cell_data_folder: Path = Path("./analysis/cell_data")
-    analysis_folder: Path = Path("./analysis")
-    channels_dir: Path = Path("./analysis/channels")
-    segmented_dir: Path = Path("./analysis/segmented")
+    cell_file: Path = Path("./analysis/cell_data/all_cells.pkl")
+    cell_data_folder: Annotated[Path, {"mode": "d"}] = Path("./analysis/cell_data")
+    analysis_folder: Annotated[Path, {"mode": "d"}] = Path("./analysis")
+    channels_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/channels")
+    segmented_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/segmented")
     seg_method: Annotated[str, {"choices": ["Otsu", "U-net"]}] = "U-net"
 
 
