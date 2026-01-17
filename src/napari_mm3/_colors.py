@@ -14,7 +14,7 @@ from skimage import morphology
 from ._deriving_widgets import (
     MM3Container2,
     SegmentationMode,
-    get_valid_planes,
+    get_valid_planes_channel_folder,
     information,
     load_specs,
     load_tiff,
@@ -311,7 +311,8 @@ class RunParams:
 
 def gen_default_run_params(in_files: InPaths):
     try:
-        channels = get_valid_planes(in_files.channels_dir)
+        channels = get_valid_planes_channel_folder(in_files.channels_dir)
+        print(channels)
         params = RunParams(
             analysis_plane=channels[0],
         )

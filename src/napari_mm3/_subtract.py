@@ -15,7 +15,7 @@ from ._deriving_widgets import (
     FOVList,
     MM3Container2,
     get_valid_fovs_folder,
-    get_valid_planes,
+    get_valid_planes_channel_folder,
     information,
     load_specs,
     load_tiff,
@@ -223,8 +223,6 @@ def subtract_fov_stack(
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
         subtract_pairs = zip(image_data, avg_empty_stack)
-
-        # set up multiprocessing pool to do subtraction. Should wait until finished
         pool = Pool(processes=num_analyzers)
 
         if method == "phase":
@@ -234,14 +232,11 @@ def subtract_fov_stack(
             subtracted_imgs = pool.map(subtract_phase_helper, subtract_phase_args)
         elif method == "fluor":
             subtract_fl_args = [(pair[0], pair[1]) for pair in subtract_pairs]
-            subtracted_imgs = pool.map(
-                subtract_fluor_helper, subtract_fl_args, chunksize=10
             subtracted_imgs = pool.map(subtract_fluor_helper, subtract_fl_args)
 
         pool.close()
         pool.join()
 
-        # linear loop for debug
         # # stack them up along a time axis
         subtracted_stack = np.stack(subtracted_imgs, axis=0)
 
@@ -464,7 +459,7 @@ def gen_default_run_params(in_files: InPaths):
     try:
         all_fovs = get_valid_fovs_folder(in_files.channels_folder)
         # TODO: get the brightest channel as the default phase plane!
-        channels = get_valid_planes(in_files.channels_folder)
+        channels = get_valid_planes_channel_folder(in_files.channels_folder)
         # move this into runparams somehow!
         params = RunParams(
             subtraction_plane=channels[0],
