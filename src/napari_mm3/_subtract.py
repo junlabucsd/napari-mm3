@@ -9,6 +9,7 @@ import numpy as np
 import six
 import tifffile as tiff
 from napari import Viewer
+from napari.utils import progress
 from skimage.feature import match_template
 
 from ._deriving_widgets import (
@@ -449,7 +450,13 @@ class RunParams:
     ] = 10
     num_analyzers: int = multiprocessing.cpu_count()
     fluor_mode: Annotated[str, {"choices": ["phase", "fluorescence"]}] = "phase"
-    preview: bool = True
+    analyze_all: Annotated[
+        bool,
+        {
+            "tooltip": "Perform subtraction on all challenge. 'fluorescence mode' is ignored. Instead, \n'subtraction_plane' will use phase subtraction, all other planes will use fluorescence subtraction."
+        },
+    ] = True
+    preview: bool = False
 
 
 def gen_default_run_params(in_files: InPaths):
@@ -468,6 +475,7 @@ def gen_default_run_params(in_files: InPaths):
         params.__annotations__["subtraction_plane"] = Annotated[
             str, {"choices": channels}
         ]
+        params.available_channels = channels
         return params
     except FileNotFoundError:
         raise FileNotFoundError("TIFF folder not found")
@@ -586,7 +594,15 @@ class Subtract(MM3Container2):
             self.regen_widgets()
 
     def run(self):
-        subtract(self.in_paths, self.run_params, self.out_paths)
+        if not self.run_params.analyze_all:
+            subtract(self.in_paths, self.run_params, self.out_paths)
+            return
+        for c in self.run_params.available_channels:
+            self.run_params.subtraction_plane = c
+            self.run_params.fluor_mode = "fluorescence"
+            if c == self.run_params.subtraction_plane:
+                self.run_params.fluor_mode = "phase"
+            subtract(self.in_paths, self.run_params, self.out_paths)
 
 
 if __name__ == "__main__":
