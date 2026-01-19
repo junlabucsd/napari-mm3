@@ -626,7 +626,8 @@ class MM3Container2(Container):
             self.append(folder_widget)
 
             def update_value(field, val):
-                vars(self.run_params)[field] = val
+                print(f"Setting {field} to {val}")
+                vars(self.in_paths)[field] = val
 
             # doing it this way (instead of referring to param_field locally inside update_value)
             # gets around python's late-binding.
@@ -634,7 +635,11 @@ class MM3Container2(Container):
 
             # careful about method resolution order here!
             folder_widget.changed.connect(update_value_p)
+            folder_widget.changed.connect(self.regen_run_params)
             folder_widget.changed.connect(self.regen_widgets)
+
+    def regen_run_params(self):
+        pass
 
     def add_dependent_widgets(self):
         for param_field, annotation in self.run_params.__annotations__.items():
