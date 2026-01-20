@@ -237,7 +237,7 @@ class RunParams:
     FOVs: FOVList
     phase_plane: str
     num_analyzers: int = multiprocessing.cpu_count()
-    OTSU_threshold: float = 1.00
+    OTSU_threshold: float = 1.30
     first_opening_size: Annotated[int, {"min": 0}] = 2
     distance_threshold: Annotated[int, {"min": 0}] = 2
     second_opening_size: Annotated[int, {"min": 0}] = 1
