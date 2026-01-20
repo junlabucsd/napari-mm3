@@ -290,7 +290,7 @@ class ChannelPicker(MM3Container2):
             label="crosscorrelation threshold",
             tooltip="the autocorrelation threshold for discerning whether or not a given channel is empty.",
             min=0,
-            max=1,
+            max=1.006,
             value=0.97,
             step=0.005,
             use_float=True,
