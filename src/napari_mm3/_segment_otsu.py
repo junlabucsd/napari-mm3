@@ -9,8 +9,9 @@ import napari
 import numpy as np
 import six
 import tifffile as tiff
-from magicgui.widgets import PushButton
+from magicgui.widgets import Container, PushButton
 from napari import Viewer
+from napari.qt.threading import thread_worker
 from napari.utils import progress
 from scipy import ndimage as ndi
 from skimage import morphology, segmentation
@@ -267,6 +268,49 @@ def gen_default_run_params(in_paths: InPaths):
         )
 
 
+@thread_worker
+def preview_image(
+    in_paths: InPaths,
+    run_params: RunParams,
+    fov_idx: int,
+    peak_idx: int,
+):
+    valid_fov = run_params.FOVs[fov_idx]
+    specs = load_specs(in_paths.specs_path)
+    # Find first cell-containing peak
+    valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][
+        peak_idx
+    ]
+    ## pull out first fov & peak id with cells
+
+    sub_filename = TIFF_FILE_FORMAT_PEAK % (
+        in_paths.experiment_name,
+        valid_fov,
+        valid_peak,
+        f"sub_{run_params.phase_plane}",
+    )
+    sub_stack = load_tiff(in_paths.subtracted_folder / sub_filename)
+
+    # image by image for debug
+    segmented_imgs = []
+    for sub_image in sub_stack:
+        segmented_imgs.append(
+            segment_image(
+                run_params.OTSU_threshold,
+                run_params.first_opening_size,
+                run_params.distance_threshold,
+                run_params.second_opening_size,
+                run_params.min_object_size,
+                sub_image,
+            )
+        )
+
+    # stack them up along a time axis
+    segmented_imgs = np.stack(segmented_imgs, axis=0)
+
+    return segmented_imgs.astype("uint8")
+
+
 def segmentOTSU(
     in_paths: InPaths,
     run_params: RunParams,
@@ -334,22 +378,76 @@ class SegmentOtsu(MM3Container2):
             self.initialized = True
             self.regen_widgets()
 
-            self.preview_widget = PushButton(label="generate preview")
-            self.append(self.preview_widget)
-            self.preview_widget.changed.connect(self.render_preview)
         except FileNotFoundError | ValueError:
             self.initialized = False
             self.regen_widgets()
 
+    def regen_widgets(self):
+        super().regen_widgets()
+        if not self.initialized:
+            return
+        # would be cool to do this with dask but i am lazy for now.
+        self.cur_fov_idx = 0
+        self.increment_fov_widget = PushButton(text="next fov")
+        self.decrement_fov_widget = PushButton(text="prev fov")
+        self.increment_fov_widget.clicked.connect(self.increment_fov)
+        self.increment_fov_widget.clicked.connect(self.render_preview)
+        self.decrement_fov_widget.clicked.connect(self.decrement_fov)
+        self.decrement_fov_widget.clicked.connect(self.render_preview)
+
+        self.change_cur_fov_widget = Container(
+            widgets=[self.decrement_fov_widget, self.increment_fov_widget],
+            layout="horizontal",
+        )
+        self.append(self.change_cur_fov_widget)
+
+        self.cur_peak_idx = 0
+        self.increment_peak_widget = PushButton(text="next peak")
+        self.decrement_peak_widget = PushButton(text="prev peak")
+        self.increment_peak_widget.clicked.connect(self.increment_peak)
+        self.increment_peak_widget.clicked.connect(self.render_preview)
+        self.decrement_peak_widget.clicked.connect(self.decrement_peak)
+        self.decrement_peak_widget.clicked.connect(self.render_preview)
+
+        self.change_cur_peak_widget = Container(
+            widgets=[self.decrement_peak_widget, self.increment_peak_widget],
+            layout="horizontal",
+        )
+        self.append(self.change_cur_peak_widget)
+
+        self.preview_widget = PushButton(label="generate preview")
+        self.append(self.preview_widget)
+        self.preview_widget.changed.connect(self.render_preview)
+        self.render_preview()
+
     def run(self):
         segmentOTSU(self.in_paths, self.run_params, self.out_paths)
 
+    def increment_fov(self):
+        self.cur_fov_idx = min(self.cur_fov_idx + 1, len(self.run_params.FOVs))
+
+    def decrement_fov(self):
+        self.cur_fov_idx = max(self.cur_fov_idx - 1, 0)
+
+    def increment_peak(self):
+        valid_fov = self.run_params.FOVs[self.cur_fov_idx]
+        specs = load_specs(self.in_paths.specs_path)
+        total_peaks = len(
+            [key for key in specs[valid_fov] if specs[valid_fov][key] == 1]
+        )
+        self.cur_peak_idx = min(self.cur_peak_idx + 1, total_peaks)
+
+    def decrement_peak(self):
+        self.cur_peak_idx = max(self.cur_peak_idx - 1, 0)
+
     def render_preview(self):
         self.viewer.layers.clear()
-        valid_fov = self.run_params.FOVs[0]
+        valid_fov = self.run_params.FOVs[self.cur_fov_idx]
         specs = load_specs(self.in_paths.specs_path)
         # Find first cell-containing peak
-        valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][0]
+        valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][
+            self.cur_peak_idx
+        ]
         ## pull out first fov & peak id with cells
 
         sub_filename = TIFF_FILE_FORMAT_PEAK % (
@@ -361,27 +459,14 @@ class SegmentOtsu(MM3Container2):
         sub_stack = load_tiff(self.in_paths.subtracted_folder / sub_filename)
 
         # image by image for debug
-        segmented_imgs = []
-        for sub_image in sub_stack:
-            segmented_imgs.append(
-                segment_image(
-                    self.run_params.OTSU_threshold,
-                    self.run_params.first_opening_size,
-                    self.run_params.distance_threshold,
-                    self.run_params.second_opening_size,
-                    self.run_params.min_object_size,
-                    sub_image,
-                )
-            )
-
-        # stack them up along a time axis
-        segmented_imgs = np.stack(segmented_imgs, axis=0)
-        segmented_imgs = segmented_imgs.astype("uint8")
 
         images = self.viewer.add_image(sub_stack)
         images.gamma = 1
-        labels = self.viewer.add_labels(segmented_imgs, name="Labels")
-        labels.opacity = 0.5
+        worker = preview_image(
+            self.in_paths, self.run_params, self.cur_fov_idx, self.cur_peak_idx
+        )  # create "worker" object
+        worker.returned.connect(self.viewer.add_labels)  # connect callback functions
+        worker.start()  # start the thread!
 
 
 if __name__ == "__main__":
