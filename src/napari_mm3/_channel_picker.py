@@ -349,35 +349,31 @@ class ChannelPicker(MM3Container2):
 
         shapes_layer.mouse_drag_callbacks.append(self.update_classification)
 
-    def update_classification(self, shapes_layer, event):
+    def update_classification(self, shapes_layer: layers.Shapes, event):
+        # quick test!
+        shape_idx, _ = shapes_layer.get_value(event.position, world=True)
         # Figure out what is under our cursors. If nothing, kick out.
-        cursor_data_coordinates = shapes_layer.world_to_data(event.position)
-        shapes_under_cursor = shapes_layer.get_value(cursor_data_coordinates)
-        # Nothing under cursor
-        if shapes_under_cursor is None:
-            return
-        shape_i = shapes_under_cursor[0]
-        # Image under cursor, but no channel
-        if shape_i is None:
+        if shape_idx is None:
             return
 
         # Would be nice to do this with modulo, but sadly we chose -1 0 1 as our convention instead of 0 1 2
         next_color = {-1: 0, 0: 1, 1: -1}
         # Switch to the next color!
-        self.sorted_specs[shape_i] = next_color[self.sorted_specs[shape_i]]
+        self.sorted_specs[shape_idx] = next_color[self.sorted_specs[shape_idx]]
 
         # Redraw extant rectangles
         curr_colors = [SPEC_TO_COLOR[n] for n in self.sorted_specs]
         ## update the shape color accordingly
         # clear existing shapes
         # information(self.viewer.layers)
-        self.viewer.layers[1].data = []
+        if len(self.viewer.layers) > 0:
+            self.viewer.layers[1].data = []
         # redraw with updated colors
         shapes_layer.add(self.coords, shape_type="rectangle", face_color=curr_colors)
 
         # update specs
-        self.specs[self.cur_fov][self.sorted_peaks[shape_i]] = self.sorted_specs[
-            shape_i
+        self.specs[self.cur_fov][self.sorted_peaks[shape_idx]] = self.sorted_specs[
+            shape_idx
         ]
         save_specs(self.in_paths.ana_dir, self.specs)
 
