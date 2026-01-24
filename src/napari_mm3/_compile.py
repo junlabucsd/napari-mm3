@@ -192,6 +192,7 @@ def find_channel_locs(
     channel_width: int,
     channel_detection_snr: float,
     channel_separation: int,
+    trench_length: int,
 ) -> dict:
     """Finds the location of channels from a phase contrast image. The channels are returned in
     a dictionary where the key is the x position of the channel in pixel and the value is a
@@ -224,6 +225,11 @@ def find_channel_locs(
     twothirdpoint = int(image_height * 2.0 / 3.0)
     default_closed_end = proj_diff[:onethirdpoint].argmax()
     default_open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
+    default_closed_end = (
+        proj_diff[:onethirdpoint].argmax()
+        if trench_length < 0
+        else default_open_end - trench_length
+    )
     default_length = default_open_end - default_closed_end
 
     chnl_loc_dict = {}
@@ -237,6 +243,11 @@ def find_channel_locs(
         proj_diff = np.diff(slice_projection_y.astype(np.int32))
         slice_closed_end = proj_diff[:onethirdpoint].argmax()
         slice_open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
+        slice_closed_end = (
+            proj_diff[:onethirdpoint].argmax()
+            if trench_length < 0
+            else slice_open_end - trench_length
+        )
         slice_length = slice_open_end - slice_closed_end
 
         image_height = phase_data.shape[0]
@@ -707,6 +718,7 @@ class RunParams:
     num_analyzers: int = multiprocessing.cpu_count()
     image_orientation: Orientation = Orientation.auto
     image_rotation: Annotated[int, {"max": 90, "min": -90, "widget_type": Slider}] = 0
+    trench_length: int = -1
     channel_width: int = 10
     channel_separation: int = 45
     channel_detection_snr: float = 1.0
@@ -731,12 +743,8 @@ def gen_default_run_params(in_files: InPaths):
         )
         params.__annotations__["phase_plane"] = Annotated[str, {"choices": channels}]
         return params
-    except FileNotFoundError:
-        raise FileNotFoundError("TIFF folder not found")
-    except ValueError:
-        raise ValueError(
-            "Invalid filenames. Make sure that timestamps are denoted as t[0-9]* and FOVs as xy[0-9]*"
-        )
+    except ValueError as e:
+        raise FileNotFoundError("TIFF folder not found or not valid")
 
 
 def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
@@ -759,8 +767,8 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
     fov_to_files = {}
     for ff in found_files:
         fov, time = get_fov(ff.name), get_time(ff.name)
-        if (not time) or (not fov):
-            raise Exception()
+        if (time is None) or (fov is None):
+            raise Exception(f"On {ff}, fov={fov} time={time}")
         if (p.t_start <= time <= p.t_end) and (fov in p.FOVs):
             if fov in fov_to_files:
                 fov_to_files[fov].append(ff)
@@ -796,6 +804,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
                 p.channel_width,
                 p.channel_detection_snr,
                 p.channel_separation,
+                p.trench_length,
             )
 
             chnl_timeseries.append(channel_locs)
@@ -855,6 +864,9 @@ class Compile(MM3Container2):
         self.viewer = viewer
 
         self.in_paths = InPaths()
+        self.regen_run_params()
+
+    def regen_run_params(self):
         try:
             self.run_params = gen_default_run_params(self.in_paths)
             self.out_paths = OutPaths()
@@ -863,7 +875,8 @@ class Compile(MM3Container2):
             self.regen_widgets()
         except FileNotFoundError | ValueError:
             self.initialized = False
-            self.regen_widgets()
+
+        self.regen_widgets()
 
     def run(self):
         print(self.run_params)
