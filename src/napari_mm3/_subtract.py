@@ -115,7 +115,7 @@ def subtract_fluor(
                 "edge",
             )
         empty_size = np.shape(empty_channel)[:2]
-        if crop_size[0] < empty_size[0] or crop_size[1] < empty_size[1]:
+        if (crop_size[0] < empty_size[0]) or (crop_size[1] < empty_size[1]):
             empty_channel = empty_channel[
                 : crop_size[0],
                 : crop_size[1],
@@ -597,11 +597,14 @@ class Subtract(MM3Container2):
         if not self.run_params.analyze_all:
             subtract(self.in_paths, self.run_params, self.out_paths)
             return
+
+        old_subtraction_plane = self.run_params.subtraction_plane
         for c in self.run_params.available_channels:
             self.run_params.subtraction_plane = c
-            self.run_params.fluor_mode = "fluorescence"
-            if c == self.run_params.subtraction_plane:
+            if c == old_subtraction_plane:
                 self.run_params.fluor_mode = "phase"
+            else:
+                self.run_params.fluor_mode = "fluorescence"
             subtract(self.in_paths, self.run_params, self.out_paths)
 
 
