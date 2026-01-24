@@ -1122,9 +1122,10 @@ def track_cells(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     write_cells_to_json(cells, out_paths.cell_dir / "all_cells.json")
 
     complete_cells = find_complete_cells(cells)
-    with open(out_paths.cell_dir / "complete_cells.pkl", "wb") as cell_file:
-        pickle.dump(complete_cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
-    write_cells_to_json(complete_cells, out_paths.cell_dir / "complete_cells.json")
+    if complete_cells is not None:
+        with open(out_paths.cell_dir / "complete_cells.pkl", "wb") as cell_file:
+            pickle.dump(complete_cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
+        write_cells_to_json(complete_cells, out_paths.cell_dir / "complete_cells.json")
 
     information("Finished curating and saving cell data.")
 
