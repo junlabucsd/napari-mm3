@@ -293,7 +293,7 @@ class Annotate(MM3Container):
         timestamps = [
             int(get_numbers.findall(filename.name)[0]) for filename in filenames
         ]
-        mask_stack = np.zeros(np.shape(img_stack), dtype=np.uint16)
+        mask_stack = np.zeros(np.shape(img_stack), dtype=np.int32)
         for timestamp, filename in zip(timestamps, filenames):
             with tiff.TiffFile(filename) as tif:
                 mask_stack[timestamp, :, :] = tif.asarray()
