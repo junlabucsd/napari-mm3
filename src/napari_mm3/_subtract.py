@@ -104,11 +104,11 @@ def subtract_fluor(
                 [
                     [
                         np.int64(0.5 * pad_row_length),
-                        pad_row_length - np.int(0.5 * pad_row_length),
+                        pad_row_length - np.int64(0.5 * pad_row_length),
                     ],
                     [
-                        np.int(0.5 * pad_column_length),
-                        pad_column_length - np.int(0.5 * pad_column_length),
+                        np.int64(0.5 * pad_column_length),
+                        pad_column_length - np.int64(0.5 * pad_column_length),
                     ],
                     [0, 0],
                 ],
@@ -559,7 +559,8 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     information(
         "Subtracting channels for channel {}.".format(run_params.subtraction_plane)
     )
-    for fov_id in fov_id_list:
+
+    for fov_id in progress(fov_id_list):
         # send to function which will create empty stack for each fov.
         subtract_fov_stack(
             in_paths.empty_folder,
@@ -574,6 +575,7 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
             method=sub_method,
             preview=run_params.preview,
         )
+
     information("Finished subtraction.")
 
     viewer = napari.current_viewer()
