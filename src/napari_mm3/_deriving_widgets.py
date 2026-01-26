@@ -5,7 +5,7 @@ import sys
 import time
 import traceback
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from functools import partial
 from pathlib import Path
 
@@ -29,9 +29,9 @@ from magicgui.widgets import (
 from napari import Viewer
 
 
-class SegmentationMode(Enum):
-    OTSU = 1
-    UNET = 2
+class SegmentationMode(StrEnum):
+    OTSU = "seg_otsu"
+    UNET = "seg_unet"
 
 
 # print a warning
