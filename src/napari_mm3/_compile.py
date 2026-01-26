@@ -351,10 +351,12 @@ def compute_xcorr(
             else:
                 crosscorrs[fov_id][peak_id] = False  # type:ignore
 
+    #    pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(analysis_dir / "crosscorrs.json", "w") as xcorrs_file:
+        json.dump(crosscorrs, xcorrs_file, indent=4)
+
     with open(analysis_dir / "crosscorrs.pkl", "wb") as xcorrs_file:
         pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
-    # with open(analysis_dir / "crosscorrs.pkl", "wb") as xcorrs_file:
-    #     json.dump(crosscorrs, xcorrs_file)
 
     return crosscorrs
 
@@ -649,43 +651,6 @@ def load_fov(
     return np.squeeze(np.array(image_fov_stack, dtype=np.int32))
 
 
-def load_fov_quick(
-    image_directory: Path, fov_id: int, filter_str: str = ""
-) -> Union[np.ndarray, None]:
-    """
-    Load a single FOV from a directory of TIFF files.
-    """
-
-    information("getting files")
-    found_files_paths = list(image_directory.glob("*.tif"))
-    get_fov_regex = re.compile(r"xy(\d+)", re.IGNORECASE)
-    fovs = list(
-        int(get_fov_regex.findall(filename.name)[0]) for filename in found_files_paths
-    )
-    found_files = zip(found_files_paths, fovs)
-    found_files = [fpath.name for fpath, fov in found_files if fov == fov_id]
-    if filter_str:
-        found_files = [
-            f for f in found_files if re.search(filter_str, f, re.IGNORECASE)
-        ]
-
-    information("sorting files")
-    found_files = sorted(found_files)  # should sort by timepoint
-
-    if len(found_files) == 0:
-        information("No data found for FOV " + str(fov_id))
-        return None
-
-    image_fov_stack = []
-
-    information("Loading files")
-    with tiff.TiffFile(image_directory / found_files[0]) as tif:
-        image_fov_stack = tif.asarray()
-
-    information("numpying files")
-    return np.squeeze(np.array(image_fov_stack, dtype=np.int32))
-
-
 class Orientation(Enum):
     auto = 1
     up = 2
@@ -764,6 +729,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
     found_files = list(in_paths.TIFF_dir.glob("*.tif"))
     if len(found_files) == 0:
         return
+    print(found_files)
     fov_to_files = {}
     for ff in found_files:
         fov, time = get_fov(ff.name), get_time(ff.name)
@@ -873,7 +839,7 @@ class Compile(MM3Container2):
             self.initialized = True
             self.display_fov_full()
             self.regen_widgets()
-        except FileNotFoundError | ValueError:
+        except FileNotFoundError as e:
             self.initialized = False
 
         self.regen_widgets()
@@ -899,7 +865,6 @@ class Compile(MM3Container2):
             lambda _: setattr(self.viewer.layers[0], "gamma", 0.5)
         )
         image_fov_worker.start()
-        print(self.viewer.layers)
 
 
 if __name__ == "__main__":
