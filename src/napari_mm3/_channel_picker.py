@@ -349,7 +349,7 @@ class ChannelPicker(MM3Container2):
 
         shapes_layer.mouse_drag_callbacks.append(self.update_classification)
 
-    def update_classification(self, shapes_layer: layers.Shapes, event):
+    def update_classification(self, shapes_layer: napari.layers.Shapes, event):
         # quick test!
         shape_idx, _ = shapes_layer.get_value(event.position, world=True)
         # Figure out what is under our cursors. If nothing, kick out.

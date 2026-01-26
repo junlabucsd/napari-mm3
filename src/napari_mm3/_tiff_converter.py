@@ -2,12 +2,52 @@ import copy
 import datetime
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 import nd2
+
+
+def parse_datetime_flexible(date_string: str) -> datetime.datetime:
+    """
+    Parse a datetime string, trying multiple common formats.
+
+    Args:
+        date_string: The datetime string to parse
+
+    Returns:
+        A datetime object
+
+    Raises:
+        ValueError: If none of the known formats match
+    """
+    # Normalize whitespace (collapse multiple spaces into one)
+    normalized = re.sub(r'\s+', ' ', date_string.strip())
+
+    formats = [
+        "%m/%d/%Y %I:%M:%S %p",  # Original format: 12/10/2025 6:58:17 PM
+        "%Y/%m/%d %H:%M:%S",      # 2025/12/10 18:58:17
+        "%Y-%m-%d %H:%M:%S",      # 2025-12-10 18:58:17
+        "%m/%d/%Y %H:%M:%S",      # 12/10/2025 18:58:17
+        "%d/%m/%Y %H:%M:%S",      # 10/12/2025 18:58:17
+        "%Y/%m/%d %I:%M:%S %p",   # 2025/12/10 6:58:17 PM
+    ]
+
+    for fmt in formats:
+        try:
+            return datetime.datetime.strptime(normalized, fmt)
+        except ValueError:
+            continue
+
+    raise ValueError(
+        f"Could not parse datetime '{date_string}' with any known format. "
+        f"Tried formats: {formats}"
+    )
+
+
 import numpy as np
 import tifffile as tiff
 from magicgui.widgets import PushButton
@@ -173,7 +213,7 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
         # TODO: Add analysis
         write_timetable(nd2f, out_paths.timetable)
         starttime = nd2f.text_info["date"]
-        starttime = datetime.datetime.strptime(starttime, "%m/%d/%Y %I:%M:%S %p")
+        starttime = parse_datetime_flexible(starttime)
 
         try:
             planes = nd2f.sizes["C"]
