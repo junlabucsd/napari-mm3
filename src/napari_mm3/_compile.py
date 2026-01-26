@@ -4,6 +4,7 @@ Can be run headless with parameters; if left unspecified it will analyze the ful
 and use the default UI parameters.
 """
 
+import json
 import multiprocessing
 import os
 import pickle
@@ -14,6 +15,7 @@ from multiprocessing import Pool
 from pathlib import Path
 from typing import Annotated, Optional, Union
 
+import matplotlib.pyplot as plt
 import numpy as np
 import six
 import tifffile as tiff
@@ -223,7 +225,6 @@ def find_channel_locs(
     proj_diff = np.diff(projection_y.astype(np.int32))
     onethirdpoint = int(image_height / 3.0)
     twothirdpoint = int(image_height * 2.0 / 3.0)
-    default_closed_end = proj_diff[:onethirdpoint].argmax()
     default_open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
     default_closed_end = (
         proj_diff[:onethirdpoint].argmax()
@@ -241,7 +242,6 @@ def find_channel_locs(
         channel_slice = phase_data[:, peak - crop_wp : peak + crop_wp]
         slice_projection_y = channel_slice.sum(axis=1)
         proj_diff = np.diff(slice_projection_y.astype(np.int32))
-        slice_closed_end = proj_diff[:onethirdpoint].argmax()
         slice_open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
         slice_closed_end = (
             proj_diff[:onethirdpoint].argmax()
