@@ -8,7 +8,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
+import napari.layers.shapes.shapes as shapes
+import napari.utils.transforms.transforms as transforms
 import nd2
+import numpy as np
+import tifffile as tiff
+from magicgui.widgets import PushButton, SpinBox
+from napari import Viewer
+from napari.utils import progress
+
+from ._deriving_widgets import (
+    FOVList,
+    MM3Container2,
+    information,
+)
+
+BLACK = np.array([0.0, 0.0, 0.0])
 
 
 def parse_datetime_flexible(date_string: str) -> datetime.datetime:
@@ -25,15 +40,15 @@ def parse_datetime_flexible(date_string: str) -> datetime.datetime:
         ValueError: If none of the known formats match
     """
     # Normalize whitespace (collapse multiple spaces into one)
-    normalized = re.sub(r'\s+', ' ', date_string.strip())
+    normalized = re.sub(r"\s+", " ", date_string.strip())
 
     formats = [
         "%m/%d/%Y %I:%M:%S %p",  # Original format: 12/10/2025 6:58:17 PM
-        "%Y/%m/%d %H:%M:%S",      # 2025/12/10 18:58:17
-        "%Y-%m-%d %H:%M:%S",      # 2025-12-10 18:58:17
-        "%m/%d/%Y %H:%M:%S",      # 12/10/2025 18:58:17
-        "%d/%m/%Y %H:%M:%S",      # 10/12/2025 18:58:17
-        "%Y/%m/%d %I:%M:%S %p",   # 2025/12/10 6:58:17 PM
+        "%Y/%m/%d %H:%M:%S",  # 2025/12/10 18:58:17
+        "%Y-%m-%d %H:%M:%S",  # 2025-12-10 18:58:17
+        "%m/%d/%Y %H:%M:%S",  # 12/10/2025 18:58:17
+        "%d/%m/%Y %H:%M:%S",  # 10/12/2025 18:58:17
+        "%Y/%m/%d %I:%M:%S %p",  # 2025/12/10 6:58:17 PM
     ]
 
     for fmt in formats:
@@ -46,20 +61,6 @@ def parse_datetime_flexible(date_string: str) -> datetime.datetime:
         f"Could not parse datetime '{date_string}' with any known format. "
         f"Tried formats: {formats}"
     )
-
-
-import numpy as np
-import tifffile as tiff
-from magicgui.widgets import PushButton
-from napari import Viewer
-from napari.qt.threading import thread_worker
-from napari.utils import progress
-
-from ._deriving_widgets import (
-    FOVList,
-    MM3Container2,
-    information,
-)
 
 
 def get_nd2_fovs(data_path):
@@ -182,6 +183,13 @@ def gen_default_run_params(in_paths: InPaths):
         image_end=end_time,
         fov_list=FOVList(list(range(1, total_fovs + 1))),
     )
+
+
+def load_fov(in_paths: InPaths, fov_idx):
+    with nd2.ND2File(str(in_paths.nd2_file)) as nd2f:
+        arr = nd2f.asarray(fov_idx - 1)
+
+    return arr
 
 
 def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
