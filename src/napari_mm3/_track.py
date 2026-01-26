@@ -1130,6 +1130,44 @@ def track_cells(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     information("Finished curating and saving cell data.")
 
 
+def plot_all_lineages(
+    in_paths: InPaths,
+    fovs,
+    lineage_path,
+    experiment_name,
+    cells,
+    start_time_index,
+    phase_plane,
+    seg_img,
+):
+    # load specs file
+    specs = load_specs(in_paths.specs_path)
+    fov_id_list = sorted([fov_id for fov_id in specs.keys()])
+    fov_id_list[:] = [fov for fov in fov_id_list if fov in fovs]
+
+    for fov_id in fov_id_list:
+        ana_peak_ids = []  # channels to be analyzed
+        for peak_id, spec in six.iteritems(specs[fov_id]):
+            if spec == 1:  # 1 means analyze
+                ana_peak_ids.append(peak_id)
+        ana_peak_ids = sorted(ana_peak_ids)  # sort for repeatability
+
+        for peak_id in ana_peak_ids:
+            plotter = LineagePlotter(
+                lineage_path,
+                in_paths.channels_dir,
+                in_paths.segmented_dir,
+                experiment_name,
+                fov_id,
+                peak_id,
+                cells,
+                start_time_index,
+                phase_plane,
+                seg_img,
+            )
+    plotter.make_lineage_plot()
+
+
 class Track(MM3Container2):
     def __init__(self, viewer: Viewer):
         super().__init__(viewer)
