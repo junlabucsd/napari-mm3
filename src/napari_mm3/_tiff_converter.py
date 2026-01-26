@@ -93,9 +93,9 @@ def write_timetable(nd2f: nd2.ND2File, path: Path):
         if "P Index" not in event:
             continue
         timestamp = float(int(event["Time [s]"]))
-        fov_idx = int(event["P Index"])
+        fov_idx = int(event["P Index"]) + 1
         try:
-            t_idx = event["T Index"]
+            t_idx = event["T Index"] + 1
         except KeyError:
             t_idx = 0
         t_idx = int(t_idx)
