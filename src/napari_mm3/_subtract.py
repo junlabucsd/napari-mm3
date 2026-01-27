@@ -95,23 +95,28 @@ def subtract_fluor(
     # check frame size of cropped channel and background, always keep crop channel size the same
     crop_size = np.shape(cropped_channel)[:2]
     empty_size = np.shape(empty_channel)[:2]
+
     if crop_size != empty_size:
-        if crop_size[0] > empty_size[0] or crop_size[1] > empty_size[1]:
+        if (crop_size[0] > empty_size[0]) or (crop_size[1] > empty_size[1]):
             pad_row_length = max(crop_size[0] - empty_size[0], 0)  # prevent negatives
             pad_column_length = max(crop_size[1] - empty_size[1], 0)
+            pad_array = [
+                [
+                    np.int64(0.5 * pad_row_length),
+                    pad_row_length - np.int64(0.5 * pad_row_length),
+                ],
+                [
+                    np.int64(0.5 * pad_column_length),
+                    pad_column_length - np.int64(0.5 * pad_column_length),
+                ],
+                [0, 0],
+            ]
+
+            if empty_channel.ndim == 2:
+                pad_array.pop()
             empty_channel = np.pad(
                 empty_channel,
-                [
-                    [
-                        np.int64(0.5 * pad_row_length),
-                        pad_row_length - np.int64(0.5 * pad_row_length),
-                    ],
-                    [
-                        np.int64(0.5 * pad_column_length),
-                        pad_column_length - np.int64(0.5 * pad_column_length),
-                    ],
-                    [0, 0],
-                ],
+                pad_array,
                 "edge",
             )
         empty_size = np.shape(empty_channel)[:2]
