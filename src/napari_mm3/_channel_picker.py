@@ -8,7 +8,7 @@ import napari
 import numpy as np
 import tifffile as tiff
 import yaml
-from napari import Viewer
+from napari import Viewer, layers
 
 from ._deriving_widgets import (
     FOVChooserSingle,
@@ -33,7 +33,7 @@ SPEC_TO_COLOR = {
 }
 
 OVERLAY_TEXT = (
-    "Interactive channel picker. Click to change channel designation. "
+    "Interactive channel picker. Click to change channel designation. Double click to do alternate channel designation change."
     "Color code:\n"
     "    Green: A channel with bacteria, \n"
     "    Blue: An empty channel without bacteria, to be used as a template. \n"
@@ -142,10 +142,22 @@ def load_crosscorrs(
         The crosscorrelations dictionary.
     """
     information("Getting crosscorrs")
-    with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
-        cross_corrs = pickle.load(data)
-        if fov_id is None:
-            return cross_corrs
+    try:
+        with (analysis_directory / "crosscorrs.json").open() as data:
+            cross_corrs_str = json.load(data)
+            cross_corrs = {}
+            for fov in cross_corrs_str:
+                cross_corrs[int(fov)] = {}
+                for peak in cross_corrs_str[fov]:
+                    cross_corrs[int(fov)][int(peak)] = cross_corrs_str[fov][peak]
+            if fov_id is None:
+                return cross_corrs
+    except FileNotFoundError:
+        with (analysis_directory / "crosscorrs.pkl").open("rb") as data:
+            cross_corrs = pickle.load(data)
+            if fov_id is None:
+                return cross_corrs
+
     fov_crosscorrs = cross_corrs[fov_id]
     average_crosscorrs = {
         peak: fov_crosscorrs[peak]["cc_avg"] for peak in fov_crosscorrs
@@ -199,7 +211,7 @@ def display_rectangles(
     sorted_peaks: list,
     peak_annotations: list,
     crosscorrs: dict,
-) -> napari.layers.Shapes:
+) -> layers.Shapes:
     # Set up crosscorrelation text
     properties = {"peaks": sorted_peaks, "crosscorrs": crosscorrs.values()}
     text_parameters = {
@@ -348,9 +360,9 @@ class ChannelPicker(MM3Container2):
         )
 
         shapes_layer.mouse_drag_callbacks.append(self.update_classification)
+        shapes_layer.mouse_drag_callbacks.append(self.draw_shapes)
 
-    def update_classification(self, shapes_layer: napari.layers.Shapes, event):
-        # quick test!
+    def update_classification(self, shapes_layer: layers.Shapes, event):
         shape_idx, _ = shapes_layer.get_value(event.position, world=True)
         # Figure out what is under our cursors. If nothing, kick out.
         if shape_idx is None:
@@ -358,24 +370,29 @@ class ChannelPicker(MM3Container2):
 
         # Would be nice to do this with modulo, but sadly we chose -1 0 1 as our convention instead of 0 1 2
         next_color = {-1: 0, 0: 1, 1: -1}
-        # Switch to the next color!
-        self.sorted_specs[shape_idx] = next_color[self.sorted_specs[shape_idx]]
-
-        # Redraw extant rectangles
-        curr_colors = [SPEC_TO_COLOR[n] for n in self.sorted_specs]
-        ## update the shape color accordingly
-        # clear existing shapes
-        # information(self.viewer.layers)
-        if len(self.viewer.layers) > 0:
-            self.viewer.layers[1].data = []
-        # redraw with updated colors
-        shapes_layer.add(self.coords, shape_type="rectangle", face_color=curr_colors)
-
-        # update specs
+        self.sorted_specs[shape_idx] = (
+            next_color[self.sorted_specs[shape_idx]]
+            if event.button == 1
+            else next_color[next_color[self.sorted_specs[shape_idx]]]
+        )
         self.specs[self.cur_fov][self.sorted_peaks[shape_idx]] = self.sorted_specs[
             shape_idx
         ]
         save_specs(self.in_paths.ana_dir, self.specs)
+
+    def draw_shapes(self, shapes_layer, event):
+        # Redraw extant rectangles
+        curr_colors = [SPEC_TO_COLOR[n] for n in self.sorted_specs]
+
+        if len(self.viewer.layers) > 1 and (self.viewer.layers[1] is not None):
+            try:
+                shapes_layer.data = []
+            except IndexError as e:
+                print(f"wtf ! {self.viewer.layers}")
+                print(len(self.viewer.layers))
+                return
+        # redraw with updated colors
+        shapes_layer.add(self.coords, shape_type="rectangle", face_color=curr_colors)
 
     def update_threshold(self, shapes_layer):
         self.threshold = self.threshold_widget.value
@@ -393,6 +410,7 @@ class ChannelPicker(MM3Container2):
             self.crosscorrs,
         )
         shapes_layer.mouse_drag_callbacks.append(self.update_classification)
+        shapes_layer.mouse_drag_callbacks.append(self.draw_shapes)
 
     def set_plane(self):
         self.default_plane = int(self.plane_widget.value[-1]) - 1
