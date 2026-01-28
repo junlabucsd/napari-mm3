@@ -424,10 +424,12 @@ class SegmentOtsu(MM3Container2):
         segmentOTSU(self.in_paths, self.run_params, self.out_paths)
 
     def increment_fov(self):
-        self.cur_fov_idx = min(self.cur_fov_idx + 1, len(self.run_params.FOVs))
+        self.cur_fov_idx = min(self.cur_fov_idx + 1, len(self.run_params.FOVs) - 1)
+        self.cur_peak_idx = 0
 
     def decrement_fov(self):
         self.cur_fov_idx = max(self.cur_fov_idx - 1, 0)
+        self.cur_peak_idx = 0
 
     def increment_peak(self):
         valid_fov = self.run_params.FOVs[self.cur_fov_idx]
@@ -435,7 +437,7 @@ class SegmentOtsu(MM3Container2):
         total_peaks = len(
             [key for key in specs[valid_fov] if specs[valid_fov][key] == 1]
         )
-        self.cur_peak_idx = min(self.cur_peak_idx + 1, total_peaks)
+        self.cur_peak_idx = min(self.cur_peak_idx + 1, total_peaks - 1)
 
     def decrement_peak(self):
         self.cur_peak_idx = max(self.cur_peak_idx - 1, 0)
@@ -448,6 +450,7 @@ class SegmentOtsu(MM3Container2):
         valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][
             self.cur_peak_idx
         ]
+        print(f"rendering xy{valid_fov}p{valid_peak}")
         ## pull out first fov & peak id with cells
 
         sub_filename = TIFF_FILE_FORMAT_PEAK % (
