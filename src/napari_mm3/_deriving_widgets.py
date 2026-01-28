@@ -667,9 +667,9 @@ class MM3Container2(Container):
 
             def update_value(field, val):
                 print(val, field)
-                vars(self.run_params)[field] = val
+                vars(self.out_paths)[field] = val
 
-            update_value_p = partial(update_value, param_field)
+            update_value_p = partial(update_value, folder_field)
             folder_widget.changed.connect(update_value_p)
 
     def run(self):
