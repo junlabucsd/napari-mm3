@@ -1,3 +1,4 @@
+import json
 import pathlib
 import pickle
 import re
@@ -102,22 +103,37 @@ def load_fov(image_directory: pathlib.Path, fov_id: int) -> np.ndarray:
         The image stack for the given FOV.
     """
     information("getting files")
-    found_files = image_directory.glob("*.tif")
-    file_string = re.compile(f"xy{fov_id:02d}.*.tif", re.IGNORECASE)
-    found_files = [
+    found_files = list(image_directory.glob("*.tif"))
+    print(found_files)
+    # need to suport arbitrary length fov spec!
+    file_string = re.compile(f"xy{fov_id:03d}.*.tif", re.IGNORECASE)
+    matching_files = [
         f.name for f in found_files if re.search(file_string, f.name)
     ]  # remove pre-path
     information("sorting files")
-    found_files = sorted(found_files)  # should sort by timepoint
+    matching_files = sorted(matching_files)  # should sort by timepoint
+    print(fov_id, image_directory)
 
-    if len(found_files) == 0:
+    if len(matching_files) == 0:
         information("No data found for FOV " + str(fov_id))
-        return
+        file_string = re.compile(f"xy{fov_id:02d}.*.tif", re.IGNORECASE)
+        print(file_string)
+        print([f.name for f in found_files])
+        matching_files = [
+            f.name for f in found_files if re.search(file_string, f.name)
+        ]  # remove pre-path
+        print(matching_files)
+        information("sorting files")
+        matching_files = sorted(matching_files)  # should sort by timepoint
+
+        if len(matching_files) == 0:
+            information("No data found for FOV " + str(fov_id))
+            return
 
     image_fov_stack = []
 
     information("Loading files")
-    for img_filename in found_files:
+    for img_filename in matching_files:
         with tiff.TiffFile(image_directory / img_filename) as tif:
             image_fov_stack.append(tif.asarray())
 
