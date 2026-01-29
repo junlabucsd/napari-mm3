@@ -352,8 +352,18 @@ def compute_xcorr(
                 crosscorrs[fov_id][peak_id] = False  # type:ignore
 
     #    pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
+    json_crosscorrs = {}
+    for fov, fov_val in crosscorrs.items():
+        json_crosscorrs[str(fov)] = {}
+        for peak, peak_val in fov_val.items():
+            json_crosscorrs[str(fov)][str(peak)] = {}
+            json_crosscorrs[str(fov)][str(peak)]["cc_avg"] = float(peak_val["cc_avg"])
+            json_crosscorrs[str(fov)][str(peak)]["ccs"] = list(
+                map(float, peak_val["ccs"])
+            )
+
     with open(analysis_dir / "crosscorrs.json", "w") as xcorrs_file:
-        json.dump(crosscorrs, xcorrs_file, indent=4)
+        json.dump(json_crosscorrs, xcorrs_file, indent=4)
 
     with open(analysis_dir / "crosscorrs.pkl", "wb") as xcorrs_file:
         pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
@@ -838,7 +848,6 @@ class Compile(MM3Container2):
             self.out_paths = OutPaths()
             self.initialized = True
             self.display_fov_full()
-            self.regen_widgets()
         except FileNotFoundError as e:
             self.initialized = False
 

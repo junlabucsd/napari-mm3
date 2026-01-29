@@ -474,7 +474,7 @@ def make_lineage_chnl_stack(
         phase_plane,
         seg_img,
     )
-    plotter.make_lineage_plot()
+    # plotter.make_lineage_plot()
 
     # return the dictionary with all the cells
     return cells

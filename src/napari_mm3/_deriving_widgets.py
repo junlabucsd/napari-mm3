@@ -537,10 +537,7 @@ class MM3Container(Container):
                 continue
             current_params[widget.label] = _serialize_widget(widget)
 
-        # If the most recent run has the same parameters as our current run, do nothing.
-        old_params = self._get_most_recent_run()
-        if old_params and old_params == current_params:
-            return
+        # If the most recent run has the same parameters as our current run, update timestamp, but do nothing.
         timestamp = datetime.now()
         history.append((widget_name, str(timestamp), current_params))
 

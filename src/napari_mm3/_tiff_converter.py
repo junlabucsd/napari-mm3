@@ -3,19 +3,17 @@ import datetime
 import json
 import os
 import re
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
-import napari.layers.shapes.shapes as shapes
-import napari.utils.transforms.transforms as transforms
 import nd2
 import numpy as np
 import tifffile as tiff
 from magicgui.widgets import PushButton, SpinBox
 from napari import Viewer
 from napari.utils import progress
+from scipy.ndimage import rotate
 
 from ._deriving_widgets import (
     FOVList,
@@ -148,6 +146,15 @@ def write_timetable(nd2f: nd2.ND2File, path: Path):
         json.dump(timetable, f, indent=4)
 
 
+def fix_rotation(angle: float, image_data: np.ndarray) -> np.ndarray:
+    # need to add support for no channels.
+    if angle == 0:
+        return image_data
+
+    image_data = np.asarray(image_data, dtype=np.float32)
+    return rotate(image_data, float(angle), axes=(-1, -2))
+
+
 @dataclass
 class InPaths:
     nd2_file: Path
@@ -162,6 +169,7 @@ class RunParams:
     image_start: int
     image_end: int
     fov_list: FOVList
+    rotate: int = 0
     vertical_crop_lower: float = 0.0
     vertical_crop_upper: float = 1.0
     horizontal_crop_lower: float = 0.0
@@ -196,15 +204,6 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     """
     This script converts a Nikon Elements .nd2 file to individual TIFF files per time point.
     Multiple color planes are stacked in each time point to make a multipage TIFF.
-
-    params:
-        data_path: Path to the experimental data
-        tif_dir: Where to put the TIFFs when we are done.
-        tif_filename: A prefix for the output tifs
-        vertical_crop: [ymin, ymax]. Percentage crop. Optional.
-        tworow_crop: [[y1_min, y1_max], [y2_min, y2_max]]. Used for cropping if you have multiple rows; currently only two are supported.
-        FOVs: String specifying a range (or a single number) of FOVs to convert to nd2
-        image_start, image_end: Image range that we want to turn into TIFFs (inclusive)
     """
     # set up image folders if they do not already exist
     if not out_paths.tiff_folder.exists():
@@ -234,7 +233,9 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
             nd2_iter(nd2f, time_range_ids=time_range_ids, fov_list_ids=fov_list_ids),
             total=len(time_range_ids) * len(fov_list_ids),
         ):
-            # timepoint and fov output name (1 indexed rather than 0 indexed)
+            if run_params.rotate != 0:
+                image_data = fix_rotation(run_params.rotate, image_data)
+
             try:
                 milliseconds = copy.deepcopy(nd2f.events()[t_id * 2]["Time [s]"])
                 acq_days = milliseconds / 60.0 / 60.0 / 24.0
@@ -247,15 +248,14 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
                 image_data = np.expand_dims(image_data, axis=0)
 
             # for just a simple crop
-            if (
-                run_params.vertical_crop_lower != 0.0
-                or run_params.vertical_crop_upper != 1.0
+            if (run_params.vertical_crop_lower > 0.0) or (
+                run_params.vertical_crop_upper < 1.0
             ):
                 _, nc, H, W = image_data.shape
                 ## convert from xy to row-column coordinates for numpy slicing
                 yhi = int((1 - run_params.vertical_crop_lower) * H)
                 ylo = int((1 - run_params.vertical_crop_upper) * H)
-                image_data = image_data[:, ylo:yhi, :]
+                image_data = image_data[..., ylo:yhi, :]
 
             if (
                 run_params.horizontal_crop_lower != 0.0
@@ -264,7 +264,7 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
                 _, nc, H, W = image_data.shape
                 xlo = int(run_params.horizontal_crop_lower * W)
                 xhi = int(run_params.horizontal_crop_upper * W)
-                image_data = image_data[:, :, xlo:xhi]
+                image_data = image_data[..., :, xlo:xhi]
 
             # make dictionary which will be the metdata for this TIFF
             metadata_json = json.dumps(
@@ -311,13 +311,13 @@ class TIFFExport(MM3Container2):
 
     def __init__(self, viewer: Viewer):
         super().__init__(viewer)
+        self.viewer = viewer
 
         self.in_paths = InPaths()
         try:
             self.run_params = gen_default_run_params(self.in_paths)
             self.out_paths = OutPaths()
             self.initialized = True
-            # self.render_nd2()
             self.regen_widgets()
         except FileNotFoundError | ValueError:
             self.initialized = False
@@ -326,9 +326,44 @@ class TIFFExport(MM3Container2):
     def regen_widgets(self):
         super().regen_widgets()
 
-        self.gen_timetable = PushButton(text="gen_timetable")
-        self.append(self.gen_timetable)
-        self.gen_timetable.changed.connect(self.gen_timetable_run)
+        self["rotate"].changed.connect(self.preview_fov)
+        self["horizontal_crop_upper"].changed.connect(self.preview_fov)
+        self["horizontal_crop_lower"].changed.connect(self.preview_fov)
+        self["vertical_crop_lower"].changed.connect(self.preview_fov)
+        self["vertical_crop_upper"].changed.connect(self.preview_fov)
+
+        self.w_gen_timetable = PushButton(text="gen_timetable")
+        self.append(self.w_gen_timetable)
+        self.w_gen_timetable.changed.connect(self.gen_timetable_run)
+
+        # quick hacks so I don't have to work with dask arrays/multithreading.
+        self.w_fov = SpinBox(
+            label="preview_fov_idx",
+            min=min(self.run_params.fov_list),
+            max=max(self.run_params.fov_list),
+        )
+        self.fov_id = 1
+        self.append(self.w_fov)
+        self.w_fov.changed.connect(self.update_fov_idx)
+        self.w_fov.changed.connect(self.preview_fov)
+
+        self.w_t_idx = SpinBox(
+            label="preview_t_idx",
+            min=self.run_params.image_start,
+            max=self.run_params.image_end,
+        )
+        self.t_idx = 1
+        self.append(self.w_t_idx)
+        self.w_t_idx.changed.connect(self.update_t_idx)
+        self.w_t_idx.changed.connect(self.preview_fov)
+
+        self.preview_fov()
+
+    def update_fov_idx(self):
+        self.fov_id = self.w_fov.value
+
+    def update_t_idx(self):
+        self.t_idx = self.w_t_idx.value
 
     def gen_timetable_run(self):
         # make analysis folder if it doesn't exist already
@@ -339,49 +374,44 @@ class TIFFExport(MM3Container2):
             write_timetable(nd2f, self.out_paths.timetable)
 
     def run(self):
+        print(self.in_paths)
         print(self.run_params)
+        print(self.out_paths)
         nd2ToTIFF(self.in_paths, self.run_params, self.out_paths)
 
-    # TODO: Fix this one up.
-    # def render_nd2(self):
-    #     viewer = self.viewer
-    #     viewer.layers.clear()
-    #     viewer.grid.enabled = True
+    def preview_fov(self):
+        viewer = self.viewer
 
-    #     nd2file = self.in_paths.nd2_file
+        # record current dim positions
+        pos = tuple(viewer.dims.current_step)
 
-    #     with nd2.ND2File(str(nd2file)) as ndx:
-    #         sizes = ndx.sizes
+        viewer.dims.current_step = pos
+        fov_img = load_fov(self.in_paths, self.fov_id)[self.t_idx]
+        fov_img = fix_rotation(self.run_params.rotate, fov_img)
+        shape = fov_img.shape
+        row_min = int(shape[-2] * (1 - self.run_params.vertical_crop_upper))
+        row_max = int(shape[-2] * (1 - self.run_params.vertical_crop_lower))
+        col_min = int(shape[-1] * self.run_params.horizontal_crop_lower)
+        col_max = int(shape[-1] * self.run_params.horizontal_crop_upper)
+        fov_img = fov_img[
+            ...,
+            row_min:row_max,
+            col_min:col_max,
+        ]
+        if "fov_img" in viewer.layers:
+            layer = viewer.layers["fov_img"]
+            layer.data = fov_img
+        else:
+            viewer.add_image(
+                fov_img,
+            )
+        viewer.dims.current_step = pos
 
-    #         if "T" not in sizes:
-    #             sizes["T"] = 1
-    #         if "P" not in sizes:
-    #             sizes["P"] = 1
-    #         if "C" not in sizes:
-    #             sizes["C"] = 1
-    #         ndx.bundle_axes = "zcyx"
-    #         ndx.iter_axes = "t"
-    #         n = len(ndx)
-
-    #         shape = (
-    #             sizes["t"],
-    #             sizes["z"],
-    #             sizes["v"],
-    #             sizes["c"],
-    #             sizes["y"],
-    #             sizes["x"],
-    #         )
-    #         image = np.zeros(shape, dtype=np.float32)
-
-    #         for i in range(n):
-    #             image[i] = ndx.get_frame(i)
-
-    #     image = np.squeeze(image)
-
-    #     viewer.add_image(image, channel_axis=1, colormap="gray")
-    #     viewer.grid.shape = (-1, 3)
-    #     viewer.dims.current_step = (0, 0)
-    #     viewer.layers.link_layers()  ## allows user to set contrast limits for all FOVs at once
+    def update_run_params(self, event):
+        pass
+        # source: shapes.Shapes = event.source.data
+        # print(source.data)
+        # viewer.dims.set_current_step(axis=0, value=0)
 
 
 if __name__ == "__main__":
