@@ -185,7 +185,7 @@ def segment_image(
     # labeled image and will fail if there is only one label. Return zero image in that case
     # could have used try/except but remove_small_objects loves to issue warnings.
     labeled, label_num = morphology.label(cleared, connectivity=1, return_num=True)
-    if label_num > 1:
+    if label_num >= 1:
         labeled = morphology.remove_small_objects(labeled, min_size=min_object_size)
     else:
         # if there are no labels, then just return the cleared image as it is zero
