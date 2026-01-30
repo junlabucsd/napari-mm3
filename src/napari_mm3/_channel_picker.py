@@ -106,10 +106,11 @@ def load_fov(image_directory: pathlib.Path, fov_id: int) -> np.ndarray:
     found_files = list(image_directory.glob("*.tif"))
     print(found_files)
     # need to suport arbitrary length fov spec!
-    file_string = re.compile(f"xy{fov_id:03d}.*.tif", re.IGNORECASE)
-    matching_files = [
-        f.name for f in found_files if re.search(file_string, f.name)
-    ]  # remove pre-path
+    fov_re = re.compile(r"xy(\d+).tif", re.IGNORECASE)
+    matching_files = []
+    for f in found_files:
+        if int(fov_re.search(f.name).group(1)) == fov_id:
+            matching_files.append(f.name)
     information("sorting files")
     matching_files = sorted(matching_files)  # should sort by timepoint
     print(fov_id, image_directory)
