@@ -71,7 +71,7 @@ class CellTracker:
 
     def add_cell(self, region, t, parent_id=None) -> str:
         """Adds a cell to the graph and returns its id."""
-        cell_id = self.fmt_cell_id.format(region.label, t)
+        cell_id = self.fmt_cell_id.format(t, region.label)
         self.cells[cell_id] = Cell(
             self.pxl2um,
             self.time_table,
@@ -474,7 +474,7 @@ def make_lineage_chnl_stack(
         phase_plane,
         seg_img,
     )
-    # plotter.make_lineage_plot()
+    plotter.make_lineage_plot()
 
     # return the dictionary with all the cells
     return cells
@@ -1180,12 +1180,16 @@ class Track(MM3Container2):
             self.initialized = True
             self.regen_widgets()
 
-            self.preview_widget = PushButton(label="generate preview")
-            self.append(self.preview_widget)
-            self.preview_widget.changed.connect(self.render_preview)
         except FileNotFoundError | ValueError:
             self.initialized = False
             self.regen_widgets()
+
+    def regen_widgets(self):
+        super().regen_widgets()
+
+        self.preview_widget = PushButton(label="generate preview")
+        self.append(self.preview_widget)
+        self.preview_widget.changed.connect(self.render_preview)
 
     def run(self):
         track_cells(self.in_paths, self.run_params, self.out_paths)
