@@ -13,7 +13,8 @@ import tifffile as tiff
 from magicgui.widgets import PushButton, SpinBox
 from napari import Viewer
 from napari.utils import progress
-from scipy.ndimage import rotate
+from scipy.ndimage import rotate, shift
+from skimage.registration import phase_cross_correlation
 
 from ._deriving_widgets import (
     FOVList,
@@ -155,6 +156,56 @@ def fix_rotation(angle: float, image_data: np.ndarray) -> np.ndarray:
     return rotate(image_data, float(angle), axes=(-1, -2))
 
 
+def stabilize_fov(
+    raw_stack,
+    upsample_factor=2,
+):
+    """
+    Drift correction. Registers against first frame and last frame, weighting them in proportion to how close you are.
+    Seems to work pretty well. Might be nice to have a third registration (middle) but it's prolly not worth it.
+    Sometimes a registration agaisnt the frame ahlfway through works best.
+
+    If people report issues, would be good to get this to use less memory.
+    But, a typical raw stack is at most ~1GB, so this is a reasonable expectation.
+    """
+    print("Stabilizing")
+    raw_stack = np.stack(raw_stack)  # [T, N, H, W]
+
+    T, C, H, W = raw_stack.shape
+    corrected_stack = np.empty_like(raw_stack)
+    ref = raw_stack[T // 2, 0]  # Reference frame from channel 0
+
+    shifts_f = []
+    for i in range(0, T):
+        shift_est, _, _ = phase_cross_correlation(
+            ref, raw_stack[i, 0], upsample_factor=upsample_factor
+        )
+        shifts_f.append(shift_est)
+    shifts_f = np.array(shifts_f)
+
+    # shifts_b = np.zeros((T, 2))
+    # for i in range(T - 2, -1, -1):
+    #     inc, _, _ = phase_cross_correlation(
+    #         raw_stack[i + 1, 0],
+    #         raw_stack[i, 0],
+    #         upsample_factor=upsample_factor,
+    #     )
+    #     shifts_b[i] = shifts_b[i + 1] + inc
+    #     shifts_b -= shifts_b[0]
+
+    # w = np.linspace(1, 0, T)[:, None]
+    # shifts = w * shifts_f + (1 - w) * shifts_b
+    shifts = shifts_f
+
+    for i in range(T):
+        for ch in range(C):
+            corrected_stack[i, ch] = shift(
+                raw_stack[i, ch], shift=shifts[i], mode="constant", cval=0
+            )
+
+    return corrected_stack
+
+
 @dataclass
 class InPaths:
     nd2_file: Path
@@ -169,7 +220,8 @@ class RunParams:
     image_start: int
     image_end: int
     fov_list: FOVList
-    rotate: int = 0
+    stabilize: bool
+    rotate: Annotated[float, {"min": -90, "max": 90}] = 0
     vertical_crop_lower: float = 0.0
     vertical_crop_upper: float = 1.0
     horizontal_crop_lower: float = 0.0
@@ -187,6 +239,7 @@ def gen_default_run_params(in_paths: InPaths):
     end_time = get_nd2_times(in_paths.nd2_file)
     total_fovs = get_nd2_fovs(in_paths.nd2_file)
     return RunParams(
+        stabilize=False,
         image_start=1,
         image_end=end_time,
         fov_list=FOVList(list(range(1, total_fovs + 1))),
@@ -217,33 +270,40 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     information(f"Extracting {file_prefix} ...")
     with nd2.ND2File(str(nd2file)) as nd2f:
         # load in the time table.
-        # TODO: Add analysis
         write_timetable(nd2f, out_paths.timetable)
         starttime = nd2f.text_info["date"]
         starttime = parse_datetime_flexible(starttime)
-
         try:
             planes = nd2f.sizes["C"]
         except KeyError:
             planes = 1
-        # Extraction range is the time points that will be taken out.
+
+        # if only 1 fov, then just analyze the single FOV.
+        total_fovs = nd2f.sizes["P"] if ("P" in nd2f.sizes) else 1
         time_range_ids = list(range(run_params.image_start - 1, run_params.image_end))
         fov_list_ids = [fov_id - 1 for fov_id in run_params.fov_list]
-        for t_id, fov_id, image_data in progress(
-            nd2_iter(nd2f, time_range_ids=time_range_ids, fov_list_ids=fov_list_ids),
-            total=len(time_range_ids) * len(fov_list_ids),
-        ):
+        for fov_id in fov_list_ids:
+            if "P" not in nd2f.sizes:
+                image_data = nd2f.asarray()
+                if "T" not in nd2f.sizes:
+                    image_data = image_data[np.newaxis, np.newaxis, ...]
+                else:
+                    image_data = image_data[np.newaxis, ...]
+            else:
+                image_data = nd2f.asarray(fov_id)
+                if "T" not in nd2f.sizes:
+                    image_data = image_data[np.newaxis, ...]
+
+            image_data = image_data[time_range_ids, 0, ...]
+
+            if run_params.stabilize:
+                image_data = stabilize_fov(image_data)
+
             if run_params.rotate != 0:
                 image_data = fix_rotation(run_params.rotate, image_data)
 
-            try:
-                milliseconds = copy.deepcopy(nd2f.events()[t_id * 2]["Time [s]"])
-                acq_days = milliseconds / 60.0 / 60.0 / 24.0
-                acq_time = starttime.timestamp() + acq_days
-            except IndexError:
-                acq_time = None
-
-            # add extra axis to make below slicing simpler. removed automatically if only one color
+            # add extra axis to make below slicing simpler. removed automatically if only one color.
+            # sanity check: what do if it's 1 channel/1 time?
             if len(image_data.shape) < 3:
                 image_data = np.expand_dims(image_data, axis=0)
 
@@ -257,46 +317,43 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
                 ylo = int((1 - run_params.vertical_crop_upper) * H)
                 image_data = image_data[..., ylo:yhi, :]
 
-            if (
-                run_params.horizontal_crop_lower != 0.0
-                or run_params.horizontal_crop_upper != 1.0
+            if (run_params.horizontal_crop_lower != 0.0) or (
+                run_params.horizontal_crop_upper != 1.0
             ):
                 H, W = image_data.shape[-2], image_data.shape[-1]
                 xlo = int(run_params.horizontal_crop_lower * W)
                 xhi = int(run_params.horizontal_crop_upper * W)
                 image_data = image_data[..., :, xlo:xhi]
 
-            # make dictionary which will be the metdata for this TIFF
-            metadata_json = json.dumps(
-                {
-                    "fov": fov_id + 1,
-                    "t": t_id + 1,
-                    "jd": acq_time,
-                    "planes": planes,
-                }
-            )
-            tif_filename = f"{file_prefix}_t{t_id + 1:04d}xy{fov_id + 1:02d}.tif"
-            #     information("Saving %s." % tif_filename)
-            tiff.imwrite(
-                out_paths.tiff_folder / tif_filename,
-                data=image_data,
-                description=metadata_json,
-                compression="zlib",
-                photometric="minisblack",
-            )
-            #
-            # for plane in range(planes):
-            #     tif_filename = (
-            #         f"{file_prefix}_t{t_id + 1:04d}xy{fov_id + 1:02d}c{plane + 1}.tif"
-            #     )
-            #     information("Saving %s." % tif_filename)
-            #     tiff.imwrite(
-            #         out_paths.tiff_folder / tif_filename,
-            #         data=image_data[plane],
-            #         description=metadata_json,
-            #         compression="zlib",
-            #         photometric="minisblack",
-            #     )
+            for t_idx, image_data_cur_t in enumerate(image_data):
+                t_id = time_range_ids[t_idx]
+                try:
+                    milliseconds = copy.deepcopy(
+                        nd2f.events()[2 * (t_id * total_fovs + fov_id)]["Time [s]"]
+                    )
+                    acq_days = milliseconds / 60.0 / 60.0 / 24.0
+                    acq_time = starttime.timestamp() + acq_days
+                except IndexError:
+                    acq_time = None
+                    print("No acquistion time found")
+                # make dictionary which will be the metdata for this TIFF
+                metadata_json = json.dumps(
+                    {
+                        "fov": fov_id + 1,
+                        "t": t_id + 1,
+                        "jd": acq_time,
+                        "planes": planes,
+                    }
+                )
+                tif_filename = f"{file_prefix}_t{t_id + 1:04d}xy{fov_id + 1:02d}.tif"
+                #     information("Saving %s." % tif_filename)
+                tiff.imwrite(
+                    out_paths.tiff_folder / tif_filename,
+                    data=image_data_cur_t,
+                    description=metadata_json,
+                    compression="zlib",
+                    photometric="minisblack",
+                )
 
 
 class TIFFExport(MM3Container2):
@@ -326,6 +383,8 @@ class TIFFExport(MM3Container2):
     def regen_widgets(self):
         super().regen_widgets()
 
+        self["stabilize"].changed.connect(self.update_fov_idx)
+        self["stabilize"].changed.connect(self.preview_fov)
         self["rotate"].changed.connect(self.preview_fov)
         self["horizontal_crop_upper"].changed.connect(self.preview_fov)
         self["horizontal_crop_lower"].changed.connect(self.preview_fov)
@@ -361,6 +420,9 @@ class TIFFExport(MM3Container2):
 
     def update_fov_idx(self):
         self.fov_id = self.w_fov.value
+        self.cur_fov = load_fov(self.in_paths, self.fov_id)
+        if self.run_params.stabilize:
+            self.cur_fov = stabilize_fov(self.cur_fov[:, 0])
 
     def update_t_idx(self):
         self.t_idx = self.w_t_idx.value
@@ -382,11 +444,16 @@ class TIFFExport(MM3Container2):
     def preview_fov(self):
         viewer = self.viewer
 
+        if not hasattr(self, "cur_fov"):
+            self.cur_fov = load_fov(self.in_paths, self.fov_id)
+            if self.run_params.stabilize:
+                self.cur_fov = stabilize_fov(self.cur_fov[:, 0])
+
         # record current dim positions
         pos = tuple(viewer.dims.current_step)
 
         viewer.dims.current_step = pos
-        fov_img = load_fov(self.in_paths, self.fov_id)[self.t_idx - 1]
+        fov_img = self.cur_fov[self.t_idx - 1]
         fov_img = fix_rotation(self.run_params.rotate, fov_img)
         shape = fov_img.shape
         row_min = int(shape[-2] * (1 - self.run_params.vertical_crop_upper))
@@ -406,12 +473,6 @@ class TIFFExport(MM3Container2):
                 fov_img,
             )
         viewer.dims.current_step = pos
-
-    def update_run_params(self, event):
-        pass
-        # source: shapes.Shapes = event.source.data
-        # print(source.data)
-        # viewer.dims.set_current_step(axis=0, value=0)
 
 
 if __name__ == "__main__":
