@@ -282,7 +282,7 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
         total_fovs = nd2f.sizes["P"] if ("P" in nd2f.sizes) else 1
         time_range_ids = list(range(run_params.image_start - 1, run_params.image_end))
         fov_list_ids = [fov_id - 1 for fov_id in run_params.fov_list]
-        for fov_id in fov_list_ids:
+        for fov_id in progress(fov_list_ids):
             if "P" not in nd2f.sizes:
                 image_data = nd2f.asarray()
                 if "T" not in nd2f.sizes:
