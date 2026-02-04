@@ -251,7 +251,7 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
             if (run_params.vertical_crop_lower > 0.0) or (
                 run_params.vertical_crop_upper < 1.0
             ):
-                _, nc, H, W = image_data.shape
+                H, W = image_data.shape[-2], image_data.shape[-1]
                 ## convert from xy to row-column coordinates for numpy slicing
                 yhi = int((1 - run_params.vertical_crop_lower) * H)
                 ylo = int((1 - run_params.vertical_crop_upper) * H)
@@ -261,7 +261,7 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
                 run_params.horizontal_crop_lower != 0.0
                 or run_params.horizontal_crop_upper != 1.0
             ):
-                _, nc, H, W = image_data.shape
+                H, W = image_data.shape[-2], image_data.shape[-1]
                 xlo = int(run_params.horizontal_crop_lower * W)
                 xhi = int(run_params.horizontal_crop_upper * W)
                 image_data = image_data[..., :, xlo:xhi]
@@ -386,7 +386,7 @@ class TIFFExport(MM3Container2):
         pos = tuple(viewer.dims.current_step)
 
         viewer.dims.current_step = pos
-        fov_img = load_fov(self.in_paths, self.fov_id)[self.t_idx]
+        fov_img = load_fov(self.in_paths, self.fov_id)[self.t_idx - 1]
         fov_img = fix_rotation(self.run_params.rotate, fov_img)
         shape = fov_img.shape
         row_min = int(shape[-2] * (1 - self.run_params.vertical_crop_upper))

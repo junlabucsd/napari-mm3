@@ -462,19 +462,19 @@ def make_lineage_chnl_stack(
     cells = tracker.cells
 
     ## plot kymograph with lineage overlay & save it out
-    plotter = LineagePlotter(
-        lineages_dir,
-        channels_dir,
-        segmented_dir,
-        experiment_name,
-        fov_id,
-        peak_id,
-        cells,
-        start_time_index,
-        phase_plane,
-        seg_img,
-    )
-    plotter.make_lineage_plot()
+    # plotter = LineagePlotter(
+    #     lineages_dir,
+    #     channels_dir,
+    #     segmented_dir,
+    #     experiment_name,
+    #     fov_id,
+    #     peak_id,
+    #     cells,
+    #     start_time_index,
+    #     phase_plane,
+    #     seg_img,
+    # )
+    # plotter.make_lineage_plot()
 
     # return the dictionary with all the cells
     return cells
@@ -1165,7 +1165,7 @@ def plot_all_lineages(
                 phase_plane,
                 seg_img,
             )
-    plotter.make_lineage_plot()
+    # plotter.make_lineage_plot()
 
 
 class Track(MM3Container2):
