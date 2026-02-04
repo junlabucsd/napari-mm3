@@ -13,7 +13,7 @@ import napari
 import numpy as np
 import seaborn as sns
 import six
-from magicgui.widgets import PushButton
+from magicgui.widgets import Container, PushButton
 from napari import Viewer
 from napari.utils import progress
 from skimage import io
@@ -462,19 +462,19 @@ def make_lineage_chnl_stack(
     cells = tracker.cells
 
     ## plot kymograph with lineage overlay & save it out
-    # plotter = LineagePlotter(
-    #     lineages_dir,
-    #     channels_dir,
-    #     segmented_dir,
-    #     experiment_name,
-    #     fov_id,
-    #     peak_id,
-    #     cells,
-    #     start_time_index,
-    #     phase_plane,
-    #     seg_img,
-    # )
-    # plotter.make_lineage_plot()
+    plotter = LineagePlotter(
+        lineages_dir,
+        channels_dir,
+        segmented_dir,
+        experiment_name,
+        fov_id,
+        peak_id,
+        cells,
+        start_time_index,
+        phase_plane,
+        seg_img,
+    )
+    plotter.make_lineage_plot()
 
     # return the dictionary with all the cells
     return cells
@@ -990,7 +990,7 @@ class RunParams:
     lost_cell_time: Annotated[
         int,
         {
-            "min": 1,
+            "min": 0,
             "max": 20,
             "tooltip": "Number of frames after which a cell is dropped if no new regions connect to it.",
         },
@@ -1187,6 +1187,34 @@ class Track(MM3Container2):
     def regen_widgets(self):
         super().regen_widgets()
 
+        self.cur_fov_idx = 0
+        self.increment_fov_widget = PushButton(text="next fov")
+        self.decrement_fov_widget = PushButton(text="prev fov")
+        self.increment_fov_widget.clicked.connect(self.increment_fov)
+        self.increment_fov_widget.clicked.connect(self.render_preview)
+        self.decrement_fov_widget.clicked.connect(self.decrement_fov)
+        self.decrement_fov_widget.clicked.connect(self.render_preview)
+
+        self.change_cur_fov_widget = Container(
+            widgets=[self.decrement_fov_widget, self.increment_fov_widget],
+            layout="horizontal",
+        )
+        self.append(self.change_cur_fov_widget)
+
+        self.cur_peak_idx = 0
+        self.increment_peak_widget = PushButton(text="next peak")
+        self.decrement_peak_widget = PushButton(text="prev peak")
+        self.increment_peak_widget.clicked.connect(self.increment_peak)
+        self.increment_peak_widget.clicked.connect(self.render_preview)
+        self.decrement_peak_widget.clicked.connect(self.decrement_peak)
+        self.decrement_peak_widget.clicked.connect(self.render_preview)
+
+        self.change_cur_peak_widget = Container(
+            widgets=[self.decrement_peak_widget, self.increment_peak_widget],
+            layout="horizontal",
+        )
+        self.append(self.change_cur_peak_widget)
+
         self.preview_widget = PushButton(label="generate preview")
         self.append(self.preview_widget)
         self.preview_widget.changed.connect(self.render_preview)
@@ -1194,16 +1222,37 @@ class Track(MM3Container2):
     def run(self):
         track_cells(self.in_paths, self.run_params, self.out_paths)
 
+    def increment_fov(self):
+        self.cur_fov_idx = min(self.cur_fov_idx + 1, len(self.run_params.fovs) - 1)
+        self.cur_peak_idx = 0
+
+    def decrement_fov(self):
+        self.cur_fov_idx = max(self.cur_fov_idx - 1, 0)
+        self.cur_peak_idx = 0
+
+    def increment_peak(self):
+        valid_fov = self.run_params.fovs[self.cur_fov_idx]
+        specs = load_specs(self.in_paths.specs_path)
+        total_peaks = len(
+            [key for key in specs[valid_fov] if specs[valid_fov][key] == 1]
+        )
+        self.cur_peak_idx = min(self.cur_peak_idx + 1, total_peaks - 1)
+
+    def decrement_peak(self):
+        self.cur_peak_idx = max(self.cur_peak_idx - 1, 0)
+
     def render_preview(self):
         viewer = napari.current_viewer()
         viewer.layers.clear()
 
+        self.viewer.layers.clear()
+        valid_fov = self.run_params.fovs[self.cur_fov_idx]
         specs = load_specs(self.in_paths.specs_path)
-        fov = self.run_params.fovs[0]
-        for peak, status in specs[fov].items():
-            if status == 1:
-                break
-        fov_and_peak_id = (fov, peak)
+        # Find first cell-containing peak
+        valid_peak = [key for key in specs[valid_fov] if specs[valid_fov][key] == 1][
+            self.cur_peak_idx
+        ]
+        fov_and_peak_id = (valid_fov, valid_peak)
         # # there should really be a way of doing this sans side effects...
         make_lineage_chnl_stack(
             self.in_paths.timetable_path,
@@ -1224,9 +1273,12 @@ class Track(MM3Container2):
             fov_and_peak_id,
         )
         img_stack = load_lineage_image(
-            self.out_paths.lineages_path, self.out_paths.experiment_name, fov, peak
+            self.out_paths.lineages_path,
+            self.out_paths.experiment_name,
+            valid_fov,
+            valid_peak,
         )
-        lin_filename = f"{self.out_paths.experiment_name}_{fov}_{peak}.tif"
+        lin_filename = f"{self.out_paths.experiment_name}_{valid_fov}_{valid_peak}.tif"
 
         viewer.grid.enabled = True
         viewer.grid.shape = (-1, 1)
