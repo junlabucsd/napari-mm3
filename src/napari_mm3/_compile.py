@@ -25,7 +25,6 @@ from napari import Viewer
 from napari.qt.threading import thread_worker
 from napari.utils import progress
 from scipy import ndimage as ndi
-from scipy.ndimage import rotate
 from scipy.signal import find_peaks_cwt
 from skimage.feature import match_template
 
