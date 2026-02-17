@@ -26,7 +26,7 @@ from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
 
 
 def subtract_phase(
-    alignment_pad: int, cropped_channel: np.ndarray, empty_channel: np.ndarray
+    alignment_pad: int, cropped_channel: np.ndarray, empty_channel: np.ndarray, debug
 ) -> np.ndarray:
     """subtract_phase aligns and subtracts an empty phase contrast channel (trap) from a channel containing cells.
     The subtracted image returned is the same size as the image given. It may however include
@@ -49,7 +49,9 @@ def subtract_phase(
         information(
             "Consider marking this channel as disabled in specs.yaml, or increasing the pad_size."
         )
-        raise
+        information(debug)
+
+        return None
     # get row and column of max correlation value in correlation array
     y, x = np.unravel_index(np.argmax(match_result), match_result.shape)
 
@@ -233,7 +235,8 @@ def subtract_fov_stack(
 
         if method == "phase":
             subtract_phase_args = [
-                (alignment_pad, pair[0], pair[1]) for pair in subtract_pairs
+                (alignment_pad, pair[0], pair[1], (fov_id, peak_id))
+                for pair in subtract_pairs
             ]
             subtracted_imgs = pool.map(subtract_phase_helper, subtract_phase_args)
         elif method == "fluor":
@@ -242,6 +245,8 @@ def subtract_fov_stack(
 
         pool.close()
         pool.join()
+        if subtracted_imgs[0] is None:
+            continue
 
         # # stack them up along a time axis
         subtracted_stack = np.stack(subtracted_imgs, axis=0)
