@@ -67,8 +67,10 @@ def segment_chnl_stack(
         peak_id,
         f"sub_{phase_plane}",
     )
-    sub_stack = load_tiff(subtracted_dir / sub_filename)
-
+    try:
+        sub_stack = load_tiff(subtracted_dir / sub_filename)
+    except FileNotFoundError:
+        return False
     # # set up multiprocessing pool to do segmentation. Will do everything before going on.
     # pool = Pool(processes=params['num_analyzers'])
 
