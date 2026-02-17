@@ -134,17 +134,6 @@ def stack_channels(found_files: np.ndarray, TIFF_dir: Path) -> None:
             os.rename(f, old_tiff_path / Path(f).name)
 
 
-def fix_rotation(angle: float, image_data: np.ndarray) -> np.ndarray:
-    # need to add support for no channels.
-    if angle == 0:
-        return image_data
-
-    if len(image_data.shape) == 2:
-        image_data = np.expand_dims(image_data, 0)
-
-    return rotate(image_data, angle, axes=(2, 1))
-
-
 # define function for flipping the images on an FOV by FOV basis
 def fix_orientation(
     image_data: np.ndarray, phase_idx: int, image_orientation: str
