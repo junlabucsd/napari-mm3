@@ -21,7 +21,7 @@ from ._deriving_widgets import (
     load_timetable,
     warning,
 )
-from .utils import TIFF_FILE_FORMAT_PEAK, organize_cells_by_channel
+from .utils import TIFF_FILE_FORMAT_PEAK, organize_cells_by_channel, write_cells_to_json
 
 
 def find_cell_intensities(
@@ -284,6 +284,9 @@ def colors(
     cell_filename = os.path.basename(cellfile_path)
     with open(cell_folder / (cell_filename[:-4] + "_fl.pkl"), "wb") as cell_file:
         pickle.dump(complete_cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # Just the complete cells, those with mother and daugther
+    write_cells_to_json(cells, cell_folder / cell_filename[:-4] + "_fl.json")
 
     information("Finished.")
 
