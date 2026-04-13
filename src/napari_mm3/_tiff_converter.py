@@ -1,3 +1,4 @@
+import argparse
 import copy
 import datetime
 import json
@@ -476,8 +477,127 @@ class TIFFExport(MM3Container2):
 
 
 if __name__ == "__main__":
-    in_files = InPaths()
-    run_params: RunParams = gen_default_run_params(in_files)
-    out_paths = OutPaths()
+    parser = argparse.ArgumentParser(
+        description="Convert ND2 files to TIFF format with optional image processing"
+    )
+
+    # Input/Output parameters
+    parser.add_argument(
+        "--nd2-file",
+        type=Path,
+        default=None,
+        help="Path to the .nd2 file to convert (default: first .nd2 in current directory)",
+    )
+    parser.add_argument(
+        "--tiff-folder",
+        type=Path,
+        default=Path("./TIFF/"),
+        help="Output folder for TIFF files (default: ./TIFF/)",
+    )
+    parser.add_argument(
+        "--timetable",
+        type=Path,
+        default=Path("./analysis/timetable.json"),
+        help="Output path for timetable.json (default: ./analysis/timetable.json)",
+    )
+
+    # Image processing parameters
+    parser.add_argument(
+        "--image-start",
+        type=int,
+        default=None,
+        help="Starting time point (default: 1)",
+    )
+    parser.add_argument(
+        "--image-end",
+        type=int,
+        default=None,
+        help="Ending time point (default: last time point in file)",
+    )
+    parser.add_argument(
+        "--fov-list",
+        type=str,
+        default=None,
+        help="Field of view indices to process (e.g., '1,3,5' or '1-5,10', default: all FOVs)",
+    )
+    parser.add_argument(
+        "--stabilize",
+        action="store_true",
+        help="Enable image stabilization (default: False)",
+    )
+    parser.add_argument(
+        "--rotate",
+        type=float,
+        default=0.0,
+        help="Rotation angle in degrees, -90 to 90 (default: 0)",
+    )
+    parser.add_argument(
+        "--vertical-crop-lower",
+        type=float,
+        default=0.0,
+        help="Vertical crop lower fraction (0.0 to 1.0, default: 0.0)",
+    )
+    parser.add_argument(
+        "--vertical-crop-upper",
+        type=float,
+        default=1.0,
+        help="Vertical crop upper fraction (0.0 to 1.0, default: 1.0)",
+    )
+    parser.add_argument(
+        "--horizontal-crop-lower",
+        type=float,
+        default=0.0,
+        help="Horizontal crop lower fraction (0.0 to 1.0, default: 0.0)",
+    )
+    parser.add_argument(
+        "--horizontal-crop-upper",
+        type=float,
+        default=1.0,
+        help="Horizontal crop upper fraction (0.0 to 1.0, default: 1.0)",
+    )
+
+    args = parser.parse_args()
+
+    # Create InPaths
+    if args.nd2_file is not None:
+        in_files = InPaths()
+        in_files.nd2_file = args.nd2_file
+    else:
+        in_files = InPaths()
+
+    # Get defaults from gen_default_run_params
+    default_params = gen_default_run_params(in_files)
+
+    # Override defaults with command-line arguments
+    image_start = (
+        args.image_start if args.image_start is not None else default_params.image_start
+    )
+    image_end = (
+        args.image_end if args.image_end is not None else default_params.image_end
+    )
+
+    if args.fov_list is not None:
+        fov_list = FOVList(args.fov_list)
+    else:
+        fov_list = default_params.fov_list
+
+    # Create RunParams with all parameters
+    run_params = RunParams(
+        image_start=image_start,
+        image_end=image_end,
+        fov_list=fov_list,
+        stabilize=args.stabilize,
+        rotate=args.rotate,
+        vertical_crop_lower=args.vertical_crop_lower,
+        vertical_crop_upper=args.vertical_crop_upper,
+        horizontal_crop_lower=args.horizontal_crop_lower,
+        horizontal_crop_upper=args.horizontal_crop_upper,
+    )
+
+    # Create OutPaths
+    out_paths = OutPaths(
+        tiff_folder=args.tiff_folder,
+        timetable=args.timetable,
+    )
 
     nd2ToTIFF(in_files, run_params, out_paths)
