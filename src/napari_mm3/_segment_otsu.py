@@ -1,3 +1,4 @@
+import argparse
 import multiprocessing
 import os
 import warnings
@@ -475,7 +476,147 @@ class SegmentOtsu(MM3Container2):
 
 
 if __name__ == "__main__":
-    in_paths = InPaths()
-    run_params = gen_default_run_params(in_paths)
-    out_paths = OutPaths()
+    """
+    Example usage:
+    python -m napari_mm3._segment_otsu --phase-plane c1 --otsu-threshold 1.2 --first-opening-size 2 --distance-threshold 2 --second-opening-size 1
+    """
+
+    parser = argparse.ArgumentParser(
+        description="Segment channels using Otsu thresholding method"
+    )
+
+    # Input/Output parameters
+    parser.add_argument(
+        "--subtracted-folder",
+        type=Path,
+        default=Path("./analysis/subtracted"),
+        help="Directory containing subtracted TIFF files (default: ./analysis/subtracted)",
+    )
+    parser.add_argument(
+        "--specs-path",
+        type=Path,
+        default=Path("./analysis/specs.yaml"),
+        help="Path to specs.yaml file (default: ./analysis/specs.yaml)",
+    )
+    parser.add_argument(
+        "--experiment-name",
+        type=str,
+        default="",
+        help="Name of the experiment (default: empty string)",
+    )
+    parser.add_argument(
+        "--segment-folder",
+        type=Path,
+        default=Path("./analysis/segmented"),
+        help="Output directory for segmented TIFFs (default: ./analysis/segmented)",
+    )
+    parser.add_argument(
+        "--cell-data-folder",
+        type=Path,
+        default=Path("./analysis/cell_data"),
+        help="Output directory for cell data (default: ./analysis/cell_data)",
+    )
+
+    # FOV and channel parameters
+    parser.add_argument(
+        "--fov-list",
+        type=str,
+        default=None,
+        help="Field of view indices to process (e.g., '1,3,5' or '1-5,10', default: all FOVs)",
+    )
+    parser.add_argument(
+        "--phase-plane",
+        type=str,
+        default=None,
+        help="Phase plane channel for segmentation (e.g., 'c1', default: first available)",
+    )
+
+    # Segmentation parameters
+    parser.add_argument(
+        "--otsu-threshold",
+        type=float,
+        default=1.30,
+        help="Otsu threshold multiplier (default: 1.30)",
+    )
+    parser.add_argument(
+        "--first-opening-size",
+        type=int,
+        default=2,
+        help="Size for first morphological opening (default: 2)",
+    )
+    parser.add_argument(
+        "--distance-threshold",
+        type=int,
+        default=2,
+        help="Distance threshold for distance transform (default: 2)",
+    )
+    parser.add_argument(
+        "--second-opening-size",
+        type=int,
+        default=1,
+        help="Size for second morphological opening (default: 1)",
+    )
+    parser.add_argument(
+        "--min-object-size",
+        type=int,
+        default=25,
+        help="Minimum object size in pixels (default: 25)",
+    )
+
+    # Processing parameters
+    parser.add_argument(
+        "--num-analyzers",
+        type=int,
+        default=multiprocessing.cpu_count(),
+        help=f"Number of parallel analyzers (default: {multiprocessing.cpu_count()})",
+    )
+
+    args = parser.parse_args()
+
+    # Create InPaths
+    in_paths = InPaths(
+        specs_path=args.specs_path,
+        subtracted_folder=args.subtracted_folder,
+        experiment_name=args.experiment_name,
+    )
+
+    # Get defaults from gen_default_run_params
+    try:
+        default_params = gen_default_run_params(in_paths)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"Could not load defaults: {e}")
+    except ValueError as e:
+        raise ValueError(f"Invalid configuration: {e}")
+
+    # Determine FOV list to process
+    if args.fov_list is not None:
+        fov_list = FOVList(args.fov_list)
+    else:
+        fov_list = default_params.FOVs
+
+    # Determine phase plane
+    phase_plane = (
+        args.phase_plane if args.phase_plane is not None else default_params.phase_plane
+    )
+
+    # Create RunParams with command-line arguments
+    # Note: view_result is set to False for non-GUI mode
+    run_params = RunParams(
+        FOVs=fov_list,
+        phase_plane=phase_plane,
+        num_analyzers=args.num_analyzers,
+        OTSU_threshold=args.otsu_threshold,
+        first_opening_size=args.first_opening_size,
+        distance_threshold=args.distance_threshold,
+        second_opening_size=args.second_opening_size,
+        min_object_size=args.min_object_size,
+        view_result=False,  # Disable viewing for headless mode
+    )
+
+    # Create OutPaths
+    out_paths = OutPaths(
+        segment_folder=args.segment_folder,
+        cell_data_folder=args.cell_data_folder,
+    )
+
     segmentOTSU(in_paths, run_params, out_paths)
