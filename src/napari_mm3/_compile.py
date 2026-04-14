@@ -4,6 +4,7 @@ Can be run headless with parameters; if left unspecified it will analyze the ful
 and use the default UI parameters.
 """
 
+import argparse
 import json
 import multiprocessing
 import os
@@ -680,7 +681,6 @@ class RunParams:
     phase_plane: str
     num_analyzers: int = multiprocessing.cpu_count()
     image_orientation: Orientation = Orientation.auto
-    image_rotation: Annotated[int, {"max": 90, "min": -90, "widget_type": Slider}] = 0
     trench_length: int = -1
     channel_width: int = 10
     channel_separation: int = 45
@@ -755,8 +755,6 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
             # TODO: move this out of the loop
             phase_idx = int(find_phase_idx(image_data, p.phase_plane))
 
-            if p.image_rotation != 0:
-                image_data = fix_rotation(p.image_rotation, image_data)
             image_data = fix_orientation(
                 image_data, phase_idx, p.image_orientation.name
             )
@@ -866,11 +864,180 @@ class Compile(MM3Container2):
 
 if __name__ == "__main__":
     """
-    Would be good to add real arguments here.
-    This could likely be done dynamically, but I'm not feeling it right now.
+    Example usage:
+    python -m napari_mm3._compile -t-start 0 --t-end 50 --fov-list 1-5 --phase-plane c1 --channel-width 12 
     """
-    in_files = InPaths()
-    run_params: RunParams = gen_default_run_params(in_files)
-    out_paths = OutPaths()
 
-    compile(in_files, run_params, out_paths)
+    parser = argparse.ArgumentParser(
+        description="Compile and segment image TIFFs into individual channel traps"
+    )
+
+    # Input/Output parameters
+    parser.add_argument(
+        "--tiff-dir",
+        type=Path,
+        default=Path(".") / "TIFF",
+        help="Directory containing TIFF files (default: ./TIFF)",
+    )
+    parser.add_argument(
+        "--experiment-name",
+        type=str,
+        default="",
+        help="Name of the experiment (default: empty string)",
+    )
+    parser.add_argument(
+        "--channel-dir",
+        type=Path,
+        default=Path("./analysis/channels"),
+        help="Output directory for channel TIFFs (default: ./analysis/channels)",
+    )
+    parser.add_argument(
+        "--analysis-dir",
+        type=Path,
+        default=Path("./analysis"),
+        help="Analysis output directory (default: ./analysis)",
+    )
+
+    # Time and FOV parameters
+    parser.add_argument(
+        "--t-start",
+        type=int,
+        default=None,
+        help="Starting time point (default: from image data)",
+    )
+    parser.add_argument(
+        "--t-end",
+        type=int,
+        default=None,
+        help="Ending time point (default: from image data)",
+    )
+    parser.add_argument(
+        "--fov-list",
+        type=str,
+        default=None,
+        help="Field of view indices to process (e.g., '1,3,5' or '1-5,10', default: all FOVs)",
+    )
+
+    # Channel detection parameters
+    parser.add_argument(
+        "--phase-plane",
+        type=str,
+        default=None,
+        help="Phase plane channel (e.g., 'c1', default: brightest channel)",
+    )
+    parser.add_argument(
+        "--channel-width",
+        type=int,
+        default=10,
+        help="Channel width in pixels (default: 10)",
+    )
+    parser.add_argument(
+        "--channel-separation",
+        type=int,
+        default=45,
+        help="Minimum channel separation in pixels (default: 45)",
+    )
+    parser.add_argument(
+        "--channel-detection-snr",
+        type=float,
+        default=1.0,
+        help="Signal-to-noise ratio for channel detection (default: 1.0)",
+    )
+    parser.add_argument(
+        "--channel-width-pad",
+        type=int,
+        default=10,
+        help="Width padding for channel detection (default: 10)",
+    )
+    parser.add_argument(
+        "--channel-length-pad",
+        type=int,
+        default=10,
+        help="Length padding for channel masks (default: 10)",
+    )
+    parser.add_argument(
+        "--trench-length",
+        type=int,
+        default=-1,
+        help="Trench length in pixels (-1 to auto-detect, default: -1)",
+    )
+
+    # Image processing parameters
+    parser.add_argument(
+        "--image-orientation",
+        type=str,
+        choices=["auto", "up", "down"],
+        default="auto",
+        help="Image orientation correction (default: auto)",
+    )
+
+    # Processing parameters
+    parser.add_argument(
+        "--num-analyzers",
+        type=int,
+        default=multiprocessing.cpu_count(),
+        help=f"Number of parallel analyzers (default: {multiprocessing.cpu_count()})",
+    )
+    parser.add_argument(
+        "--alignment-pad",
+        type=int,
+        default=10,
+        help="Padding for alignment calculations (default: 10)",
+    )
+    parser.add_argument(
+        "--tiff-source",
+        type=str,
+        choices=["nd2", "BioFormats / other TIFF"],
+        default="nd2",
+        help="Source format of TIFF files (default: nd2)",
+    )
+
+    args = parser.parse_args()
+
+    # Create InPaths
+    in_paths = InPaths(TIFF_dir=args.tiff_dir)
+
+    # Get defaults from gen_default_run_params
+    try:
+        default_params = gen_default_run_params(in_paths)
+    except FileNotFoundError:
+        raise FileNotFoundError("TIFF folder not found or not valid")
+
+    # Override defaults with command-line arguments
+    t_start = args.t_start if args.t_start is not None else default_params.t_start
+    t_end = args.t_end if args.t_end is not None else default_params.t_end
+    phase_plane = (
+        args.phase_plane if args.phase_plane is not None else default_params.phase_plane
+    )
+
+    if args.fov_list is not None:
+        fov_list = FOVList(args.fov_list)
+    else:
+        fov_list = default_params.FOVs
+
+    # Create RunParams with all parameters
+    run_params = RunParams(
+        t_start=t_start,
+        t_end=t_end,
+        FOVs=fov_list,
+        phase_plane=phase_plane,
+        num_analyzers=args.num_analyzers,
+        image_orientation=Orientation[args.image_orientation],
+        trench_length=args.trench_length,
+        channel_width=args.channel_width,
+        channel_separation=args.channel_separation,
+        channel_detection_snr=args.channel_detection_snr,
+        channel_length_pad=args.channel_length_pad,
+        channel_width_pad=args.channel_width_pad,
+        alignment_pad=args.alignment_pad,
+        TIFF_source=args.tiff_source,
+    )
+
+    # Create OutPaths
+    out_paths = OutPaths(
+        experiment_name=args.experiment_name,
+        channel_dir=args.channel_dir,
+        analysis_dir=args.analysis_dir,
+    )
+
+    compile(in_paths, run_params, out_paths)
