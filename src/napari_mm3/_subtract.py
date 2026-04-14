@@ -1,3 +1,4 @@
+import argparse
 import multiprocessing
 from dataclasses import dataclass
 from multiprocessing.pool import Pool
@@ -463,7 +464,8 @@ class RunParams:
     analyze_all: Annotated[
         bool,
         {
-            "tooltip": "Perform subtraction on all challenge. 'fluorescence mode' is ignored. Instead, \n'subtraction_plane' will use phase subtraction, all other planes will use fluorescence subtraction."
+            "tooltip": "Perform subtraction on all challenge. 'fluorescence mode' is ignored. Instead,"
+            "\n'subtraction_plane' will use phase subtraction, all other planes will use fluorescence subtraction."
         },
     ] = True
     preview: bool = False
@@ -497,13 +499,6 @@ def gen_default_run_params(in_files: InPaths):
 
 def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     """subtract averages empty channels and then subtracts them from channels with cells"""
-
-    viewer = napari.current_viewer()
-    viewer.layers.clear()
-    viewer.grid.enabled = True
-    # Set the shape better here.
-    viewer.grid.shape = (-1, 20)
-
     user_spec_fovs = set(run_params.FOVs)
 
     if not in_paths.empty_folder.exists():
@@ -588,8 +583,6 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
 
     information("Finished subtraction.")
 
-    viewer = napari.current_viewer()
-
 
 class Subtract(MM3Container2):
     def __init__(self, viewer: Viewer):
@@ -621,7 +614,143 @@ class Subtract(MM3Container2):
 
 
 if __name__ == "__main__":
-    in_paths = InPaths()
-    run_params: RunParams = gen_default_run_params(in_paths)
-    out_paths = OutPaths()
+    """
+    Example usage:
+    python -m napari_mm3._subtract --subtraction-plane c1 --alignment-pad 10 --fov-list 1-5 --fluor-mode phase
+    """
+
+    parser = argparse.ArgumentParser(
+        description="Subtract empty/reference channels from cell-containing channels"
+    )
+
+    # Input/Output parameters
+    parser.add_argument(
+        "--channels-folder",
+        type=Path,
+        default=Path(".") / "analysis" / "channels",
+        help="Directory containing channel TIFF files (default: ./analysis/channels)",
+    )
+    parser.add_argument(
+        "--specs-file",
+        type=Path,
+        default=Path("./analysis/specs.yaml"),
+        help="Path to specs.yaml file (default: ./analysis/specs.yaml)",
+    )
+    parser.add_argument(
+        "--empty-folder",
+        type=Path,
+        default=Path("./analysis/empties"),
+        help="Directory for empty channel TIFFs (default: ./analysis/empties)",
+    )
+    parser.add_argument(
+        "--experiment-name",
+        type=str,
+        default="",
+        help="Name of the experiment (default: empty string)",
+    )
+    parser.add_argument(
+        "--subtracted-dir",
+        type=Path,
+        default=Path("./analysis/subtracted"),
+        help="Output directory for subtracted TIFFs (default: ./analysis/subtracted)",
+    )
+
+    # FOV and channel parameters
+    parser.add_argument(
+        "--fov-list",
+        type=str,
+        default=None,
+        help="Field of view indices to process (e.g., '1,3,5' or '1-5,10', default: all FOVs)",
+    )
+    parser.add_argument(
+        "--subtraction-plane",
+        type=str,
+        default=None,
+        help="Subtraction plane/channel (e.g., 'c1', default: first available channel)",
+    )
+
+    # Subtraction parameters
+    parser.add_argument(
+        "--alignment-pad",
+        type=int,
+        default=10,
+        help="Padding for alignment calculations in pixels (default: 10)",
+    )
+    parser.add_argument(
+        "--fluor-mode",
+        type=str,
+        choices=["phase", "fluorescence"],
+        default="phase",
+        help="Subtraction mode (default: phase)",
+    )
+
+    # Processing parameters
+    parser.add_argument(
+        "--num-analyzers",
+        type=int,
+        default=multiprocessing.cpu_count(),
+        help=f"Number of parallel analyzers (default: {multiprocessing.cpu_count()})",
+    )
+
+    # Analysis options
+    parser.add_argument(
+        "--analyze-all",
+        action="store_true",
+        default=False,
+        help="Perform subtraction on all channels (uses phase for subtraction_plane, fluorescence for others)",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        default=False,
+        help="Display subtracted stacks in napari viewer (default: False)",
+    )
+
+    args = parser.parse_args()
+
+    # Create InPaths
+    in_paths = InPaths(
+        channels_folder=args.channels_folder,
+        specs_file=args.specs_file,
+        empty_folder=args.empty_folder,
+    )
+
+    # Get defaults from gen_default_run_params
+    try:
+        default_params = gen_default_run_params(in_paths)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"Could not load defaults: {e}")
+    except ValueError as e:
+        raise ValueError(f"Invalid configuration: {e}")
+
+    # Determine FOV list to process
+    if args.fov_list is not None:
+        fov_list = FOVList(args.fov_list)
+    else:
+        fov_list = default_params.FOVs
+
+    # Determine subtraction plane
+    subtraction_plane = (
+        args.subtraction_plane
+        if args.subtraction_plane is not None
+        else default_params.subtraction_plane
+    )
+
+    # Create RunParams with command-line arguments
+    run_params = RunParams(
+        FOVs=fov_list,
+        subtraction_plane=subtraction_plane,
+        alignment_pad=args.alignment_pad,
+        num_analyzers=args.num_analyzers,
+        fluor_mode=args.fluor_mode,
+        analyze_all=args.analyze_all,
+        preview=args.preview,
+    )
+
+    # Create OutPaths
+    out_paths = OutPaths(
+        experiment_name=args.experiment_name,
+        subtracted_dir=args.subtracted_dir,
+    )
+
     subtract(in_paths, run_params, out_paths)
