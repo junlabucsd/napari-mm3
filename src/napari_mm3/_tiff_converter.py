@@ -1,15 +1,17 @@
 import argparse
-import copy
+import concurrent.futures as cf
 import datetime
 import json
 import os
 import re
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Annotated
 
 import nd2
 import numpy as np
+import psutil
 import tifffile as tiff
 from magicgui.widgets import PushButton, SpinBox
 from napari import Viewer
@@ -20,7 +22,6 @@ from skimage.registration import phase_cross_correlation
 from ._deriving_widgets import (
     FOVList,
     MM3Container2,
-    information,
 )
 
 BLACK = np.array([0.0, 0.0, 0.0])
@@ -80,54 +81,6 @@ def get_nd2_times(data_path):
             return 1
 
 
-def nd2_iter(nd2f: nd2.ND2File, time_range_ids, fov_list_ids):
-    """
-    Iterates over the contents of an ND2File.
-    If available, use fov_list/time_range. If not,
-    do the whole iamge.
-
-    params:
-        nd2f: The ND2Reader object to use.
-
-    returns:
-        t: the time-index of the returned frame.
-        fov: the fov-index of the returned frame.
-        image_data: the image at the given time/fov.
-    """
-    try:
-        nd2_time_range = set(range(0, nd2f.sizes["T"]))
-    except KeyError:
-        nd2_time_range = set([0])
-
-    # if only 1 fov, then just yield the single FOV.
-    if "P" not in nd2f.sizes:
-        im = nd2f.asarray()
-        for t in nd2_time_range:
-            if t not in time_range_ids:
-                continue
-            image_data = im[t]
-            yield t, 0, image_data
-        return
-
-    nd2_fov_list = set(range(0, nd2f.sizes["P"]))
-    if fov_list_ids != []:
-        valid_fovs = set(fov_list_ids).intersection(nd2_fov_list)
-    else:
-        valid_fovs = nd2_fov_list
-
-    if valid_fovs != set(fov_list_ids):
-        information("The following FOVs were not in the nd2, and thus were omitted:")
-        information(set(fov_list_ids) - valid_fovs)
-
-    for fov in valid_fovs:
-        im = nd2f.asarray(fov)
-        for t in nd2_time_range:
-            if t not in time_range_ids:
-                continue
-            image_data = im[t]
-            yield t, fov, image_data
-
-
 def write_timetable(nd2f: nd2.ND2File, path: Path):
     timetable = {}
     for event in nd2f.events():
@@ -154,27 +107,24 @@ def fix_rotation(angle: float, image_data: np.ndarray) -> np.ndarray:
         return image_data
 
     image_data = np.asarray(image_data, dtype=np.float32)
-    return rotate(image_data, float(angle), axes=(-1, -2))
+    return rotate(image_data, float(angle), axes=(-1, -2), order=1)
 
 
-def stabilize_fov(
+def register_shifts(
     raw_stack,
+    ref=None,
     upsample_factor=2,
 ):
     """
-    Drift correction. Registers against first frame and last frame, weighting them in proportion to how close you are.
-    Seems to work pretty well. Might be nice to have a third registration (middle) but it's prolly not worth it.
-    Sometimes a registration agaisnt the frame ahlfway through works best.
-
-    If people report issues, would be good to get this to use less memory.
-    But, a typical raw stack is at most ~1GB, so this is a reasonable expectation.
+    Generate shifts for drift correction. Register against middle frame.
+    Seems to work pretty well; depending on context last or first frame might work better.
     """
     print("Stabilizing")
     raw_stack = np.stack(raw_stack)  # [T, N, H, W]
 
-    T, C, H, W = raw_stack.shape
-    corrected_stack = np.empty_like(raw_stack)
-    ref = raw_stack[T // 2, 0]  # Reference frame from channel 0
+    T = raw_stack.shape[0]
+    if ref is None:
+        ref = raw_stack[T // 2, 0]  # Reference frame from channel 0
 
     shifts_f = []
     for i in range(0, T):
@@ -182,7 +132,6 @@ def stabilize_fov(
             ref, raw_stack[i, 0], upsample_factor=upsample_factor
         )
         shifts_f.append(shift_est)
-    shifts_f = np.array(shifts_f)
 
     # shifts_b = np.zeros((T, 2))
     # for i in range(T - 2, -1, -1):
@@ -196,7 +145,36 @@ def stabilize_fov(
 
     # w = np.linspace(1, 0, T)[:, None]
     # shifts = w * shifts_f + (1 - w) * shifts_b
-    shifts = shifts_f
+    return shifts_f
+
+
+def stabilize_fov(
+    raw_stack,
+    shifts=None,
+    upsample_factor=2,
+):
+    """
+    Drift correction.
+    Note: If you want easy performance improvements, simply cache 'shifts'.
+
+    If people report issues, would be good to get this to use less memory.
+    But, a typical raw stack is at most ~1GB, so this is a reasonable expectation.
+    """
+    print("Stabilizing")
+    # remove fov axis if it exists, since this works on one FOV at a time.
+    raw_stack = raw_stack.squeeze()
+    if raw_stack.ndim == 3:
+        raw_stack = raw_stack[
+            :, np.newaxis, ...
+        ]  # add channel axis if it doesn't exist
+    # final shape is [T, C, H, W]
+    print(raw_stack.shape)
+    if shifts is None:
+        shifts = register_shifts(raw_stack, upsample_factor=upsample_factor)
+
+    T = raw_stack.shape[0]
+    C = raw_stack.shape[1]
+    corrected_stack = np.empty_like(raw_stack)
 
     for i in range(T):
         for ch in range(C):
@@ -254,7 +232,79 @@ def load_fov(in_paths: InPaths, fov_idx):
     return arr
 
 
-def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
+def pipeline(image_data, run_params: RunParams):
+    if run_params.rotate != 0:
+        image_data = fix_rotation(run_params.rotate, image_data)
+
+    # add extra axis to make below slicing simpler. removed automatically if only one color.
+    # sanity check: what do if it's 1 channel/1 time?
+    if len(image_data.shape) < 3:
+        image_data = np.expand_dims(image_data, axis=0)
+
+    # for just a simple crop
+    if (run_params.vertical_crop_lower > 0.0) or (run_params.vertical_crop_upper < 1.0):
+        H, W = image_data.shape[-2], image_data.shape[-1]
+        ## convert from xy to row-column coordinates for numpy slicing
+        yhi = int((1 - run_params.vertical_crop_lower) * H)
+        ylo = int((1 - run_params.vertical_crop_upper) * H)
+        image_data = image_data[..., ylo:yhi, :]
+
+    if (run_params.horizontal_crop_lower != 0.0) or (
+        run_params.horizontal_crop_upper != 1.0
+    ):
+        H, W = image_data.shape[-2], image_data.shape[-1]
+        xlo = int(run_params.horizontal_crop_lower * W)
+        xhi = int(run_params.horizontal_crop_upper * W)
+        image_data = image_data[..., :, xlo:xhi]
+
+    if run_params.stabilize:
+        image_data = stabilize_fov(image_data)
+
+    return image_data
+
+
+def worker(
+    nd2f, time_range_ids, planes, file_prefix, run_params, out_paths, fov_id: int
+):
+    print(f"starting analysis of FOV {fov_id + 1}")
+    image_data = nd2f.asarray(fov_id)
+
+    if "T" not in nd2f.sizes:
+        image_data = image_data[np.newaxis, ...]
+
+    if "P" not in nd2f.sizes:
+        image_data = image_data[:, np.newaxis, ...]
+
+    image_data = image_data[time_range_ids, ...]
+
+    image_data = pipeline(image_data, run_params)
+
+    print(f"writing fov {fov_id + 1} to disk")
+    for t_idx, image_data_cur_t in enumerate(image_data):
+        t_id = time_range_ids[t_idx]
+        # make dictionary which will be the metdata for this TIFF
+        metadata_json = json.dumps(
+            {
+                "fov": fov_id + 1,
+                "t": t_id + 1,
+                "planes": planes,
+            }
+        )
+        tif_filename = f"{file_prefix}_t{t_id + 1:04d}xy{fov_id + 1:02d}.tif"
+        tiff.imwrite(
+            out_paths.tiff_folder / tif_filename,
+            data=image_data_cur_t,
+            description=metadata_json,
+            compression="zlib",
+            photometric="minisblack",
+        )
+
+    return fov_id
+
+
+def nd2ToTIFF(
+    in_paths: InPaths, run_params: RunParams, out_paths: OutPaths, single_thread=False
+):
     """
     This script converts a Nikon Elements .nd2 file to individual TIFF files per time point.
     Multiple color planes are stacked in each time point to make a multipage TIFF.
@@ -268,93 +318,54 @@ def nd2ToTIFF(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
 
     nd2file = in_paths.nd2_file
     file_prefix = os.path.split(os.path.splitext(nd2file)[0])[1]
-    information(f"Extracting {file_prefix} ...")
+
     with nd2.ND2File(str(nd2file)) as nd2f:
-        # load in the time table.
         write_timetable(nd2f, out_paths.timetable)
-        starttime = nd2f.text_info["date"]
-        starttime = parse_datetime_flexible(starttime)
         try:
             planes = nd2f.sizes["C"]
         except KeyError:
             planes = 1
 
-        # if only 1 fov, then just analyze the single FOV.
-        total_fovs = nd2f.sizes["P"] if ("P" in nd2f.sizes) else 1
         time_range_ids = list(range(run_params.image_start - 1, run_params.image_end))
         fov_list_ids = [fov_id - 1 for fov_id in run_params.fov_list]
-        for fov_id in progress(fov_list_ids):
-            if "P" not in nd2f.sizes:
-                image_data = nd2f.asarray()
-                if "T" not in nd2f.sizes:
-                    image_data = image_data[np.newaxis, np.newaxis, ...]
-                else:
-                    image_data = image_data[np.newaxis, ...]
-            else:
-                image_data = nd2f.asarray(fov_id)
-                if "T" not in nd2f.sizes:
-                    image_data = image_data[np.newaxis, ...]
 
-            image_data = image_data[time_range_ids, 0, ...]
-
-            if run_params.stabilize:
-                image_data = stabilize_fov(image_data)
-
-            if run_params.rotate != 0:
-                image_data = fix_rotation(run_params.rotate, image_data)
-
-            # add extra axis to make below slicing simpler. removed automatically if only one color.
-            # sanity check: what do if it's 1 channel/1 time?
-            if len(image_data.shape) < 3:
-                image_data = np.expand_dims(image_data, axis=0)
-
-            # for just a simple crop
-            if (run_params.vertical_crop_lower > 0.0) or (
-                run_params.vertical_crop_upper < 1.0
-            ):
-                H, W = image_data.shape[-2], image_data.shape[-1]
-                ## convert from xy to row-column coordinates for numpy slicing
-                yhi = int((1 - run_params.vertical_crop_lower) * H)
-                ylo = int((1 - run_params.vertical_crop_upper) * H)
-                image_data = image_data[..., ylo:yhi, :]
-
-            if (run_params.horizontal_crop_lower != 0.0) or (
-                run_params.horizontal_crop_upper != 1.0
-            ):
-                H, W = image_data.shape[-2], image_data.shape[-1]
-                xlo = int(run_params.horizontal_crop_lower * W)
-                xhi = int(run_params.horizontal_crop_upper * W)
-                image_data = image_data[..., :, xlo:xhi]
-
-            for t_idx, image_data_cur_t in enumerate(image_data):
-                t_id = time_range_ids[t_idx]
-                try:
-                    milliseconds = copy.deepcopy(
-                        nd2f.events()[2 * (t_id * total_fovs + fov_id)]["Time [s]"]
-                    )
-                    acq_days = milliseconds / 60.0 / 60.0 / 24.0
-                    acq_time = starttime.timestamp() + acq_days
-                except IndexError:
-                    acq_time = None
-                    print("No acquistion time found")
-                # make dictionary which will be the metdata for this TIFF
-                metadata_json = json.dumps(
-                    {
-                        "fov": fov_id + 1,
-                        "t": t_id + 1,
-                        "jd": acq_time,
-                        "planes": planes,
-                    }
+        if single_thread:
+            for fov_id in fov_list_ids:
+                worker(
+                    nd2f,
+                    time_range_ids,
+                    planes,
+                    file_prefix,
+                    run_params,
+                    out_paths,
+                    fov_id,
                 )
-                tif_filename = f"{file_prefix}_t{t_id + 1:04d}xy{fov_id + 1:02d}.tif"
-                #     information("Saving %s." % tif_filename)
-                tiff.imwrite(
-                    out_paths.tiff_folder / tif_filename,
-                    data=image_data_cur_t,
-                    description=metadata_json,
-                    compression="zlib",
-                    photometric="minisblack",
-                )
+            return
+
+        # calculate how many threads we can safely launch.
+        total_memory = psutil.virtual_memory().available
+        # note: nd2f is thread-safe, so this can be shared.
+        temp_fov = nd2f.asarray(fov_list_ids[0])
+        fov_memory = temp_fov.nbytes
+        del temp_fov
+        # .6 arbitrary for safety. / 2 due to needing a working copy of the data.
+        possible_threads = min(0.6 * total_memory / fov_memory / 2, os.cpu_count())
+        print(f"Launching {int(possible_threads)} processes.")
+
+        temp_worker = partial(
+            worker,
+            nd2f,
+            time_range_ids,
+            planes,
+            file_prefix,
+            run_params,
+            out_paths,
+        )
+        with cf.ThreadPoolExecutor(max_workers=int(possible_threads)) as executor:
+            it = executor.map(temp_worker, fov_list_ids)
+            for fov_id in progress(it, total=len(fov_list_ids), desc="Processing FOVs"):
+                print(f"finished {fov_id + 1}")
+            print("Finished analysis of all FOVs.")
 
 
 class TIFFExport(MM3Container2):
