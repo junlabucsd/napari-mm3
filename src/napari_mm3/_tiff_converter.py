@@ -440,7 +440,7 @@ class TIFFExport(MM3Container2):
     def regen_widgets(self):
         super().regen_widgets()
 
-        self["orientation"].changed.connect(self.preview_fov)
+        self["trap_open_side"].changed.connect(self.preview_fov)
         self["stabilize"].changed.connect(self.update_fov_idx)
         self["stabilize"].changed.connect(self.preview_fov)
         self["rotate"].changed.connect(self.preview_fov)

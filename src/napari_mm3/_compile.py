@@ -22,7 +22,6 @@ import six
 import tifffile as tiff
 import yaml
 from napari import Viewer
-from napari.qt.threading import thread_worker
 from napari.utils import progress
 from scipy import ndimage as ndi
 from scipy.signal import find_peaks_cwt
