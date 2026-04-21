@@ -638,6 +638,10 @@ class MM3Container2(Container):
     def regen_run_params(self):
         pass
 
+    def update_view(self):
+        """A hook for updating the napari viewer after changing parameters but before running."""
+        pass
+
     def add_dependent_widgets(self):
         for param_field, annotation in self.run_params.__annotations__.items():
             param_default_value = vars(self.run_params)[param_field]
@@ -653,6 +657,7 @@ class MM3Container2(Container):
             update_value_p = partial(update_value, param_field)
             # is there a nice way to wire up changes to a preview update
             param_widget.changed.connect(update_value_p)
+            param_widget.changed.connect(self.update_view)
 
         for folder_field, annotation in self.out_paths.__annotations__.items():
             # equivalent to in_folders.folder_field
