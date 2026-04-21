@@ -295,6 +295,7 @@ def worker(
 
     image_data = pipeline(image_data, run_params)
 
+    print(image_data.shape)
     print(f"writing fov {fov_id + 1} to disk")
     for t_idx, image_data_cur_t in enumerate(image_data):
         t_id = time_range_ids[t_idx]
@@ -326,19 +327,14 @@ def fix_orientation(
     Fix the orientation. The standard direction for channels to open to is down.
     """
 
-    image_data = np.squeeze(image_data)  # remove singleton dimensions
-
-    if len(image_data.shape) == 2:
-        image_data = np.expand_dims(image_data, 0)
-
     if flip_image == FlipImage.yes:
-        return image_data[:, ::-1, :]
+        return image_data[..., ::-1, :]
     elif flip_image == FlipImage.auto:
         # flip based on the index of the highest average row value
         brightest_row = np.argmax(image_data[phase_idx].mean(axis=1))
         midline = image_data[phase_idx].shape[0] / 2
         if brightest_row < midline:
-            image_data = image_data[:, ::-1, :]
+            image_data = image_data[..., ::-1, :]
         else:
             pass
 
