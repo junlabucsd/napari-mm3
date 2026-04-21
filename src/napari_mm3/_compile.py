@@ -11,7 +11,6 @@ import multiprocessing
 import pickle
 import re
 from dataclasses import dataclass
-from enum import Enum
 from functools import partial
 from multiprocessing import Pool
 from pathlib import Path
@@ -70,35 +69,6 @@ def get_time(filepath: str) -> Optional[int]:
     if res is not None:
         return int(res.group(1))
     return None
-
-
-# define function for flipping the images on an FOV by FOV basis
-def fix_orientation(
-    image_data: np.ndarray, phase_idx: int, image_orientation: str
-) -> np.ndarray:
-    """
-    Fix the orientation. The standard direction for channels to open to is down.
-    """
-
-    image_data = np.squeeze(image_data)  # remove singleton dimensions
-
-    if len(image_data.shape) == 2:
-        image_data = np.expand_dims(image_data, 0)
-
-    if image_orientation == "up":
-        return image_data[:, ::-1, :]
-    elif image_orientation == "down":
-        pass
-    elif image_orientation == "auto":
-        # flip based on the index of the highest average row value
-        brightest_row = np.argmax(image_data[phase_idx].mean(axis=1))
-        midline = image_data[phase_idx].shape[0] / 2
-        if brightest_row < midline:
-            image_data = image_data[:, ::-1, :]
-        else:
-            pass
-
-    return image_data
 
 
 def find_phase_idx(image_data: np.ndarray, phase_plane: str):
@@ -493,12 +463,6 @@ def load_fov(
     return np.squeeze(np.array(image_fov_stack, dtype=np.int32))
 
 
-class Orientation(Enum):
-    auto = 1
-    up = 2
-    down = 3
-
-
 @dataclass
 class InPaths:
     """
@@ -523,7 +487,6 @@ class RunParams:
     FOVs: FOVList
     phase_plane: str
     num_analyzers: int = multiprocessing.cpu_count()
-    image_orientation: Orientation = Orientation.auto
     trench_length: int = -1
     channel_width: int = 10
     channel_separation: int = 45
@@ -599,7 +562,6 @@ def worker(
         # TODO: move this out of the loop
         phase_idx = int(find_phase_idx(image_data, p.phase_plane))
 
-        image_data = fix_orientation(image_data, phase_idx, p.image_orientation.name)
         phase_image = image_data[phase_idx]
 
         channel_locs = find_channel_locs(
@@ -851,15 +813,6 @@ if __name__ == "__main__":
         help="Trench length in pixels (-1 to auto-detect, default: -1)",
     )
 
-    # Image processing parameters
-    parser.add_argument(
-        "--image-orientation",
-        type=str,
-        choices=["auto", "up", "down"],
-        default="auto",
-        help="Image orientation correction (default: auto)",
-    )
-
     # Processing parameters
     parser.add_argument(
         "--num-analyzers",
@@ -911,7 +864,6 @@ if __name__ == "__main__":
         FOVs=fov_list,
         phase_plane=phase_plane,
         num_analyzers=args.num_analyzers,
-        image_orientation=Orientation[args.image_orientation],
         trench_length=args.trench_length,
         channel_width=args.channel_width,
         channel_separation=args.channel_separation,

@@ -5,6 +5,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from enum import Enum
 from functools import partial
 from pathlib import Path
 from typing import Annotated
@@ -194,12 +195,19 @@ class InPaths:
         self.nd2_file = nd2files[0]
 
 
+class TrapOpenSide(Enum):
+    auto = 1
+    up = 2
+    down = 3
+
+
 @dataclass
 class RunParams:
     image_start: int
     image_end: int
     fov_list: FOVList
     stabilize: bool
+    trap_open_side: TrapOpenSide = TrapOpenSide.auto
     rotate: Annotated[float, {"min": -90, "max": 90}] = 0
     vertical_crop_lower: float = 0.0
     vertical_crop_upper: float = 1.0
@@ -260,11 +268,19 @@ def pipeline(image_data, run_params: RunParams):
     if run_params.stabilize:
         image_data = stabilize_fov(image_data)
 
+    image_data = fix_orientation(image_data, 0, run_params.trap_open_side.name)
+
     return image_data
 
 
 def worker(
-    nd2f, time_range_ids, planes, file_prefix, run_params, out_paths, fov_id: int
+    nd2f,
+    time_range_ids,
+    planes,
+    file_prefix,
+    run_params: RunParams,
+    out_paths: OutPaths,
+    fov_id: int,
 ):
     print(f"starting analysis of FOV {fov_id + 1}")
     image_data = nd2f.asarray(fov_id)
@@ -300,6 +316,35 @@ def worker(
         )
 
     return fov_id
+
+
+# define function for flipping the images on an FOV by FOV basis
+def fix_orientation(
+    image_data: np.ndarray, phase_idx: int, image_orientation: str
+) -> np.ndarray:
+    """
+    Fix the orientation. The standard direction for channels to open to is down.
+    """
+
+    image_data = np.squeeze(image_data)  # remove singleton dimensions
+
+    if len(image_data.shape) == 2:
+        image_data = np.expand_dims(image_data, 0)
+
+    if image_orientation == "up":
+        return image_data[:, ::-1, :]
+    elif image_orientation == "down":
+        pass
+    elif image_orientation == "auto":
+        # flip based on the index of the highest average row value
+        brightest_row = np.argmax(image_data[phase_idx].mean(axis=1))
+        midline = image_data[phase_idx].shape[0] / 2
+        if brightest_row < midline:
+            image_data = image_data[:, ::-1, :]
+        else:
+            pass
+
+    return image_data
 
 
 def nd2ToTIFF(
@@ -395,6 +440,7 @@ class TIFFExport(MM3Container2):
     def regen_widgets(self):
         super().regen_widgets()
 
+        self["orientation"].changed.connect(self.preview_fov)
         self["stabilize"].changed.connect(self.update_fov_idx)
         self["stabilize"].changed.connect(self.preview_fov)
         self["rotate"].changed.connect(self.preview_fov)
@@ -477,6 +523,7 @@ class TIFFExport(MM3Container2):
             row_min:row_max,
             col_min:col_max,
         ]
+        fov_img = fix_orientation(fov_img, 0, self.run_params.trap_open_side.name)
         if "fov_img" in viewer.layers:
             layer = viewer.layers["fov_img"]
             layer.data = fov_img
