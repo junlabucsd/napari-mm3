@@ -384,15 +384,11 @@ def make_masks(
     channel_length_pad: int = 0,
 ) -> tuple[int, int, dict]:
     """
-    The output dictionary's keys are peak numbers, and the values are channel locations in format
-    [[minrow, maxrow], [mincol, maxcol]]
-    One important consequence of these function is that the channel ids and the size of the
-    channel slices are decided now. Updates to mask must coordinate with these values.
-
     Returns
     -------
-    channel_masks : dict
+    channel_masks : dict[channel_id: int, channel_corners: list[[y1, y2], [x1, x2]]]
         dictionary of consensus channel masks.
+        channels uniquely identified by their median x position.
 
     """
     # declare temp variables from parameters.
@@ -403,10 +399,7 @@ def make_masks(
 
     consensus_mask = make_consensus_mask(phase_image, chnl_timeseries, crop_wp, chan_lp)
 
-    # initialize dict which holds channel masks {peak : [[y1, y2],[x1,x2]],...}
     channel_masks = {}
-
-    # go through each label
     for label in np.unique(consensus_mask):
         if label == 0:  # label zero is the background
             continue
@@ -462,7 +455,6 @@ def tiff_stack_slice_and_write(
             )
 
 
-@thread_worker
 def load_fov(
     image_directory: Path, fov_id: int, filter_str: str = ""
 ) -> Union[np.ndarray, None]:
@@ -582,6 +574,7 @@ def generate_tif_dataframe(tiff_folder: Path) -> pd.DataFrame:
 def worker(
     df_files: pd.DataFrame,
     p: RunParams,
+    out_paths: OutPaths,
     fov: int,
 ):
     image_series = df_files[df_files["fov"] == fov]
@@ -655,7 +648,7 @@ def compile(in_paths: InPaths, p: RunParams, out_paths: OutPaths) -> None:
     df_files = generate_tif_dataframe(in_paths.TIFF_dir)
     all_channels = {}
 
-    temp_worker = partial(worker, df_files, p)
+    temp_worker = partial(worker, df_files, p, out_paths)
     with cf.ThreadPoolExecutor(max_workers=p.num_analyzers) as executor:
         it = executor.map(temp_worker, p.FOVs)
         for fov, chans in progress(
@@ -704,26 +697,53 @@ class Compile(MM3Container2):
         self.regen_widgets()
 
     def run(self):
-        print(self.run_params)
         compile(self.in_paths, self.run_params, self.out_paths)
+
+    def update_view(self):
+        self.display_fov_full()
 
     def display_fov_full(self):
         self.viewer.text_overlay.visible = False
         self.viewer.layers.clear()
         low_fov = self.run_params.FOVs[0]
         image_fov_worker = load_fov(self.in_paths.TIFF_dir, low_fov)
-        image_fov_worker.returned.connect(lambda _: self.viewer.layers.clear())
-        image_fov_worker.returned.connect(self.viewer.add_image)
-        image_fov_worker.returned.connect(
-            lambda _: setattr(self.viewer.dims, "current_step", (0, 0))
+        print(image_fov_worker.shape)
+        loc = find_channel_locs(
+            image_fov_worker[0],
+            self.run_params.channel_width_pad,
+            self.run_params.channel_width,
+            self.run_params.channel_detection_snr,
+            self.run_params.channel_separation,
+            self.run_params.trench_length,
         )
-        image_fov_worker.returned.connect(
-            lambda _: self.viewer.layers[0].reset_contrast_limits()
+        cur_image_masks = make_masks(
+            image_fov_worker[0][np.newaxis, ...],
+            [loc],
+            self.run_params.channel_width_pad,
+            self.run_params.channel_width,
+            self.run_params.channel_length_pad,
         )
-        image_fov_worker.returned.connect(
-            lambda _: setattr(self.viewer.layers[0], "gamma", 0.5)
+        self.viewer.layers.clear()
+        self.viewer.add_image(image_fov_worker)
+        self.viewer.layers[0].reset_contrast_limits()
+        self.viewer.layers[0].gamma = 0.5
+        print(cur_image_masks)
+        render_shapes = []
+        for peak, bbox in cur_image_masks.items():
+            min_row, max_row = bbox[0]
+            min_col, max_col = bbox[1]
+            rect = np.array(
+                [
+                    [min_row, min_col],
+                    [min_row, max_col],
+                    [max_row, max_col],
+                    [max_row, min_col],
+                ]
+            )
+            render_shapes.append(rect)
+        self.viewer.add_shapes(
+            render_shapes, face_color="transparent", edge_color="red", edge_width=3
         )
-        image_fov_worker.start()
 
 
 if __name__ == "__main__":

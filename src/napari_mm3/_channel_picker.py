@@ -229,6 +229,7 @@ def display_rectangles(
     peak_annotations: list,
     crosscorrs: dict,
 ) -> layers.Shapes:
+    print("woah")
     # Set up crosscorrelation text
     properties = {"peaks": sorted_peaks, "crosscorrs": crosscorrs.values()}
     text_parameters = {
@@ -240,11 +241,11 @@ def display_rectangles(
     }
 
     curr_colors = [SPEC_TO_COLOR[n] for n in peak_annotations]
-
+    print("displaying rectangles ")
+    print(coords)
     # Add channel boxes.
     shapes_layer = viewer.add_shapes(
         coords,
-        shape_type="rectangle",
         face_color=curr_colors,
         edge_color=TRANSPARENT,
         properties=properties,
@@ -351,22 +352,24 @@ class ChannelPicker(MM3Container2):
         self.sorted_peaks = list(sorted(self.specs[self.cur_fov].keys()))
         self.sorted_specs = [self.specs[self.cur_fov][p] for p in self.sorted_peaks]
 
-        self.crosscorrs = load_crosscorrs(self.in_paths.ana_dir, self.cur_fov)
-
         self.viewer.layers.clear()
-
         display_image_stack(self.viewer, image_fov_stack, self.default_plane)
 
-        # Set up selection box dimensions
-        height = image_fov_stack.shape[-2]
-        width = image_fov_stack.shape[-1]
-
-        channel_height = height
-        channel_width = width / len(self.sorted_peaks)
-        spread = channel_width // 2
-        self.coords = [
-            [[0, p - spread], [channel_height, p + spread]] for p in self.sorted_peaks
-        ]
+        self.crosscorrs = load_crosscorrs(self.in_paths.ana_dir, self.cur_fov)
+        self.channel_masks = load_channel_masks(self.in_paths.ana_dir)[self.cur_fov]
+        self.coords = []
+        for peak, bbox in self.channel_masks.items():
+            min_row, max_row = bbox[0]
+            min_col, max_col = bbox[1]
+            rect = np.array(
+                [
+                    [min_row, min_col],
+                    [min_row, max_col],
+                    [max_row, max_col],
+                    [max_row, min_col],
+                ]
+            )
+            self.coords.append(rect)
 
         shapes_layer = display_rectangles(
             self.viewer,
