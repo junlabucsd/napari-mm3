@@ -331,11 +331,9 @@ def fix_orientation(
     if len(image_data.shape) == 2:
         image_data = np.expand_dims(image_data, 0)
 
-    if flip_image == "yes":
+    if flip_image == FlipImage.yes:
         return image_data[:, ::-1, :]
-    elif flip_image == "no":
-        pass
-    elif flip_image == "auto":
+    elif flip_image == FlipImage.auto:
         # flip based on the index of the highest average row value
         brightest_row = np.argmax(image_data[phase_idx].mean(axis=1))
         midline = image_data[phase_idx].shape[0] / 2
