@@ -195,10 +195,10 @@ class InPaths:
         self.nd2_file = nd2files[0]
 
 
-class TrapOpenSide(Enum):
+class FlipImage(Enum):
     auto = 1
-    up = 2
-    down = 3
+    yes = 2
+    no = 3
 
 
 @dataclass
@@ -207,7 +207,7 @@ class RunParams:
     image_end: int
     fov_list: FOVList
     stabilize: bool
-    trap_open_side: TrapOpenSide = TrapOpenSide.auto
+    flip_image: FlipImage = FlipImage.auto
     rotate: Annotated[float, {"min": -90, "max": 90}] = 0
     vertical_crop_lower: float = 0.0
     vertical_crop_upper: float = 1.0
@@ -268,7 +268,7 @@ def pipeline(image_data, run_params: RunParams):
     if run_params.stabilize:
         image_data = stabilize_fov(image_data)
 
-    image_data = fix_orientation(image_data, 0, run_params.trap_open_side.name)
+    image_data = fix_orientation(image_data, 0, run_params.flip_image)
 
     return image_data
 
@@ -320,7 +320,7 @@ def worker(
 
 # define function for flipping the images on an FOV by FOV basis
 def fix_orientation(
-    image_data: np.ndarray, phase_idx: int, image_orientation: str
+    image_data: np.ndarray, phase_idx: int, flip_image: FlipImage
 ) -> np.ndarray:
     """
     Fix the orientation. The standard direction for channels to open to is down.
@@ -331,11 +331,11 @@ def fix_orientation(
     if len(image_data.shape) == 2:
         image_data = np.expand_dims(image_data, 0)
 
-    if image_orientation == "up":
+    if flip_image == "yes":
         return image_data[:, ::-1, :]
-    elif image_orientation == "down":
+    elif flip_image == "no":
         pass
-    elif image_orientation == "auto":
+    elif flip_image == "auto":
         # flip based on the index of the highest average row value
         brightest_row = np.argmax(image_data[phase_idx].mean(axis=1))
         midline = image_data[phase_idx].shape[0] / 2
@@ -440,7 +440,7 @@ class TIFFExport(MM3Container2):
     def regen_widgets(self):
         super().regen_widgets()
 
-        self["trap_open_side"].changed.connect(self.preview_fov)
+        self["flip_image"].changed.connect(self.preview_fov)
         self["stabilize"].changed.connect(self.update_fov_idx)
         self["stabilize"].changed.connect(self.preview_fov)
         self["rotate"].changed.connect(self.preview_fov)
@@ -523,7 +523,7 @@ class TIFFExport(MM3Container2):
             row_min:row_max,
             col_min:col_max,
         ]
-        fov_img = fix_orientation(fov_img, 0, self.run_params.trap_open_side.name)
+        fov_img = fix_orientation(fov_img, 0, self.run_params.flip_image)
         if "fov_img" in viewer.layers:
             layer = viewer.layers["fov_img"]
             layer.data = fov_img
