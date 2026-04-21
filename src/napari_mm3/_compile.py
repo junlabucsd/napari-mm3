@@ -706,10 +706,19 @@ class Compile(MM3Container2):
         self.viewer.text_overlay.visible = False
         self.viewer.layers.clear()
         low_fov = self.run_params.FOVs[0]
-        image_fov_worker = load_fov(self.in_paths.TIFF_dir, low_fov)
-        print(image_fov_worker.shape)
+        image_fov = load_fov(self.in_paths.TIFF_dir, low_fov)
+
+        self.viewer.layers.clear()
+        self.viewer.add_image(
+            image_fov,
+            contrast_limits=[0, np.percentile(image_fov, 99.9)],
+            name="image_fov",
+        )
+        self.viewer.dims.set_current_step(0, 0)
+        self.viewer.layers["image_fov"].gamma = 0.5
+
         loc = find_channel_locs(
-            image_fov_worker[0],
+            image_fov[0],
             self.run_params.channel_width_pad,
             self.run_params.channel_width,
             self.run_params.channel_detection_snr,
@@ -717,16 +726,12 @@ class Compile(MM3Container2):
             self.run_params.trench_length,
         )
         cur_image_masks = make_masks(
-            image_fov_worker[0][np.newaxis, ...],
+            image_fov[0][np.newaxis, ...],
             [loc],
             self.run_params.channel_width_pad,
             self.run_params.channel_width,
             self.run_params.channel_length_pad,
         )
-        self.viewer.layers.clear()
-        self.viewer.add_image(image_fov_worker)
-        self.viewer.layers[0].reset_contrast_limits()
-        self.viewer.layers[0].gamma = 0.5
         print(cur_image_masks)
         render_shapes = []
         for peak, bbox in cur_image_masks.items():
