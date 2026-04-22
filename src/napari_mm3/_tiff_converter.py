@@ -292,7 +292,6 @@ def worker(
         image_data = image_data[:, np.newaxis, ...]
 
     image_data = image_data[time_range_ids, ...]
-
     image_data = pipeline(image_data, run_params)
 
     print(image_data.shape)
@@ -326,19 +325,19 @@ def fix_orientation(
     """
     Fix the orientation. The standard direction for channels to open to is down.
     """
-
     if flip_image == FlipImage.yes:
         return image_data[..., ::-1, :]
+    elif flip_image == FlipImage.no:
+        return image_data
     elif flip_image == FlipImage.auto:
         # flip based on the index of the highest average row value
-        brightest_row = np.argmax(image_data[phase_idx].mean(axis=1))
-        midline = image_data[phase_idx].shape[0] / 2
+        brightest_row = np.argmax(image_data[..., phase_idx, :, :].mean(axis=-1))
+        midline = image_data[phase_idx].shape[-2] / 2
         if brightest_row < midline:
-            image_data = image_data[..., ::-1, :]
-        else:
-            pass
-
-    return image_data
+            return image_data[..., ::-1, :]
+        return image_data
+    else:
+        raise ValueError(f"Invalid flip_image value: {flip_image}")
 
 
 def nd2ToTIFF(
