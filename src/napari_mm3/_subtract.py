@@ -1,6 +1,9 @@
 import argparse
+import concurrent.futures as cf
+import enum
 import multiprocessing
 from dataclasses import dataclass
+from functools import partial
 from multiprocessing.pool import Pool
 from pathlib import Path
 from typing import Annotated
@@ -26,8 +29,83 @@ from ._deriving_widgets import (
 from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
 
 
+class SubtractMode(enum.Enum):
+    PHASE = 0
+    FLUORESCENCE = 1
+
+
+@dataclass
+class InPaths:
+    """
+    1. check folders for existence, fetch FOVs & times & planes
+        -> upon failure, simply show a list of inputs + update button.
+    """
+
+    channels_folder: Annotated[Path, {"mode": "d"}] = (
+        Path(".") / "analysis" / "channels"
+    )
+    specs_file: Path = Path("./analysis/specs.yaml")
+    empty_folder: Annotated[Path, {"mode": "d"}] = Path("./analysis/empties")
+
+
+@dataclass
+class OutPaths:
+    experiment_name: str = ""
+    subtracted_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/subtracted")
+
+
+@dataclass
+class RunParams:
+    FOVs: FOVList
+    subtraction_plane: str
+    alignment_pad: Annotated[
+        int,
+        {
+            "tooltip": "Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image."
+        },
+    ] = 10
+    num_analyzers: int = multiprocessing.cpu_count()
+    subtract_mode: SubtractMode = SubtractMode.PHASE
+    analyze_all: Annotated[
+        bool,
+        {
+            "tooltip": "Perform subtraction on all challenge. 'fluorescence mode' is ignored. Instead,"
+            "\n'subtraction_plane' will use phase subtraction, all other planes will use fluorescence subtraction."
+        },
+    ] = True
+
+
+def gen_default_run_params(in_files: InPaths):
+    """Initializes RunParams from a given in_files.
+    Probably better to do this in __new__, but..."""
+    # TODO: combine all planes into one click
+    try:
+        all_fovs = get_valid_fovs_folder(in_files.channels_folder)
+        # TODO: get the brightest channel as the default phase plane!
+        channels = get_valid_planes_channel_folder(in_files.channels_folder)
+        # move this into runparams somehow!
+        params = RunParams(
+            subtraction_plane=channels[0],
+            FOVs=FOVList(all_fovs),
+        )
+        params.__annotations__["subtraction_plane"] = Annotated[
+            str, {"choices": channels}
+        ]
+        params.available_channels = channels
+        return params
+    except FileNotFoundError:
+        raise FileNotFoundError("TIFF folder not found")
+    except ValueError:
+        raise ValueError(
+            "Invalid filenames. Make sure that timestamps are denoted as t[0-9]* and FOVs as xy[0-9]*"
+        )
+
+
 def subtract_phase(
-    alignment_pad: int, cropped_channel: np.ndarray, empty_channel: np.ndarray, debug
+    debug,
+    alignment_pad: int,
+    cropped_channel: np.ndarray,
+    empty_channel: np.ndarray,
 ) -> np.ndarray:
     """subtract_phase aligns and subtracts an empty phase contrast channel (trap) from a channel containing cells.
     The subtracted image returned is the same size as the image given. It may however include
@@ -183,15 +261,12 @@ def copy_empty_stack(
 def subtract_fov_stack(
     empty_dir: Path,
     channel_dir: Path,
-    experiment_name: str,
-    alignment_pad: int,
-    num_analyzers: int,
-    sub_dir: Path,
-    fov_id: int,
     specs: dict,
-    color: str = "c1",
-    method: str = "phase",
-    preview: bool = False,
+    out_paths: OutPaths,
+    alignment_pad: int,
+    color: str,
+    method: SubtractMode,
+    fov_id: int,
 ) -> bool:
     """
     For a given FOV, loads the precomputed empty stack and does subtraction on
@@ -201,7 +276,7 @@ def subtract_fov_stack(
     information("Subtracting peaks for FOV %d." % fov_id)
 
     empty_filename = TIFF_FILE_FORMAT_NO_PEAK % (
-        experiment_name,
+        out_paths.experiment_name,
         fov_id,
         f"empty_{color}",
     )
@@ -214,7 +289,6 @@ def subtract_fov_stack(
             ana_peak_ids.append(peak_id)
     ana_peak_ids = sorted(ana_peak_ids)  # sort for repeatability
     information("Subtracting %d channels for FOV %d." % (len(ana_peak_ids), fov_id))
-
     # just break if there are to peaks to analyze
     if not ana_peak_ids:
         return False
@@ -223,7 +297,7 @@ def subtract_fov_stack(
     for peak_id in ana_peak_ids:
         information("Subtracting peak %d." % peak_id)
         image_filename = TIFF_FILE_FORMAT_PEAK % (
-            experiment_name,
+            out_paths.experiment_name,
             fov_id,
             peak_id,
             color,
@@ -231,44 +305,46 @@ def subtract_fov_stack(
         image_data = load_tiff(channel_dir / image_filename)
         # make a list for all time points to send to a multiprocessing pool
         # list will length of image_data with tuples (image, empty)
-        subtract_pairs = zip(image_data, avg_empty_stack)
-        pool = Pool(processes=num_analyzers)
+        image_and_empty = list(zip(image_data, avg_empty_stack))
 
-        if method == "phase":
-            subtract_phase_args = [
-                (alignment_pad, pair[0], pair[1], (fov_id, peak_id))
-                for pair in subtract_pairs
+        if method == SubtractMode.PHASE:
+            parallel_args = [
+                (
+                    (fov_id, peak_id),
+                    alignment_pad,
+                    pair[0],
+                    pair[1],
+                )
+                for pair in image_and_empty
             ]
-            subtracted_imgs = pool.map(subtract_phase_helper, subtract_phase_args)
-        elif method == "fluor":
-            subtract_fl_args = [(pair[0], pair[1]) for pair in subtract_pairs]
-            subtracted_imgs = pool.map(subtract_fluor_helper, subtract_fl_args)
+            temp_worker = subtract_phase_helper
+        elif method == SubtractMode.FLUORESCENCE:
+            parallel_args = [(pair[0], pair[1]) for pair in image_and_empty]
+            temp_worker = subtract_fluor_helper
 
-        pool.close()
-        pool.join()
-        if subtracted_imgs[0] is None:
+        sub_imgs_iter = map(temp_worker, parallel_args)
+        subtracted_images = []
+        for subtracted_image in sub_imgs_iter:
+            subtracted_images.append(subtracted_image)
+            print(f"finished fov {fov_id + 1}, peak {peak_id}")
+
+        if subtracted_images[0] is None:
             continue
-
         # # stack them up along a time axis
-        subtracted_stack = np.stack(subtracted_imgs, axis=0)
+        subtracted_stack = np.stack(subtracted_images, axis=0)
 
         # save out the subtracted stack
-        sub_filename = experiment_name + "_xy%03d_p%04d_sub_%s.tif" % (
+        sub_filename = out_paths.experiment_name + "_xy%03d_p%04d_sub_%s.tif" % (
             fov_id,
             peak_id,
             color,
         )
         # TODO: Make this respect compression levels
         tiff.imwrite(
-            sub_dir / sub_filename, subtracted_stack, compression=("zlib", 4)
+            out_paths.subtracted_dir / sub_filename,
+            subtracted_stack,
+            compression=("zlib", 4),
         )  # save it
-
-        if preview:
-            napari.current_viewer().add_image(
-                subtracted_stack,
-                name="Subtracted" + "_xy%03d_p%04d" % (fov_id, peak_id),
-                visible=True,
-            )
 
         information("Saved subtracted channel %d." % peak_id)
 
@@ -352,7 +428,8 @@ def average_empties_stack(
     color: str = "c1",
     align: bool = True,
 ) -> bool:
-    """Takes the fov file name and the peak names of the designated empties,
+    """
+    Takes the fov file name and the peak names of the designated empties,
     averages them and saves the image
 
     Saves empty stack to analysis folder, True upon success.
@@ -429,80 +506,12 @@ def average_empties_stack(
     return True
 
 
-@dataclass
-class InPaths:
-    """
-    1. check folders for existence, fetch FOVs & times & planes
-        -> upon failure, simply show a list of inputs + update button.
-    """
-
-    channels_folder: Annotated[Path, {"mode": "d"}] = (
-        Path(".") / "analysis" / "channels"
-    )
-    specs_file: Path = Path("./analysis/specs.yaml")
-    empty_folder: Annotated[Path, {"mode": "d"}] = Path("./analysis/empties")
-
-
-@dataclass
-class OutPaths:
-    experiment_name: str = ""
-    subtracted_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/subtracted")
-
-
-@dataclass
-class RunParams:
-    FOVs: FOVList
-    subtraction_plane: str
-    alignment_pad: Annotated[
-        int,
-        {
-            "tooltip": "Required. Padding for images. Larger => slower, but also larger => more tolerant of size differences between template and comparison image."
-        },
-    ] = 10
-    num_analyzers: int = multiprocessing.cpu_count()
-    fluor_mode: Annotated[str, {"choices": ["phase", "fluorescence"]}] = "phase"
-    analyze_all: Annotated[
-        bool,
-        {
-            "tooltip": "Perform subtraction on all challenge. 'fluorescence mode' is ignored. Instead,"
-            "\n'subtraction_plane' will use phase subtraction, all other planes will use fluorescence subtraction."
-        },
-    ] = True
-    preview: bool = False
-
-
-def gen_default_run_params(in_files: InPaths):
-    """Initializes RunParams from a given in_files.
-    Probably better to do this in __new__, but..."""
-    # TODO: combine all planes into one click
-    try:
-        all_fovs = get_valid_fovs_folder(in_files.channels_folder)
-        # TODO: get the brightest channel as the default phase plane!
-        channels = get_valid_planes_channel_folder(in_files.channels_folder)
-        # move this into runparams somehow!
-        params = RunParams(
-            subtraction_plane=channels[0],
-            FOVs=FOVList(all_fovs),
-        )
-        params.__annotations__["subtraction_plane"] = Annotated[
-            str, {"choices": channels}
-        ]
-        params.available_channels = channels
-        return params
-    except FileNotFoundError:
-        raise FileNotFoundError("TIFF folder not found")
-    except ValueError:
-        raise ValueError(
-            "Invalid filenames. Make sure that timestamps are denoted as t[0-9]* and FOVs as xy[0-9]*"
-        )
-
-
 def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     """subtract averages empty channels and then subtracts them from channels with cells"""
     user_spec_fovs = set(run_params.FOVs)
 
-    in_paths.empty_folder.exists(exists_ok=True)
-    out_paths.subtracted_dir.exists(exists_ok=True)
+    in_paths.empty_folder.mkdir(exist_ok=True)
+    out_paths.subtracted_dir.mkdir(exist_ok=True)
 
     specs = load_specs(in_paths.specs_file)
 
@@ -515,7 +524,6 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
 
     # determine if we are doing fluorescence or phase subtraction, and set flags
     align = True
-    sub_method = "phase" if run_params.fluor_mode == "phase" else "fluor"
 
     information(
         "Calculating averaged empties for channel {}.".format(
@@ -562,22 +570,26 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     information(
         "Subtracting channels for channel {}.".format(run_params.subtraction_plane)
     )
+    temp_worker = partial(
+        subtract_fov_stack,
+        in_paths.empty_folder,
+        in_paths.channels_folder,
+        specs,
+        out_paths,
+        run_params.alignment_pad,
+        run_params.subtraction_plane,
+        run_params.subtract_mode,
+    )
 
-    for fov_id in progress(fov_id_list):
-        # send to function which will create empty stack for each fov.
-        subtract_fov_stack(
-            in_paths.empty_folder,
-            in_paths.channels_folder,
-            out_paths.experiment_name,
-            run_params.alignment_pad,
-            run_params.num_analyzers,
-            out_paths.subtracted_dir,
-            fov_id,
-            specs,
-            color=run_params.subtraction_plane,
-            method=sub_method,
-            preview=run_params.preview,
-        )
+    with cf.ThreadPoolExecutor(max_workers=1) as executor:
+        it = executor.map(temp_worker, fov_id_list)
+        for fov, chans in progress(
+            zip(fov_id_list, it),
+            total=len(fov_id_list),
+            desc=f"Processing channel {run_params.subtraction_plane}",
+        ):
+            print(f"Finished {fov}", end="\r")
+        print("Finished analysis of all FOVs.")
 
     information("Finished subtraction.")
 
@@ -605,9 +617,9 @@ class Subtract(MM3Container2):
         for c in self.run_params.available_channels:
             self.run_params.subtraction_plane = c
             if c == old_subtraction_plane:
-                self.run_params.fluor_mode = "phase"
+                self.run_params.subtract_mode = SubtractMode.PHASE
             else:
-                self.run_params.fluor_mode = "fluorescence"
+                self.run_params.subtract_mode = SubtractMode.FLUORESCENCE
             subtract(self.in_paths, self.run_params, self.out_paths)
 
 
@@ -674,6 +686,7 @@ if __name__ == "__main__":
         default=10,
         help="Padding for alignment calculations in pixels (default: 10)",
     )
+    # TODO: fix this.
     parser.add_argument(
         "--fluor-mode",
         type=str,
@@ -740,7 +753,7 @@ if __name__ == "__main__":
         subtraction_plane=subtraction_plane,
         alignment_pad=args.alignment_pad,
         num_analyzers=args.num_analyzers,
-        fluor_mode=args.fluor_mode,
+        subtract_mode=args.fluor_mode,
         analyze_all=args.analyze_all,
         preview=args.preview,
     )
