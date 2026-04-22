@@ -309,7 +309,7 @@ def worker(
         tif_filename = f"{file_prefix}_t{t_id + 1:04d}xy{fov_id + 1:02d}.tif"
         tiff.imwrite(
             out_paths.tiff_folder / tif_filename,
-            data=image_data_cur_t,
+            data=image_data_cur_t.squeeze().astype(np.uint16),
             description=metadata_json,
             compression="zlib",
             photometric="minisblack",
