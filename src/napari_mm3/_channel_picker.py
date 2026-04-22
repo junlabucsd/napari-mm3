@@ -184,10 +184,13 @@ def load_crosscorrs(
 
 def display_image_stack(viewer: Viewer, image_fov_stack, plane):
     """Display an image stack in napari."""
-    images = viewer.add_image(np.array(image_fov_stack))
+    images = viewer.add_image(
+        np.array(image_fov_stack),
+        name="images",
+        gamma=0.5,
+        contrast_limits=[0, np.percentile(np.array(image_fov_stack), 99.9)],
+    )
     viewer.dims.current_step = (0, plane, 0, 0)
-    images.reset_contrast_limits()
-    images.gamma = 0.5
 
 
 def threshold_fov(
@@ -239,18 +242,16 @@ def display_rectangles(
         "visible": True,
         "color": "white",
     }
+    print(f"len: {len(peak_annotations)}")
 
     curr_colors = [SPEC_TO_COLOR[n] for n in peak_annotations]
     print("displaying rectangles ")
-    print(coords)
     # Add channel boxes.
     shapes_layer = viewer.add_shapes(
         coords,
         face_color=curr_colors,
-        edge_color=TRANSPARENT,
         properties=properties,
         text=text_parameters,
-        opacity=1,
     )
 
     return shapes_layer
@@ -370,7 +371,7 @@ class ChannelPicker(MM3Container2):
                 ]
             )
             self.coords.append(rect)
-
+        print(self.coords)
         shapes_layer = display_rectangles(
             self.viewer,
             self.coords,
