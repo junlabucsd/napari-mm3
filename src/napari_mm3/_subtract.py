@@ -501,10 +501,8 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
     """subtract averages empty channels and then subtracts them from channels with cells"""
     user_spec_fovs = set(run_params.FOVs)
 
-    if not in_paths.empty_folder.exists():
-        in_paths.empty_folder.mkdir()
-    if not out_paths.subtracted_dir.exists():
-        out_paths.subtracted_dir.mkdir()
+    in_paths.empty_folder.exists(exists_ok=True)
+    out_paths.subtracted_dir.exists(exists_ok=True)
 
     specs = load_specs(in_paths.specs_file)
 

@@ -233,6 +233,9 @@ def display_rectangles(
     crosscorrs: dict,
 ) -> layers.Shapes:
     print("woah")
+    assert (
+        len(coords) == len(peak_annotations) == len(crosscorrs)
+    ), "There are a different number of masks and peaks! Try either deleting specs.yaml, or re-running compile."
     # Set up crosscorrelation text
     properties = {"peaks": sorted_peaks, "crosscorrs": crosscorrs.values()}
     text_parameters = {

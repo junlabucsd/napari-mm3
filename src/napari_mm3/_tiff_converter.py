@@ -347,12 +347,8 @@ def nd2ToTIFF(
     This script converts a Nikon Elements .nd2 file to individual TIFF files per time point.
     Multiple color planes are stacked in each time point to make a multipage TIFF.
     """
-    # set up image folders if they do not already exist
-    if not out_paths.tiff_folder.exists():
-        out_paths.tiff_folder.mkdir()
-
-    if not Path("./analysis").exists():
-        Path("./analysis").mkdir()
+    out_paths.tiff_folder.mkdir(exist_ok=True)
+    out_paths.timetable.parent.mkdir(exist_ok=True)
 
     nd2file = in_paths.nd2_file
     file_prefix = os.path.split(os.path.splitext(nd2file)[0])[1]
@@ -480,8 +476,7 @@ class TIFFExport(MM3Container2):
 
     def gen_timetable_run(self):
         # make analysis folder if it doesn't exist already
-        if not self.out_paths.timetable.parent.exists():
-            self.out_paths.timetable.parent.mkdir()
+        self.out_paths.timetable.parent.mkdir(exist_ok=True)
 
         with nd2.ND2File(str(self.in_paths.nd2_file)) as nd2f:
             write_timetable(nd2f, self.out_paths.timetable)
