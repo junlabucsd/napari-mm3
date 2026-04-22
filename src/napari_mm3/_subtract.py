@@ -581,7 +581,7 @@ def subtract(in_paths: InPaths, run_params: RunParams, out_paths: OutPaths):
         run_params.subtract_mode,
     )
 
-    with cf.ThreadPoolExecutor(max_workers=1) as executor:
+    with cf.ThreadPoolExecutor(max_workers=run_params.num_analyzers) as executor:
         it = executor.map(temp_worker, fov_id_list)
         for fov, chans in progress(
             zip(fov_id_list, it),
