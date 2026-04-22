@@ -1,6 +1,6 @@
 import multiprocessing as mp
 import os
-import pickle
+from concurrent import futures as cf
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -525,10 +525,9 @@ def make_lineages_fov(
         # returning empty dictionary will add nothing to current cells dictionary
         return {}
 
-    ## This is a list of tuples (fov_id, peak_id) to send to the Pool command
     fov_and_peak_ids_list = [(fov_id, peak_id) for peak_id in ana_peak_ids]
     # use up all parameters EXCEPT fov_and_peak_ids
-    lineage_chnl_stack_helper = partial(
+    temp_worker = partial(
         make_lineage_chnl_stack,
         timetable_path,
         lineages_path,
@@ -546,27 +545,26 @@ def make_lineages_fov(
         seg_img,
         phase_plane,
     )
+
+    cells = {}  # create dictionary to hold all information
     if debug:
         # # This is the non-parallelized version (useful for debug)
-        lineages = []
         for fov_and_peak_ids in progress(fov_and_peak_ids_list):
-            lineages.append(lineage_chnl_stack_helper(fov_and_peak_ids))
+            cell_dict = temp_worker(fov_and_peak_ids)
+
+            cells.update(cell_dict)  # updates cells with the entries in cell_dict
     else:
         # # set up multiprocessing pool. will complete pool before going on
-
-        ctx = mp.get_context("spawn")
-        pool = ctx.Pool(processes=num_analyzers)
-        # # create the lineages for each peak individually
-        # # the output is a list of dictionaries
-        lineages = pool.map(lineage_chnl_stack_helper, fov_and_peak_ids_list)
-
-        pool.close()  # tells the process nothing more will be added.
-        pool.join()  # blocks script until everything has been processed and workers exit
-
-    # combine all dictionaries into one dictionary
-    cells = {}  # create dictionary to hold all information
-    for cell_dict in lineages:  # for all the other dictionaries in the list
-        cells.update(cell_dict)  # updates cells with the entries in cell_dict
+        with cf.ThreadPoolExecutor(max_workers=num_analyzers) as executor:
+            it = executor.map(temp_worker, fov_and_peak_ids_list)
+            for fov, cell_dict in progress(
+                zip(fov_and_peak_ids_list, it),
+                total=len(fov_and_peak_ids_list),
+                desc=f"Processing FOV {fov_id}",
+            ):
+                cells.update(cell_dict)  # updates cells with the entries in cell_dict
+                print(f"Finished {fov}", end="\r")
+            print("Finished analysis of all FOVs.")
 
     return cells
 
@@ -884,6 +882,7 @@ class LineagePlotter:
         ax: plt.Axes
             matplotlib axis
         """
+
         n_imgs = image_data_bg.shape[0]
         image_indices = range(n_imgs)
 
