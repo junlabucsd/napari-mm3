@@ -1,19 +1,47 @@
-from __future__ import print_function, division
+from __future__ import division, print_function
+
+import json
+import pickle
+import warnings
 from functools import wraps
+from pathlib import Path
+from typing import Any, Callable
+
 import numpy as np
 import pandas as pd
+import scipy.io as sio
 import six
-import json
+import tifffile as tiff
+import yaml
 from scipy import ndimage as ndi
 from skimage import filters, morphology
 from skimage.filters import median
-from pathlib import Path
-import warnings
-import scipy.io as sio
-import tifffile as tiff
 
 TIFF_FILE_FORMAT_PEAK = "%s_xy%03d_p%04d_%s.tif"
+TIFF_FILE_FORMAT_PEAK_NO_SUFFIX = "%s_xy%03d_p%04d.tif"
 TIFF_FILE_FORMAT_NO_PEAK = "%s_xy%03d_%s.tif"
+
+
+def load_specs(path: Path) -> dict:
+    """
+    Load specs file which indicates which channels should be analyzed,
+    used as empties, or ignored.
+    """
+    if path.suffix == ".yaml":
+        with (path).open("r") as specs_file:
+            specs = yaml.safe_load(specs_file)
+        return specs
+    try:
+        with (path / "specs.yaml").open("r") as specs_file:
+            specs = yaml.safe_load(specs_file)
+    except FileNotFoundError:
+        try:
+            with (path / "specs.pkl").open("rb") as specs_file:
+                specs = pickle.load(specs_file)
+        except ValueError:
+            print("Could not load specs file.")
+
+    return specs
 
 
 def load_tiff_stack_simple(dir: Path, prefix, fov, postfix, peak=None):
@@ -44,6 +72,7 @@ def load_tiff_stack_simple(dir: Path, prefix, fov, postfix, peak=None):
 
 
 # functions and classes for reading / writing .json files
+
 
 # numpy dtypes are not json serializable - need to convert
 class NpEncoder(json.JSONEncoder):
@@ -117,6 +146,7 @@ def read_cells_from_json(path_in):
 
 
 ### Cell class and related functions
+
 
 # this is the object that holds all information for a cell
 class Cell:
@@ -317,7 +347,7 @@ class Cell:
         self.orientations.append(ori)
         self.centroids.append(region.centroid)
 
-    def divide(self, daughter1, daughter2, t):
+    def divide(self, daughter1, daughter2):
         """Divide the cell and update stats.
         daugther1 and daugther2 are instances of the Cell class.
         daughter1 is the daugther closer to the closed end."""
@@ -342,7 +372,7 @@ class Cell:
         # delta is here for convenience
         self.delta = self.sd - self.sb
 
-        # generation time. Use more accurate times and convert to minutes
+        # doubling time. Use more accurate times and convert to minutes
         self.tau = np.float64((self.abs_times[-1] - self.abs_times[0]) / 60.0)
 
         # include the data points from the daughters
@@ -559,9 +589,9 @@ def feretdiameter(region):
         W_coords.append(
             r_coords[: int(np.round(len(r_coords) / 2))]
         )  # note the /2 here instead of /4
-        W_coords.append(r_coords[int(np.round(len(r_coords) / 2)):])
+        W_coords.append(r_coords[int(np.round(len(r_coords) / 2)) :])
     else:
-        W_coords.append(r_coords[int(np.round(len(r_coords) / 2)):])
+        W_coords.append(r_coords[int(np.round(len(r_coords) / 2)) :])
         W_coords.append(r_coords[: int(np.round(len(r_coords) / 2))])
 
     # starting points
@@ -591,7 +621,6 @@ def feretdiameter(region):
     d_W = np.zeros((2, 1))
     i = 0
     for W1_pt, W2_pt in zip(W1_pts, W2_pts):
-
         # # find the points closest to the guide points
         # pt_W1[i,0], pt_W1[i,1] = r_coords[np.argmin([np.sqrt(np.power(Pt[0]-W1_pt[0],2) + np.power(Pt[1]-W1_pt[1],2)) for Pt in r_coords])]
         # pt_W2[i,0], pt_W2[i,1] = r_coords[np.argmin([np.sqrt(np.power(Pt[0]-W2_pt[0],2) + np.power(Pt[1]-W2_pt[1],2)) for Pt in r_coords])]
@@ -657,6 +686,7 @@ def cell_growth_func(t, sb, elong_rate):
 
 # functions for pruning a dictionary of cells
 
+
 class Cells(dict):
     def __init__(self, dict_):
         super().__init__(dict_)
@@ -674,19 +704,30 @@ def cellsmethod(func):
     return func  # returning func means func can still be used normally
 
 
+@cellsmethod
+def filter_cells(cells: Cells, filt_func: Callable[[Cell], bool]):
+    new_dict = {}
+    for cell_id, cell_obj in cells.items():
+        if filt_func(cell_obj):
+            new_dict[cell_id] = cell_obj
+    return new_dict
+
+
+@cellsmethod
+def map_cells(cells: Cells, map_func: Callable[[Cell], Any]) -> dict[str, Any]:
+    new_dict: dict[str, Any] = {}
+    for cell_id, cell_obj in cells.items():
+        new_dict[cell_id] = map_func(cell_obj)
+    return new_dict
+
+
 # find cells with both a mother and two daughters
 @cellsmethod
 def find_complete_cells(cells):
-    """Go through a dictionary of cells and return another dictionary
-    that contains just those with a parent and daughters"""
+    def is_complete_cell(cell: Cell):
+        return bool(cell.daughters and cell.parent)
 
-    Complete_cells = {}
-
-    for cell_id in cells:
-        if cells[cell_id].daughters and cells[cell_id].parent:
-            Complete_cells[cell_id] = cells[cell_id]
-
-    return Complete_cells
+    return filter_cells(cells, is_complete_cell)
 
 
 # finds cells whose birth label is 1
@@ -694,67 +735,20 @@ def find_complete_cells(cells):
 def find_mother_cells(cells):
     """Return only cells whose starting region label is 1."""
 
-    Mother_cells = {}
+    def is_mother(cell):
+        return cell.birth_label == 1
 
-    for cell_id in cells:
-        if cells[cell_id].birth_label == 1:
-            Mother_cells[cell_id] = cells[cell_id]
-
-    return Mother_cells
+    return filter_cells(cells, is_mother)
 
 
 @cellsmethod
-def filter_cells(cells, attr, val, idx=None, debug=False) -> Cells:
-    """Return only cells whose designated attribute equals "val"."""
+def find_cells_of_birth_label(cells, label_num: (int | list[int]) = 1) -> Cells:
+    def cell_of_birth_label(cell: Cell):
+        if isinstance(label_num, int):
+            return cell.birth_label == label_num
+        return cell.birth_label in label_num
 
-    Filtered_cells = {}
-
-    for cell_id, cell in cells.items():
-
-        at_val = getattr(cell, attr)
-        if debug:
-            print(at_val)
-            print("Times: ", cell.times)
-        if idx is not None:
-            at_val = at_val[idx]
-        if at_val == val:
-            Filtered_cells[cell_id] = cell
-
-    return Filtered_cells
-
-
-@cellsmethod
-def filter_cells_containing_val_in_attr(cells, attr, val) -> Cells:
-    """Return only cells that have val in list attribute, attr."""
-
-    Filtered_cells = {}
-
-    for cell_id, cell in cells.items():
-
-        at_list = getattr(cell, attr)
-        if val in at_list:
-            Filtered_cells[cell_id] = cell
-
-    return Filtered_cells
-
-
-@cellsmethod
-def find_cells_of_birth_label(cells, label_num=1) -> Cells:
-    """Return only cells whose starting region label is given.
-    If no birth_label is given, returns the mother cells.
-    label_num can also be a list to include cells of many birth labels
-    """
-
-    fcells = {}  # f is for filtered
-
-    if type(label_num) is int:
-        label_num = [label_num]
-
-    for cell_id in cells:
-        if cells[cell_id].birth_label in label_num:
-            fcells[cell_id] = cells[cell_id]
-
-    return fcells
+    return filter_cells(cells, cell_of_birth_label)
 
 
 @cellsmethod
@@ -888,89 +882,47 @@ def find_all_cell_intensities(
     seg_directory,
     specs,
     channel_name="sub_c2",
-    apply_background_correction=True,
+    apply_background_correction=False,
 ):
     """
     Finds fluorescenct information for cells. All the cells in cells
     should be from one fov/peak.
     """
-
+    fov_cells = organize_cells_by_channel(cells, specs)
     # iterate over each fov in specs
-    for fov_id, fov_peaks in specs.items():
-
+    for fov_id, fov_peaks in fov_cells.items():
+        print(f"Computing fluorescence for FOV {fov_id}")
         # iterate over each peak in fov
-        for peak_id, peak_value in fov_peaks.items():
-
-            # if peak_id's value is not 1, go to next peak
-            if peak_value != 1:
-                continue
-
-            print(
-                "Quantifying channel {} fluorescence in cells in fov {}, peak {}.".format(
-                    channel_name, fov_id, peak_id
-                )
-            )
+        for peak_id, peak_cells in fov_peaks.items():
             # Load fluorescent images and segmented images for this channel
             fl_stack = load_tiff_stack_simple(
-                intensity_directory, fov=fov_id, peak=peak_id, postfix=channel_name
+                intensity_directory,
+                prefix="",
+                fov=fov_id,
+                peak=peak_id,
+                postfix=channel_name,
             )
             corrected_stack = np.zeros(fl_stack.shape)
-
-            for frame in range(fl_stack.shape[0]):
-                # median filter will be applied to every image
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    median_filtered = median(
-                        fl_stack[frame, ...], selem=morphology.disk(1)
-                    )
-
-                # subtract the gaussian-filtered image from true image to correct
-                #   uneven background fluorescence
-                if apply_background_correction:
-                    blurred = filters.gaussian(
-                        median_filtered, sigma=10, preserve_range=True
-                    )
-                    corrected_stack[frame, :, :] = median_filtered - blurred
-                else:
-                    corrected_stack[frame, :, :] = median_filtered
-
             seg_stack = load_tiff_stack_simple(
-                seg_directory, fov=fov_id, peak=peak_id, postfix=channel_name
+                seg_directory, prefix="", fov=fov_id, peak=peak_id, postfix="seg_otsu"
             )
 
             # evaluate whether each cell is in this fov/peak combination
-            for _, cell in cells.items():
-
-                cell_fov = cell.fov
-                if cell_fov != fov_id:
-                    continue
-
-                cell_peak = cell.peak
-                if cell_peak != peak_id:
-                    continue
-
+            for _, cell in peak_cells.items():
                 cell_times = cell.times
                 cell_labels = cell.labels
-                cell.area_mean_fluorescence[channel_name] = []
-                cell.volume_mean_fluorescence[channel_name] = []
-                cell.total_fluorescence[channel_name] = []
+                total_fluorescences = []
 
                 # loop through cell's times
                 for i, t in enumerate(cell_times):
                     frame = t - 1
                     cell_label = cell_labels[i]
+                    cell_mask = seg_stack[frame, :, :] == cell_label
 
-                    total_fluor = np.sum(
-                        corrected_stack[frame, seg_stack[frame, :, :] == cell_label]
-                    )
-
-                    cell.area_mean_fluorescence[channel_name].append(
-                        total_fluor / cell.areas[i]
-                    )
-                    cell.volume_mean_fluorescence[channel_name].append(
-                        total_fluor / cell.volumes[i]
-                    )
-                    cell.total_fluorescence[channel_name].append(total_fluor)
+                    total_fluorescence = np.sum(fl_stack[frame, cell_mask])
+                    total_fluorescences.append(total_fluorescence)
+                total_fluorescences = np.array(total_fluorescences)
+                cell.total_fluorescence = {"sub_c2": total_fluorescences}
 
     # The cell objects in the original dictionary will be updated,
     # no need to return anything specifically.

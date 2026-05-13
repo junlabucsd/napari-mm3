@@ -91,7 +91,8 @@ def find_channel_locs(
     channel_separation: int,
     trench_length: int,
 ) -> dict:
-    """Finds the location of channels from a phase contrast image. The channels are returned in
+    """
+    Finds the location of channels from a phase contrast image. The channels are returned in
     a dictionary where the key is the x position of the channel in pixel and the value is a
     dictionary with the open and closed end in pixels in y.
 
@@ -114,8 +115,7 @@ def find_channel_locs(
     if image_width - peaks[-1] < (channel_separation / 2):
         peaks = peaks[:-1]
 
-    # assume the closed end is in the upper third and open in
-    # the lower third, respectively. Find them.
+    # assume the closed end is in the upper third and open in the lower third. Find the ends.
     projection_y = phase_data.sum(axis=1)
     proj_diff = np.diff(projection_y.astype(np.int32))
     onethirdpoint = int(image_height / 3.0)
@@ -266,58 +266,46 @@ def compute_xcorr(
     return crosscorrs
 
 
-def make_consensus_mask(
+def time_average_all_masks(
     phase_imgs: np.ndarray,
     chann_array: list[dict],  # time series of channel dicts
-    crop_wp: int,  # channel with padding
-    chan_lp: int,  # channel length padding
+    width_pad: int,  # channel with padding
+    length_pad: int,  # channel length padding
 ) -> np.ndarray:
     """
-    Generate consensus channel mask for a given fov.
-    Assume timestamps are pre-selected.
+    Generate a single mask for a given fov.
 
-    Returns
-    -------
-    consensus_mask: np.ndarray
+    To do this:
+     * for each time point, make a padded rectangle anywhere there is a peak along the x-axis.
+     * Average and normalize over all times. Any point occupied more than 90% of the time is probably associated
+     * with a channel.
+
+
+
     """
     times, img_rows, img_cols = phase_imgs.shape
     consensus_mask = np.zeros([img_rows, img_cols])  # mask for labeling
 
-    # bring up information for each image
-    for cur_t_img in phase_imgs:
-        img_chnl_mask = np.zeros([img_rows, img_cols])
+    for t_chnls in chann_array:
+        for chnl_peak, peak_ends in t_chnls.items():
+            # expand by padding (more padding done later for width)
+            x1 = max(chnl_peak - width_pad, 0)
+            x2 = min(chnl_peak + width_pad, img_cols)
+            y1 = max(peak_ends["closed_end_px"] - length_pad, 0)
+            y2 = min(peak_ends["open_end_px"] + length_pad, img_rows)
 
-        # and add the channel mask to it
-        for t_chnls in chann_array:
-            for chnl_peak, peak_ends in t_chnls.items():
-                # expand by padding (more padding done later for width)
-                x1 = max(chnl_peak - crop_wp, 0)
-                x2 = min(chnl_peak + crop_wp, img_cols)
-                y1 = max(peak_ends["closed_end_px"] - chan_lp, 0)
-                y2 = min(peak_ends["open_end_px"] + chan_lp, img_rows)
-
-                img_chnl_mask[y1:y2, x1:x2] = 1
-
-            # add it to the consensus mask
-            consensus_mask += img_chnl_mask
+            consensus_mask[y1:y2, x1:x2] = consensus_mask[y1:y2, x1:x2] + 1
 
     # Normalize consensus mask between 0 and 1.
     consensus_mask = consensus_mask.astype("float32") / float(np.amax(consensus_mask))
-
-    # label when value is above 0.1 (so 90% occupancy), transpose.
-    # the [0] is for the array ([1] is the number of regions)
-    # It transposes and then transposes again so regions are labeled left to right
-    # clear border it to make sure the channels are off the edge
-    consensus_mask = ndi.label(consensus_mask)[0]  # type: ignore
-
     return consensus_mask
 
 
 def find_mask_bounding_box(
     label_mask: np.ndarray,
     img_w: int,
-    ch_masks: dict,  # dictionary of channel masks (one per FOV)
-) -> tuple[int, int, dict]:
+    ch_masks: dict,
+):
     """
     Returns
     -------
@@ -327,6 +315,8 @@ def find_mask_bounding_box(
         maximum channel width
     ch_masks: dict
         updated dictionary of channel masks for the FOV
+
+    side effect: edits ch_masks.
     """
     masks = ndi.find_objects(label_mask)
     # generate bounding box for the channel mask.
@@ -342,8 +332,6 @@ def find_mask_bounding_box(
             [min_col, max_col],
         ]
 
-    return ch_masks
-
 
 def make_masks(
     phase_image: np.ndarray,
@@ -351,7 +339,7 @@ def make_masks(
     channel_width_pad: int = 0,
     channel_width: int = 0,
     channel_length_pad: int = 0,
-) -> tuple[int, int, dict]:
+) -> dict:
     """
     Returns
     -------
@@ -366,15 +354,19 @@ def make_masks(
 
     times, image_rows, image_cols = phase_image.shape
 
-    consensus_mask = make_consensus_mask(phase_image, chnl_timeseries, crop_wp, chan_lp)
+    mask_time_averages = time_average_all_masks(
+        phase_image, chnl_timeseries, crop_wp, chan_lp
+    )
+    mask_time_averages = mask_time_averages > 0.1
+    mask_labels = ndi.label(mask_time_averages)[0]  # type: ignore
 
     channel_masks = {}
-    for label in np.unique(consensus_mask):
+    for label in np.unique(mask_labels):
         if label == 0:  # label zero is the background
             continue
 
-        label_mask = consensus_mask == label
-        channel_masks = find_mask_bounding_box(label_mask, image_cols, channel_masks)
+        label_mask = mask_labels == label
+        find_mask_bounding_box(label_mask, image_cols, channel_masks)
     # add channel_mask dictionary to the fov dictionary, use copy to play it safe
     return channel_masks.copy()
 
@@ -557,6 +549,9 @@ def worker(
 
         with tiff.TiffFile(path) as tif:
             image_data = tif.asarray()
+        if len(image_data.shape) == 2:
+            # if image data only has two dimensions, assume we're down a color channel.
+            image_data = image_data[np.newaxis, :, :]
 
         # TODO: move this out of the loop
         phase_idx = int(find_phase_idx(image_data, p.phase_plane))
@@ -668,6 +663,9 @@ class Compile(MM3Container2):
         self.viewer.layers.clear()
         low_fov = self.run_params.FOVs[0]
         image_fov = load_fov(self.in_paths.TIFF_dir, low_fov)
+        cur_fov_single_t = (
+            image_fov[0] if len(image_fov.shape) == 3 else image_fov[0, 0]
+        )
 
         self.viewer.layers.clear()
         self.viewer.add_image(
@@ -677,9 +675,8 @@ class Compile(MM3Container2):
         )
         self.viewer.dims.set_current_step(0, 0)
         self.viewer.layers["image_fov"].gamma = 0.5
-
         loc = find_channel_locs(
-            image_fov[0],
+            cur_fov_single_t,
             self.run_params.channel_width_pad,
             self.run_params.channel_width,
             self.run_params.channel_detection_snr,
@@ -687,13 +684,12 @@ class Compile(MM3Container2):
             self.run_params.trench_length,
         )
         cur_image_masks = make_masks(
-            image_fov[0][np.newaxis, ...],
+            cur_fov_single_t[np.newaxis, ...],
             [loc],
             self.run_params.channel_width_pad,
             self.run_params.channel_width,
             self.run_params.channel_length_pad,
         )
-        print(cur_image_masks)
         render_shapes = []
         for peak, bbox in cur_image_masks.items():
             min_row, max_row = bbox[0]
