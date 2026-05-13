@@ -326,7 +326,7 @@ def subtract_fov_stack(
         subtracted_images = []
         for subtracted_image in sub_imgs_iter:
             subtracted_images.append(subtracted_image)
-            print(f"finished fov {fov_id + 1}, peak {peak_id}")
+            # print(f"finished fov {fov_id + 1}, peak {peak_id}")
 
         if subtracted_images[0] is None:
             continue
