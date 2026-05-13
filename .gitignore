@@ -84,3 +84,4 @@ venv/
 # written by setuptools_scm
 **/_version.py
 ./conda
+.github/agents/test.md.agent.md
