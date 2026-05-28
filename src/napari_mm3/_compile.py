@@ -118,11 +118,19 @@ def find_channel_locs(
     # assume the closed end is in the upper third and open in the lower third. Find the ends.
     projection_y = phase_data.sum(axis=1)
     proj_diff = np.diff(projection_y.astype(np.int32))
+    avg = np.mean(phase_data)
+    big = (phase_data > avg).astype(np.int32)
+    big_d = big[1:,] - big[:-1,]
+
+    closed_compute = np.sum(np.abs(big_d), axis=1)
+    # plt.plot(np.diff(projection_y), label="der")
+    # plt.legend()
+    # plt.show()
     onethirdpoint = int(image_height / 3.0)
     twothirdpoint = int(image_height * 2.0 / 3.0)
     default_open_end = twothirdpoint + proj_diff[twothirdpoint:].argmin()
     default_closed_end = (
-        proj_diff[:onethirdpoint].argmax()
+        closed_compute[:onethirdpoint].argmax()
         if trench_length < 0
         else default_open_end - trench_length
     )
