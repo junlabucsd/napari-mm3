@@ -169,7 +169,6 @@ def stabilize_fov(
             :, np.newaxis, ...
         ]  # add channel axis if it doesn't exist
     # final shape is [T, C, H, W]
-    print(raw_stack.shape)
     if shifts is None:
         shifts = register_shifts(raw_stack, upsample_factor=upsample_factor)
 
@@ -292,6 +291,7 @@ def worker(
         image_data = image_data[:, np.newaxis, ...]
 
     image_data = image_data[time_range_ids, ...]
+    print("entering pipeline")
     image_data = pipeline(image_data, run_params)
 
     print(image_data.shape)
@@ -331,9 +331,13 @@ def fix_orientation(
         return image_data
     elif flip_image == FlipImage.auto:
         # flip based on the index of the highest average row value
-        brightest_row = np.argmax(image_data[..., phase_idx, :, :].mean(axis=-1))
-        midline = image_data[phase_idx].shape[-2] / 2
+        midline = image_data.shape[-2] / 2
+        phase_contrast = image_data[..., phase_idx, :, :]
+        y_averaged = phase_contrast.mean(axis=-1)
+        # y_averaged may not have a time dimension; account for that by flattening and grabbing the first element.
+        brightest_row = np.argmax(y_averaged, axis=-1).flat[0]
         if brightest_row < midline:
+            print("flipping!")
             return image_data[..., ::-1, :]
         return image_data
     else:
