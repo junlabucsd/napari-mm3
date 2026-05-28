@@ -36,7 +36,7 @@ from ._deriving_widgets import (
     information,
     load_tiff,
 )
-from .utils import TIFF_FILE_FORMAT_PEAK
+from .utils import TIFF_FORMAT_PEAK
 
 
 #### Helpful utility functions.
@@ -225,7 +225,7 @@ def compute_xcorr(
             )
             # currently broken:
             # channel_xcorr(ana_dir, experiment_name, fov_id: int, peak_id: int, phase_plane, pad_size) -> list:
-            img_filename = TIFF_FILE_FORMAT_PEAK % (
+            img_filename = TIFF_FORMAT_PEAK % (
                 experiment_name,
                 fov_id,
                 peak_id,

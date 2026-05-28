@@ -26,7 +26,7 @@ from ._deriving_widgets import (
     load_tiff,
     warning,
 )
-from .utils import TIFF_FILE_FORMAT_NO_PEAK, TIFF_FILE_FORMAT_PEAK
+from .utils import TIFF_FORMAT_NO_PEAK, TIFF_FORMAT_PEAK
 
 
 class SubtractMode(enum.Enum):
@@ -239,7 +239,7 @@ def copy_empty_stack(
     information(
         "Loading empty stack from FOV {} to save for FOV {}.".format(from_fov, to_fov)
     )
-    empty_filename = TIFF_FILE_FORMAT_NO_PEAK % (
+    empty_filename = TIFF_FORMAT_NO_PEAK % (
         experiment_name,
         from_fov,
         f"empty_{color}",
@@ -275,7 +275,7 @@ def subtract_fov_stack(
 
     information("Subtracting peaks for FOV %d." % fov_id)
 
-    empty_filename = TIFF_FILE_FORMAT_NO_PEAK % (
+    empty_filename = TIFF_FORMAT_NO_PEAK % (
         out_paths.experiment_name,
         fov_id,
         f"empty_{color}",
@@ -296,7 +296,7 @@ def subtract_fov_stack(
     # load images for the peak and get phase images'
     for peak_id in ana_peak_ids:
         information("Subtracting peak %d." % peak_id)
-        image_filename = TIFF_FILE_FORMAT_PEAK % (
+        image_filename = TIFF_FORMAT_PEAK % (
             out_paths.experiment_name,
             fov_id,
             peak_id,
@@ -454,7 +454,7 @@ def average_empties_stack(
     elif len(empty_peak_ids) == 1:
         peak_id = empty_peak_ids[0]
         information("One empty channel (%d) designated for FOV %d." % (peak_id, fov_id))
-        avg_empty_stack_filename = TIFF_FILE_FORMAT_PEAK % (
+        avg_empty_stack_filename = TIFF_FORMAT_PEAK % (
             experiment_name,
             fov_id,
             peak_id,
@@ -468,7 +468,7 @@ def average_empties_stack(
         empty_stacks = []  # list which holds phase image stacks of designated empties
         for peak_id in empty_peak_ids:
             # load data and append to list
-            empty_stack_filename = TIFF_FILE_FORMAT_PEAK % (
+            empty_stack_filename = TIFF_FORMAT_PEAK % (
                 experiment_name,
                 fov_id,
                 peak_id,

@@ -27,7 +27,7 @@ from ._deriving_widgets import (
     load_specs,
     load_tiff,
 )
-from .utils import TIFF_FILE_FORMAT_PEAK
+from .utils import TIFF_FORMAT_PEAK
 
 
 # Do segmentation for a channel time stack
@@ -62,7 +62,7 @@ def segment_chnl_stack(
     # sub_stack = load_stack_params(
     #    params, fov_id, peak_id, postfix="sub_{}".format(params["phase_plane"])
     # )
-    sub_filename = TIFF_FILE_FORMAT_PEAK % (
+    sub_filename = TIFF_FORMAT_PEAK % (
         experiment_name,
         fov_id,
         peak_id,
@@ -286,7 +286,7 @@ def preview_image(
     ]
     ## pull out first fov & peak id with cells
 
-    sub_filename = TIFF_FILE_FORMAT_PEAK % (
+    sub_filename = TIFF_FORMAT_PEAK % (
         in_paths.experiment_name,
         valid_fov,
         valid_peak,
@@ -456,7 +456,7 @@ class SegmentOtsu(MM3Container2):
         print(f"rendering xy{valid_fov}p{valid_peak}")
         ## pull out first fov & peak id with cells
 
-        sub_filename = TIFF_FILE_FORMAT_PEAK % (
+        sub_filename = TIFF_FORMAT_PEAK % (
             self.in_paths.experiment_name,
             valid_fov,
             valid_peak,
