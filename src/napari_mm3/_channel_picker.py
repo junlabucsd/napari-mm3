@@ -347,6 +347,12 @@ class ChannelPicker(MM3Container2):
         except:  # noqa: E722
             Warning("Failed to load FOV")
 
+        v = napari.current_viewer()
+        if isinstance(v, Viewer):
+            v.layers["coords"].bind_key(
+                "a", lambda _: self.fov_picker_widget._increment(), overwrite=True
+            )
+
     def update_fov(self):
         self.cur_fov = self.fov_picker_widget.value
         self.specs = regenerate_fov_specs(
@@ -435,6 +441,9 @@ class ChannelPicker(MM3Container2):
         )
         shapes_layer.mouse_drag_callbacks.append(self.update_classification)
         shapes_layer.mouse_drag_callbacks.append(self.draw_shapes)
+
+    def next_fov(self):
+        pass
 
     def set_plane(self):
         self.default_plane = int(self.plane_widget.value[-1]) - 1
