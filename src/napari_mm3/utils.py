@@ -1400,15 +1400,15 @@ def plot_distributions(df, columns, labels=None, titles=None):
 
     if not labels:
         labels = [
-            "Birth length ($\mu$M)",
-            "Division length ($\mu$M)",
-            "$\Delta$ ($\mu$M)",
+            "Birth length ($\\mu$M)",
+            "Division length ($\\mu$M)",
+            "$\\Delta$ ($\\mu$M)",
             "Elongation rate (1/hr)",
             "$\\tau$ (minutes)",
             "Septum position",
         ]
 
-    titles = ["S$_{B}$", "S$_{D}$", "$\Delta$", "$\lambda$", "$\\tau$", "L$_{1/2}$"]
+    titles = ["S$_{B}$", "S$_{D}$", "$\\Delta$", "$\\lambda$", "$\\tau$", "L$_{1/2}$"]
 
     for i, c in enumerate(columns):
         mu1 = df[c].mean()
@@ -1421,7 +1421,7 @@ def plot_distributions(df, columns, labels=None, titles=None):
             v1,
             ls="-",
             color="C0",
-            label="$\mu$ = {:2.2f}\nCV = {:2.2f}".format(mu1, cv1),
+            label="$\\mu$ = {:2.2f}\nCV = {:2.2f}".format(mu1, cv1),
             lw=1,
         )
 
@@ -1449,7 +1449,7 @@ def plot_hex_time(Cells_df, time_mark="birth_time", x_extents=None, bin_extents=
         "Delta",
         "Septum Position",
     ]
-    ylabels = ["$\mu$m", "$\lambda$", "$\mu$m", "min", "$\mu$m", "daughter/mother"]
+    ylabels = ["$\\mu$m", "$\\lambda$", "$\\mu$m", "min", "$\\mu$m", "daughter/mother"]
 
     # create figure, going to apply graphs to each axis sequentially
     fig, axes = plt.subplots(nrows=3, ncols=2, figsize=[8, 8], squeeze=False)
