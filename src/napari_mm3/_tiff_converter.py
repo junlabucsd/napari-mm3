@@ -387,7 +387,10 @@ def nd2ToTIFF(
         fov_memory = temp_fov.nbytes
         del temp_fov
         # .6 arbitrary for safety. / 2 due to needing a working copy of the data.
-        possible_threads = min(0.6 * total_memory / fov_memory / 2, os.cpu_count())
+        possible_threads = min(
+            0.6 * total_memory / fov_memory / 2,
+            os.cpu_count(),  # ty: ignore
+        )
         print(f"Launching {int(possible_threads)} processes.")
 
         temp_worker = partial(
@@ -426,7 +429,7 @@ class TIFFExport(MM3Container2):
             self.out_paths = OutPaths()
             self.initialized = True
             self.regen_widgets()
-        except FileNotFoundError | ValueError:
+        except (FileNotFoundError, ValueError):
             self.initialized = False
             self.regen_widgets()
 
