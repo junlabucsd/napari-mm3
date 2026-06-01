@@ -655,7 +655,7 @@ class Compile(MM3Container2):
             self.out_paths = OutPaths()
             self.initialized = True
             self.display_fov_full()
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             self.initialized = False
 
         self.regen_widgets()
