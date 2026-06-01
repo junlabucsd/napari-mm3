@@ -105,7 +105,7 @@ def find_channel_locs(
     peaks = find_peaks_cwt(
         projection_x,
         np.arange(channel_width - 5, channel_width + 5),
-        min_snr=channel_detection_snr,  # type: ignore
+        min_snr=channel_detection_snr,
     )
 
     # if the first or last peaks are close to the margins, ignore them.
@@ -232,7 +232,7 @@ def compute_xcorr(
                 phase_plane,
             )
             img_path = analysis_dir / "channels" / img_filename
-            crosscorrs[fov_id][peak_id] = pool.apply_async(  # type:ignore
+            crosscorrs[fov_id][peak_id] = pool.apply_async(
                 channel_xcorr, args=(img_path, alignment_pad)
             )
 
@@ -245,14 +245,14 @@ def compute_xcorr(
 
     for fov_id, peaks in crosscorrs.items():
         for peak_id, result in peaks.items():
-            if result.successful():  # type:ignore
+            if result.successful():
                 crosscorrs[fov_id][peak_id] = {
-                    "ccs": result.get(),  # type: ignore
-                    "cc_avg": np.average(result.get()),  # type:ignore
+                    "ccs": result.get(),
+                    "cc_avg": np.average(result.get()),
                 }
 
             else:
-                crosscorrs[fov_id][peak_id] = False  # type:ignore
+                crosscorrs[fov_id][peak_id] = False
 
     #    pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
     json_crosscorrs = {}
@@ -366,7 +366,7 @@ def make_masks(
         phase_image, chnl_timeseries, crop_wp, chan_lp
     )
     mask_time_averages = mask_time_averages > 0.1
-    mask_labels = ndi.label(mask_time_averages)[0]  # type: ignore
+    mask_labels = ndi.label(mask_time_averages)[0]
 
     channel_masks = {}
     for label in np.unique(mask_labels):
@@ -380,7 +380,7 @@ def make_masks(
 
 
 def tiff_stack_slice_and_write(
-    images_to_write: list,
+    images_to_write: np.ndarray,
     fov_id: int,
     channel_masks_fov: dict,
     experiment_name: str,
@@ -398,7 +398,7 @@ def tiff_stack_slice_and_write(
     for peak, channel_corners in six.iteritems(channel_masks_fov):
         # slice out channel.
         # The function should recognize the shape length as 4 and cut all time points
-        images_to_write = np.array(images_to_write)
+        images_to_write: np.ndarray = np.array(images_to_write)
         channel_stack = images_to_write[
             ...,
             channel_corners[0][0] : channel_corners[0][1],
@@ -511,7 +511,7 @@ def gen_default_run_params(in_files: InPaths):
         )
         params.__annotations__["phase_plane"] = Annotated[str, {"choices": channels}]
         return params
-    except ValueError as e:
+    except ValueError:
         raise FileNotFoundError("TIFF folder not found or not valid")
 
 
@@ -671,6 +671,9 @@ class Compile(MM3Container2):
         self.viewer.layers.clear()
         low_fov = self.run_params.FOVs[0]
         image_fov = load_fov(self.in_paths.TIFF_dir, low_fov)
+        if image_fov is None:
+            return
+
         cur_fov_single_t = (
             image_fov[0] if len(image_fov.shape) == 3 else image_fov[0, 0]
         )
@@ -682,7 +685,7 @@ class Compile(MM3Container2):
             name="image_fov",
         )
         self.viewer.dims.set_current_step(0, 0)
-        self.viewer.layers["image_fov"].gamma = 0.5
+        self.viewer.layers["image_fov"].gamma = 0.5  # ty: ignore IDK why this is bad.
         loc = find_channel_locs(
             cur_fov_single_t,
             self.run_params.channel_width_pad,
