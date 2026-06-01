@@ -1,18 +1,13 @@
 import multiprocessing as mp
-import os
 from collections import namedtuple
 from concurrent import futures as cf
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Annotated, Any, Optional, Tuple
+from typing import Annotated, Optional
 
-import matplotlib as mpl
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
-import napari
 import numpy as np
-import seaborn as sns
 import six
 from magicgui.widgets import Container, PushButton
 from napari import Viewer
@@ -20,7 +15,6 @@ from napari.utils import progress
 from skimage import io
 from skimage.measure import regionprops
 from skimage.measure._regionprops import RegionProperties
-from tensorflow.python.data.kernel_tests.test_base import v1_only_combinations
 
 from ._deriving_widgets import (
     FOVList,
@@ -31,16 +25,12 @@ from ._deriving_widgets import (
     load_specs,
     load_tiff,
     load_timetable,
-    warning,
 )
 from .utils import (
     TIFF_FORMAT_PEAK,
-    TIFF_FORMAT_PEAK_NO_SUFFIX,
     Cell,
     construct_cell,
     find_complete_cells,
-    organize_cells_by_channel,
-    read_cells_from_json,
     write_cells_to_json,
 )
 
@@ -613,7 +603,7 @@ def make_channel_lineage_old(
     try:
         time_table = load_timetable(timetable)
         time_table[fov_id] = {t_idx + 62: val for t_idx, val in time_table[fov_id]}
-    except:
+    except FileNotFoundError:
         time_table = {}
         stupid_table = {i: i for i in range(1000)}  # TODO: Make this sensible.
         time_table[fov_id] = stupid_table
@@ -734,7 +724,7 @@ class InPaths:
     specs_path: Path = Path("./analysis/specs.yaml")
     segmented_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/segmented")
     channels_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/channels")
-    seg_img: Annotated[str, {"choices": ["seg_unet", "seg_otsu"]}] = "seg_otsu"
+    seg_img: Annotated[str, {"choices": ["seg_unet", "seg_otsu"]}] = "seg_unet"
 
 
 @dataclass
@@ -1041,7 +1031,7 @@ def get_lineage_times(cells: dict[str, Cell], lineage: list[str]) -> list[int]:
 
 
 def screenspace_centroids(cell: Cell, img_width):
-    centroids = np.array(cell.centroids)
+    centroids = np.array(cell.centroids_px)
     offsets = np.arange(0, len(centroids) * img_width, img_width)
 
     xs = centroids[:, 1] + offsets
