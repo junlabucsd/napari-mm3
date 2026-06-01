@@ -2,18 +2,19 @@ from __future__ import division, print_function
 
 import json
 import pickle
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import wraps
 from pathlib import Path
 from types import FunctionType
 from typing import Any
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.io as sio
-import six
+import scipy.stats as sps
+import seaborn as sns
 import tifffile as tiff
 import yaml
 from scipy import ndimage as ndi
@@ -40,7 +41,7 @@ class Cell:
     times: list[int]
     abs_times_s: list[float]
     birth_time: int
-    labels: int
+    labels: list[int]
     bboxes_px: list[list[list[int]]]
     areas_px: list[int]
     orientations_rad: list[float]
@@ -67,7 +68,7 @@ class Cell:
     complete: bool
 
     # only for fluorescent cells.
-    total_fluorescence: list[float] | None = None
+    total_fluorescence: dict[str, np.ndarray] | None = None
 
     @property
     def times_w_div(self):
@@ -105,10 +106,7 @@ def construct_cell(
         return np.pi / 2 + region.orientation
 
     length_and_widths = np.array([feretdiameter(r) for r in regions])
-    lengths = length_and_widths[:, 0]
-    lengths_um = lengths * pxl2um
-    widths = length_and_widths[:, 1]
-    widths_um = widths * pxl2um
+    lengths, widths = length_and_widths[:, 0], length_and_widths[:, 1]
 
     # calculate cell volume as cylinder plus hemispherical ends (sphere). Unit is px^3
     volumes = [
@@ -174,8 +172,8 @@ def construct_cell(
             p = np.polyfit(times_, log_lengths, 1)  # this wants float64
             growth_rate = p[0] * 60.0  # convert to hours
 
-        except:
-            growth_rate = np.float64("NaN")
+        except ValueError:
+            growth_rate = None
             print("Elongation rate calculate failed for {}.".format(id))
 
         septum_position = daughter1.lengths_um[0] / (
@@ -191,7 +189,7 @@ def construct_cell(
         times=times,
         abs_times_s=[time_table[fov][t] for t in times],
         birth_time=times[0],
-        labels=[r.label for r in regions],  # ty: ignore
+        labels=[r.label for r in regions],
         bboxes_px=[r.bbox for r in regions],
         areas_px=[r.area for r in regions],
         orientations_rad=[orient(r) for r in regions],
@@ -288,7 +286,7 @@ def load_specs(path: Path) -> dict:
 
 
 class NpEncoder(json.JSONEncoder):
-    def default(self, obj):
+    def default(self, obj):  # ty: ignore This is fine, actually, ty is just confused :D
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, np.floating):
@@ -304,7 +302,7 @@ def write_cells_to_json(cells: dict[str, Cell], path_out):
         json_out[cell_id] = vars(cell)
         try:
             json_out[cell_id].pop("time_table")
-        except:
+        except KeyError:
             pass
     with open(path_out, "w") as fout:
         json.dump(json_out, fout, sort_keys=True, indent=2, cls=NpEncoder)
@@ -331,10 +329,11 @@ def cell_from_dict(in_dict):
     return cell
 
 
+# %% Convenience functions for interaction and foci..
 def place_in_cell(cell: Cell, x, y, t):
     """Translates from screen-space to in-cell coordinates."""
     # check if our cell exists at the current timestamp.
-    if not (t in cell.times):
+    if t not in cell.times:
         return None, None, None
 
     cell_time = cell.times.index(t)
@@ -355,7 +354,68 @@ def place_in_cell(cell: Cell, x, y, t):
     return disp_y, disp_x, cell_time
 
 
-### Cell class and related functions
+def infer_cell_id(cells: Cells, xloc, yloc, t):
+    """
+    Given screen-space coordinates and timestamp of a point, this finds the
+    cell that point belongs to.
+    Returns:
+      cell_id: id of the cell the point is inside of.
+      disp_y, disp_x: The cell-space displacement of the point.
+      cell_time: the cell-time of the point
+    """
+    cell: Cell
+    for cell_id, cell in cells.items():
+        disp_y, disp_x, cell_time = place_in_cell(cell, xloc, yloc, t)
+        if disp_y is None:
+            continue
+        return cell_id, disp_y, disp_x, cell_time
+    return None, None, None, None
+
+
+def find_screenspace_foci(cells: Cells):
+    """
+    From a list of cells, gets the absolute screen-space position of all foci.
+    Returns:
+      x_pts: List of foci x-positions
+      y_pts: List of foci y-positions.
+      times (int): List of times associated with above foci.
+    """
+    x_pts = []
+    y_pts = []
+    times = []
+    cell: Cell
+    for cell_id, cell in cells.items():
+        # get conversion from cell to 'real' time
+        for i, time in enumerate(cell.times):
+            orientation = cell.orientations_rad[i]
+            centroid = cell.centroids_px[i]
+
+            x_locs = cell.disp_w[i]  # ty: ignore Only exists after foci tracking
+            y_locs = cell.disp_l[i]  # ty: ignore Only exists after foci tracking.
+
+            data_x_locs = []
+            data_y_locs = []
+            for x, y in zip(x_locs, y_locs):
+                # convert from cell to pixel space.
+                if orientation < 0:
+                    orientation = np.pi + orientation
+
+                dy = y * np.sin(orientation) + x * np.cos(orientation)
+                dx = -y * np.cos(orientation) + x * np.sin(orientation)
+
+                xloc = dx + centroid[1]
+                yloc = dy + centroid[0]
+                data_x_locs.append(xloc)
+                data_y_locs.append(yloc)
+
+            x_pts.extend(data_x_locs)
+            y_pts.extend(data_y_locs)
+            times.extend(len(data_x_locs) * [time])
+
+    return np.array(x_pts), np.array(y_pts), np.array(times)
+
+
+# %% Cell class and related functions
 
 
 def read_cells_from_json(path_in: Path) -> dict[str, Cell]:
@@ -470,7 +530,7 @@ def feretdiameter(region):
         length = np.sqrt(
             np.power(pt_L1[0] - pt_L2[0], 2) + np.power(pt_L1[1] - pt_L2[1], 2)
         )
-    except:
+    except ValueError:
         length = None
 
     #####################
@@ -611,6 +671,20 @@ def find_mother_cells(cells) -> Cells:
     return filter_cells(cells, is_mother)
 
 
+def find_cells_born_after(cells: Cells, born_after):
+    def f(cell: Cell):
+        return cell.birth_time > born_after
+
+    return filter_cells(cells, f)
+
+
+def find_cells_of_fov_and_peak(cells, fov_id, peak_id) -> Cells:
+    def f(cell: Cell):
+        return (cell.fov == fov_id) and (cell.peak == peak_id)
+
+    return filter_cells(cells, f)
+
+
 def find_cells_of_birth_label(cells, label_num: (int | list[int]) = 1) -> Cells:
     def cell_of_birth_label(cell: Cell):
         if isinstance(label_num, int):
@@ -704,66 +778,7 @@ def gen_label_to_cell_mapping(cells, specs) -> dict:
     return cell_map
 
 
-def infer_cell_id(cells: Cells, xloc, yloc, t):
-    """
-    Given screen-space coordinates and timestamp of a point, this finds the
-    cell that point belongs to.
-    Returns:
-      cell_id: id of the cell the point is inside of.
-      disp_y, disp_x: The cell-space displacement of the point.
-      cell_time: the cell-time of the point
-    """
-    cell: Cell
-    for cell_id, cell in cells.items():
-        disp_y, disp_x, cell_time = cell.place_in_cell(xloc, yloc, t)
-        if disp_y is None:
-            continue
-        return cell_id, disp_y, disp_x, cell_time
-    return None, None, None, None
-
-
-def find_screenspace_foci(cells: Cells):
-    """
-    From a list of cells, gets the absolute screen-space position of all foci.
-    Returns:
-      x_pts: List of foci x-positions
-      y_pts: List of foci y-positions.
-      times (int): List of times associated with above foci.
-    """
-    x_pts = []
-    y_pts = []
-    times = []
-    cell: Cell
-    for cell_id, cell in cells.items():
-        # get conversion from cell to 'real' time
-        for i, time in enumerate(cell.times):
-            orientation = cell.orientations_rad[i]
-            centroid = cell.centroids_px[i]
-            x_locs = cell.disp_w[i]
-            y_locs = cell.disp_l[i]
-
-            data_x_locs = []
-            data_y_locs = []
-            for x, y in zip(x_locs, y_locs):
-                # convert from cell to pixel space.
-                if orientation < 0:
-                    orientation = np.pi + orientation
-
-                dy = y * np.sin(orientation) + x * np.cos(orientation)
-                dx = -y * np.cos(orientation) + x * np.sin(orientation)
-
-                xloc = dx + centroid[1]
-                yloc = dy + centroid[0]
-                data_x_locs.append(xloc)
-                data_y_locs.append(yloc)
-
-            x_pts.extend(data_x_locs)
-            y_pts.extend(data_y_locs)
-            times.extend(len(data_x_locs) * [time])
-
-    return np.array(x_pts), np.array(y_pts), np.array(times)
-
-
+# %%
 def find_all_cell_intensities_helper(
     cells,
     intensity_directory,
@@ -787,32 +802,42 @@ def find_all_cell_intensities_helper(
             fl_stack: np.ndarray = tiff.imread(
                 intensity_directory / fl_stack_name
             )  # ty: ignore
-            corrected_stack = np.zeros(fl_stack.shape)
-            seg_stack_name = TIFF_FORMAT_PEAK % (
-                "",
-                fov_id,
-                peak_id,
-                "seg_otsu",
-            )
-            seg_stack: np.ndarray = tiff.imread(
-                seg_directory / seg_stack_name
-            )  # ty: ignore
+            try:
+                seg_stack_name = TIFF_FORMAT_PEAK % (
+                    "",
+                    fov_id,
+                    peak_id,
+                    "seg_unet",
+                )
+                seg_stack: np.ndarray = tiff.imread(
+                    seg_directory / seg_stack_name
+                )  # ty: ignore
+            except FileNotFoundError:
+                seg_stack_name = TIFF_FORMAT_PEAK % (
+                    "",
+                    fov_id,
+                    peak_id,
+                    "seg_otsu",
+                )
+                seg_stack: np.ndarray = tiff.imread(
+                    seg_directory / seg_stack_name
+                )  # ty: ignore
 
-            # evaluate whether each cell is in this fov/peak combination
             for _, cell in peak_cells.items():
                 cell_times = cell.times
                 cell_labels = cell.labels
                 total_fluorescences = []
 
-                # loop through cell's times
                 for i, t in enumerate(cell_times):
-                    frame = t - 1
-                    cell_label = cell_labels[i]
+                    frame, cell_label = t - 1, cell_labels[i]
+                    # can't do this via numpy because sometimes the cell_label changes (eg, if a higher cell divides)
                     cell_mask = seg_stack[frame, :, :] == cell_label
 
                     total_fluorescence = np.sum(fl_stack[frame, cell_mask])
                     total_fluorescences.append(total_fluorescence)
+
                 total_fluorescences = np.array(total_fluorescences)
+
                 if cell.total_fluorescence is None:
                     cell.total_fluorescence = {channel_name: total_fluorescences}
                 else:
@@ -820,7 +845,7 @@ def find_all_cell_intensities_helper(
 
 
 def find_all_cell_intensities(
-    cells,
+    cells: Cells,
     intensity_directory,
     seg_directory,
     channel_names: list[str] | str = "sub_c2",
@@ -829,6 +854,8 @@ def find_all_cell_intensities(
     """
     Finds fluorescenct information for cells. All the cells in cells
     should be from one fov/peak.
+
+    Cells dict will be modified and returned.
     """
     if isinstance(channel_names, list):
         for cname in channel_names:
@@ -847,52 +874,20 @@ def find_all_cell_intensities(
         channel_names,
         apply_background_correction=apply_background_correction,
     )
-    # The cell objects in the original dictionary will be updated,
-    # no need to return anything specifically.
+
+    return cells
 
 
-def find_cells_of_fov_and_peak(cells, fov_id, peak_id) -> Cells:
-    """Return only cells from a specific fov/peak
-    Parameters
-    ----------
-    fov_id : int corresponding to FOV
-    peak_id : int correstonging to peak
-    """
-
-    fcells = {}  # f is for filtered
-
-    for cell_id in cells:
-        if cells[cell_id].fov == fov_id and cells[cell_id].peak == peak_id:
-            fcells[cell_id] = cells[cell_id]
-
-    return fcells
-
-
-def find_last_daughter(cell, Cells):
+def find_last_daughter(cell, cells: Cells):
     """Finds the last daughter in a lineage starting with a earlier cell.
     Helper function for find_continuous_lineages"""
 
-    if cell.daughters[0] in Cells:
-        cell = Cells[cell.daughters[0]]
-        cell = find_last_daughter(cell, Cells)
+    if cell.daughters[0] in cells:
+        cell = cells[cell.daughters[0]]
+        cell = find_last_daughter(cell, cells)
         return cell
 
     return cell
-
-
-def find_cells_born_after(cells, born_after=None):
-    """
-    Returns Cells dictionary of cells with a birth_time after the value specified
-    """
-
-    if born_after is None:
-        return cells
-
-    return {
-        cell_id: cell
-        for cell_id, cell in six.iteritems(cells)
-        if cell.birth_time >= born_after
-    }
 
 
 def lineages_to_dict(lineages):
@@ -900,16 +895,16 @@ def lineages_to_dict(lineages):
     to a dictionary of cells. Useful for filtering but then using the
     dictionary based plotting functions"""
 
-    Cells = {}
+    cells = {}
 
-    for fov, peaks in six.iteritems(lineages):
-        for peak, cells in six.iteritems(peaks):
-            Cells.update(cells)
+    for fov, peaks in lineages.items():
+        for peak, cells in peaks.items():
+            cells.update(cells)
 
-    return Cells
+    return cells
 
 
-def find_continuous_lineages(cells, specs, t1=0, t2=1000):
+def find_continuous_lineages(cells: Cells, specs, t1=0, t2=1000):
     """
     Uses a recursive function to only return cells that have continuous
     lineages between two time points. Takes a "lineage" form of Cells and
@@ -921,20 +916,18 @@ def find_continuous_lineages(cells, specs, t1=0, t2=1000):
         Last cell in lineage must be born after this time point
     """
 
-    Lineages = organize_cells_by_channel(cells, specs)
+    lineages = organize_cells_by_channel(cells, specs)
 
     # This is a mirror of the lineages dictionary, just for the continuous cells
-    Continuous_Lineages = {}
+    continuous_lineages = {}
 
-    for fov, peaks in six.iteritems(Lineages):
-        # print("fov = {:d}".format(fov))
+    for fov, peaks in lineages.items():
         # Create a dictionary to hold this FOV
-        Continuous_Lineages[fov] = {}
+        continuous_lineages[fov] = {}
 
-        for peak, cells in six.iteritems(peaks):
-            # print("{:<4s}peak = {:d}".format("",peak))
+        for peak, cells in peaks.items():
             # sort the cells by time in a list for this peak
-            cells_sorted = [(cell_id, cell) for cell_id, cell in six.iteritems(cells)]
+            cells_sorted = [(cell_id, cell) for cell_id, cell in cells.items()]
             cells_sorted = sorted(cells_sorted, key=lambda x: x[1].birth_time)
 
             # Sometimes there are not any cells for the channel even if it was to be analyzed
@@ -946,7 +939,7 @@ def find_continuous_lineages(cells, specs, t1=0, t2=1000):
             for i, cell_data in enumerate(cells_sorted):
                 cell_id, cell = cell_data
                 if cell.birth_time < t1 and t1 <= cell.division_time < t2:
-                    first_cell_index = i
+                    # first_cell_index = i
                     break
 
             # filter cell_sorted or skip if you got to the end of the list
@@ -955,29 +948,572 @@ def find_continuous_lineages(cells, specs, t1=0, t2=1000):
             else:
                 cells_sorted = cells_sorted[i:]
 
-            # get the first cell and it's last contiguous daughter
             first_cell = cells_sorted[0][1]
             last_daughter = find_last_daughter(first_cell, cells)
 
             # check to the daughter makes the second cut off
             if last_daughter.birth_time > t2:
-                # print(fov, peak, 'Made it')
-
                 # now retrieve only those cells within the two times
                 # use the function to easily return in dictionary format
                 cells_cont = find_cells_born_after(cells, born_after=t1)
-                # Cells_cont = find_cells_born_before(Cells_cont, born_before=t2)
 
                 # append the first cell which was filtered out in the above step
                 cells_cont[first_cell.id] = first_cell
 
                 # and add it to the big dictionary
-                Continuous_Lineages[fov][peak] = cells_cont
+                continuous_lineages[fov][peak] = cells_cont
 
         # remove keys that do not have any lineages
-        if not Continuous_Lineages[fov]:
-            Continuous_Lineages.pop(fov)
+        if not continuous_lineages[fov]:
+            continuous_lineages.pop(fov)
 
-    cells = lineages_to_dict(Continuous_Lineages)  # revert back to return
+    return continuous_lineages
 
-    return cells
+
+def cells2df(cells_dict, columns=None):
+    """
+    Take cell data (a dicionary of Cell objects) and return a dataframe.
+
+    rescale : boolean
+        If rescale is set to True, then the 6 major parameters are rescaled by their mean.
+    """
+
+    # columns to include
+    if not columns:
+        columns = [
+            "fov",
+            "peak",
+            "birth_label",
+            "birth_time",
+            "division_time",
+            "sb",
+            "sd",
+            "width",
+            "delta",
+            "tau",
+            "elong_rate",
+            "septum_position",
+        ]
+
+    # Make dataframe for plotting variables
+    cells_df = pd.DataFrame(
+        cells_dict
+    ).transpose()  # must be transposed so data is in columns
+    cells_df = cells_df.sort_values(by=["fov", "peak", "birth_time", "birth_label"])
+    cells_df = cells_df[columns].apply(pd.to_numeric)
+
+    return cells_df
+
+
+def cells2dict(cells: Cells):
+    """
+    Take a dictionary of Cells and returns a dictionary of dictionaries
+    """
+
+    cells_dict = {cell_id: vars(cell) for cell_id, cell in cells.items()}
+
+    return cells_dict
+
+
+### Filtering functions ############################################################################
+def find_cells_of_fov(cells, FOVs: list | int = []):
+    """Return only cells from certain FOVs.
+
+    FOVs : int or list of ints
+    """
+
+    fCells = {}  # f is for filtered
+
+    if isinstance(FOVs, int):
+        FOVs = [FOVs]
+
+    fCells = {
+        cell_id: cell_tmp for cell_id, cell_tmp in cells.items() if cell_tmp.fov in FOVs
+    }
+
+    return fCells
+
+
+def find_cells_born_before(cells, born_before=None):
+    """
+    Returns Cells dictionary of cells with a birth_time before the value specified
+    """
+
+    if born_before is None:
+        return cells
+
+    fCells = {
+        cell_id: Cell
+        for cell_id, Cell in cells.items()
+        if Cell.birth_time <= born_before
+    }
+
+    return fCells
+
+
+def filter_by_stat(cells, center_stat="mean", std_distance=3):
+    """
+    Filters a dictionary of Cells by ensuring all of the 6 major parameters are
+    within some number of standard deviations away from either the mean or median
+    """
+
+    # Calculate stats.
+    Cells_df = cells2df(cells2dict(cells))
+    stats_columns = ["sb", "sd", "delta", "elong_rate", "tau", "septum_position"]
+    cell_stats = Cells_df[stats_columns].describe()
+
+    # set low and high bounds for each stat attribute
+    bounds = {}
+    for label in stats_columns:
+        low_bound = (
+            cell_stats[label][center_stat] - std_distance * cell_stats[label]["std"]
+        )
+        high_bound = (
+            cell_stats[label][center_stat] + std_distance * cell_stats[label]["std"]
+        )
+        bounds[label] = {"low": low_bound, "high": high_bound}
+
+    # add filtered cells to dict
+    fCells = {}  # dict to hold filtered cells
+
+    for cell_id, Cell in cells.items():
+        benchmark = 0  # this needs to equal 6, so it passes all tests
+
+        for label in stats_columns:
+            attribute = getattr(Cell, label)  # current value of this attribute for cell
+            if attribute > bounds[label]["low"] and attribute < bounds[label]["high"]:
+                benchmark += 1
+
+        if benchmark == 6:
+            fCells[cell_id] = cells[cell_id]
+
+    return fCells
+
+
+def binned_stat(x, y, statistic="mean", bin_edges="sturges", binmin=None):
+    """Calculate binned mean or median on X. Returns plotting variables
+
+    bin_edges : int or list/array
+        If int, this is the number of bins. If it is a list it defines the bin edges.
+
+    """
+
+    # define range for bins
+    data_mean = x.mean()
+    data_std = x.std()
+    bin_range = (data_mean - 3 * data_std, data_mean + 3 * data_std)
+
+    # gives better bin edges. If a defined sequence is passed it will use that.
+    bin_edges = np.histogram_bin_edges(x, bins=bin_edges, range=bin_range)
+
+    # calculate mean
+    bin_result = sps.binned_statistic(x, y, statistic=statistic, bins=bin_edges)
+    bin_means, bin_edges, bin_n = bin_result
+    bin_centers = bin_edges[:-1] + np.diff(bin_edges) / 2
+
+    # calculate error at each bin (standard error)
+    bin_error_result = sps.binned_statistic(x, y, statistic=np.std, bins=bin_edges)
+    bin_stds, _, _ = bin_error_result
+
+    # if using median, multiply this number by 1.253. Holds for large samples only
+    if statistic == "median":
+        bin_stds = bin_stds * 1.253
+
+    bin_count_results = sps.binned_statistic(x, y, statistic="count", bins=bin_edges)
+    bin_counts, _, _ = bin_count_results
+
+    bin_errors = np.divide(bin_stds, np.sqrt(bin_counts))
+
+    # remove bins with not enought datapoints
+    if binmin:
+        delete_me = []
+        for i, points in enumerate(bin_counts):
+            if points < binmin:
+                delete_me.append(i)
+        delete_me = tuple(delete_me)
+        bin_centers = np.delete(bin_centers, delete_me)
+        bin_means = np.delete(bin_means, delete_me)
+        bin_errors = np.delete(bin_errors, delete_me)
+
+        # only keep locations where there is data
+        bin_centers = bin_centers[~np.isnan(bin_means)]
+        bin_means = bin_means[~np.isnan(bin_means)]
+        bin_errors = bin_errors[~np.isnan(bin_means)]
+
+    return bin_centers, bin_means, bin_errors
+
+
+### Plotting functions #############################################################################
+
+
+def plot_channel_traces(
+    Cells,
+    time_int=1.0,
+    fl_plane="c2",
+    alt_time="birth",
+    fl_int=1.0,
+    plot_fl=False,
+    plot_foci=False,
+    plot_pole=False,
+    pxl2um=1.0,
+    xlims=None,
+    foci_size=100,
+):
+    """Plot a cell lineage with profile information. Plots cells at their Y location in the growth channel.
+
+    Parameters
+    ----------
+    Cells : dict of Cell objects
+        All the cells should come from a single peak.
+    time_int : int or float
+        Used to adjust the X axis to plot in hours
+    alt_time : float or 'birth'
+        Adjusts all time by this value. 'birth' adjust the time so first birth time is at zero.
+    fl_plane : str
+        Plane from which to get florescent data
+    plot_fl : boolean
+        Flag to plot florescent line profile.
+    plot_foci : boolean
+        Flag to plot foci or not.
+    plot_pole : boolean
+        If true, plot different colors for cells with different pole ages.
+    plx2um : float
+        Conversion factor between pixels and microns.
+    xlims : [float, float]
+        Manually set xlims. If None then set automatically.
+    """
+
+    time_int = float(time_int)
+    fl_int = float(fl_int)
+
+    color = "b"  # overwritten if plot_pole == True
+
+    fig, axes = plt.subplots(ncols=1, nrows=1, figsize=(8, 3))
+    ax = [axes]
+
+    # turn it into a list to fidn first time
+    lin = [(cell_id, cell) for cell_id, cell in Cells.items()]
+    lin = sorted(lin, key=lambda x: x[1].birth_time)
+
+    # align time to first birth or shift time
+    if alt_time is None:
+        alt_time = 0
+    elif alt_time == "birth":
+        alt_time = lin[0][1].birth_time * time_int / 60.0
+
+    # determine last time for xlims
+    if (xlims is None) or (xlims[1] is None):
+        if alt_time == "birth" or alt_time == 0:
+            first_time = 0
+        else:  # adjust for negative birth times
+            first_time = (lin[0][1].times[0] - 10) * time_int / 60.0 - alt_time
+        last_time = (lin[-1][1].times[-1] + 10) * time_int / 60.0 - alt_time
+        xlims = (first_time, last_time)
+
+    # adjust scatter marker size so colors touch but do not overlap
+    # uses size of figure in inches, with the dpi (ppi) to convert to points.
+    # scatter marker size is points squared.
+    bbox = ax[0].get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+    width = float(bbox.width)
+    # print(fig.dpi, width, xlims[1], xlims[0],  time_int)
+    # print(((fig.dpi * width) / ((xlims[1] - xlims[0]) * 60.0 / time_int)))
+    # print((fig.dpi * width) / ((xlims[1] - xlims[0]) * 60.0))
+    # print((fig.dpi * width) / ((xlims[1] - xlims[0]) * 60.0 / time_int)**2)
+    scat_s = (
+        (fig.dpi * width) / ((xlims[1] - xlims[0]) * 60.0 / time_int) * fl_int
+    ) ** 2
+    # print(time_int)
+    # print(scat_s)
+
+    # Choose colormap. Need to add alpha to color map and normalization
+    # green/c2
+    if plot_fl:
+        max_c2_int = 0
+        min_c2_int = float("inf")
+        for cell_id, cell in lin:
+            for profile_t in getattr(cell, "fl_profiles_" + fl_plane):
+                if max(profile_t) > max_c2_int:
+                    max_c2_int = max(profile_t)
+                if min(profile_t) < min_c2_int:
+                    min_c2_int = min(profile_t)
+        cmap_c2 = plt.cm.Greens  # ty: ignore
+        color_norm_c2 = mpl.colors.Normalize(vmin=min_c2_int, vmax=max_c2_int)
+
+    for cell_id, cell in Cells.items():
+        # if this is a complete cell plot till division with a line at the end
+        cell_times = np.array(cell.times) * time_int / 60.0 - alt_time
+        cell_yposs = np.array([y for y, x in cell.centroids]) * pxl2um
+        cell_halflengths = np.array(cell.lengths) / 2.0 * pxl2um
+        ytop = cell_yposs + cell_halflengths
+        ybot = cell_yposs - cell_halflengths
+
+        if plot_pole:
+            if cell.poleage:
+                color_choices = sns.hls_palette(4)
+                if cell.poleage == (1000, 0):
+                    color = color_choices[0]
+                elif cell.poleage == (0, 1) and cell.birth_label <= 2:
+                    color = color_choices[1]
+                elif cell.poleage == (1, 0) and cell.birth_label <= 3:
+                    color = color_choices[2]
+                elif cell.poleage == (0, 2):
+                    color = color_choices[3]
+                # elif cell.poleage == (2, 0):
+                #     color = color_choices[4]
+                else:
+                    color = "k"
+            elif cell.poleage is None:
+                color = "k"
+
+        # plot two lines for top and bottom of cell
+        ax[0].plot(cell_times, ybot, cell_times, ytop, color=color, alpha=0.75, lw=1)
+        # ax[0].fill_between(cell_times, ybot, ytop,
+        #                    color=color, lw=0.5, alpha=1)
+
+        # plot lines for birth and division
+        ax[0].plot(
+            [cell_times[0], cell_times[0]],
+            [ybot[0], ytop[0]],
+            color=color,
+            alpha=0.75,
+            lw=1,
+        )
+        ax[0].plot(
+            [cell_times[-1], cell_times[-1]],
+            [ybot[-1], ytop[-1]],
+            color=color,
+            alpha=0.75,
+            lw=1,
+        )
+
+        # plot fluorescence line profile
+        if plot_fl:
+            for i, t in enumerate(cell_times):
+                if cell.times[i] % fl_int == 1:
+                    fl_x = (
+                        np.ones(len(getattr(cell, "fl_profiles_" + fl_plane)[i])) * t
+                    )  # times
+                    fl_ymin = cell_yposs[i] - (
+                        len(getattr(cell, "fl_profiles_" + fl_plane)[i]) / 2 * pxl2um
+                    )
+                    fl_ymax = fl_ymin + (
+                        len(getattr(cell, "fl_profiles_" + fl_plane)[i]) * pxl2um
+                    )
+                    fl_y = np.linspace(
+                        fl_ymin,
+                        fl_ymax,
+                        len(getattr(cell, "fl_profiles_" + fl_plane)[i]),
+                    )
+                    fl_z = getattr(cell, "fl_profiles_" + fl_plane)[i]
+                    ax[0].scatter(
+                        fl_x,
+                        fl_y,
+                        c=fl_z,
+                        cmap=cmap_c2,
+                        marker="s",
+                        s=scat_s,
+                        norm=color_norm_c2,
+                        rasterized=True,
+                    )
+
+        # plot foci
+        if plot_foci:
+            for i, t in enumerate(cell_times):
+                if cell.times[i] % fl_int == 1:
+                    for j, foci_y in enumerate(cell.disp_l[i]):
+                        foci_y_pos = cell_yposs[i] + (foci_y * pxl2um)
+                        ax[0].scatter(
+                            t,
+                            foci_y_pos,
+                            s=cell.foci_h[i][j] / foci_size,
+                            linewidth=0.5,
+                            edgecolors="k",
+                            facecolors="none",
+                            alpha=0.5,
+                            rasterized=False,
+                        )
+
+    ax[0].set_xlabel("time (hours)")
+    ax[0].set_xlim(xlims)
+    #     ax[0].set_ylabel('position ' + pnames['um'])
+    ax[0].set_ylim(bottom=0)
+    #     ax[0].set_yticklabels([0,2,4,6,8,10])
+    sns.despine()
+    plt.tight_layout()
+
+
+def plot_moving_avg(df, time_mark, column, window, ax, label=None):
+    time_df = df[[time_mark, column]].apply(pd.to_numeric)
+    xlims = (time_df[time_mark].min(), time_df[time_mark].max())  # x lims for bins
+    # xlims = x_extents
+    bin_mean, bin_edges, bin_n = sps.binned_statistic(
+        time_df[time_mark],
+        time_df[column],
+        statistic="mean",
+        bins=np.arange(xlims[0] - 1, xlims[1] + 1, window),
+    )
+    bin_centers = bin_edges[:-1] + np.diff(bin_edges) / 2
+
+    ax.plot(bin_centers, bin_mean, lw=1, alpha=1, label=label)
+
+
+def make_line_hist(data, bins=None, density=True):
+    if bins is None:
+        bin_vals, bin_edges = np.histogram(data, density=density)
+    else:
+        bin_vals, bin_edges = np.histogram(data, density=density, bins=bins)
+    bin_steps = np.diff(bin_edges) / 2.0
+    bin_centers = bin_edges[:-1] + bin_steps
+    # add zeros to the next points outside this so plot line always goes down
+    bin_centers = np.insert(bin_centers, 0, bin_centers[0] - bin_steps[0])
+    bin_centers = np.append(bin_centers, bin_centers[-1] + bin_steps[-1])
+    bin_vals = np.insert(bin_vals, 0, 0)
+    bin_vals = np.append(bin_vals, 0)
+    return (bin_centers, bin_vals)
+
+
+def plot_distributions(df, columns, labels=None, titles=None):
+    """
+    Plot distributions of cell cycle parameters
+
+    Parameters
+    ----------
+    df : pandas dataframe
+        dataframe containing cell cycle parameters to plot
+    columns : list
+        list of column names to plot
+    labels : list
+        list of labels for each column
+    titles : list
+        list of titles for each column
+
+    Returns
+    -------
+    fig : matplotlib figure
+        figure containing plots
+    axes : matplotlib axes
+        axes containing plots
+    """
+
+    fig, axes = plt.subplots(1, 6, figsize=(12, 3))
+    ax = np.ravel(axes)
+
+    if not labels:
+        labels = [
+            "Birth length ($\mu$M)",
+            "Division length ($\mu$M)",
+            "$\Delta$ ($\mu$M)",
+            "Elongation rate (1/hr)",
+            "$\\tau$ (minutes)",
+            "Septum position",
+        ]
+
+    titles = ["S$_{B}$", "S$_{D}$", "$\Delta$", "$\lambda$", "$\\tau$", "L$_{1/2}$"]
+
+    for i, c in enumerate(columns):
+        mu1 = df[c].mean()
+        cv1 = df[c].std() / df[c].mean()
+
+        ax[i].set_title(titles[i], fontsize=14)
+        b1, v1 = make_line_hist(df[c], density=True)
+        ax[i].plot(
+            b1,
+            v1,
+            ls="-",
+            color="C0",
+            label="$\mu$ = {:2.2f}\nCV = {:2.2f}".format(mu1, cv1),
+            lw=1,
+        )
+
+        ax[i].set_xlabel(labels[i], fontsize=12)
+        ax[i].set_ylim(0, np.max(v1) * 1.3)
+        ax[i].set_yticks([])
+    #     ax[i].legend(frameon=False,fontsize=6,loc=1)
+
+    sns.despine(left=True)
+    plt.tight_layout()
+
+
+def plot_hex_time(Cells_df, time_mark="birth_time", x_extents=None, bin_extents=None):
+    """
+    Plots cell parameters over time using a hex scatter plot and a moving average
+    """
+
+    # lists for plotting and formatting
+    columns = ["sb", "elong_rate", "sd", "tau", "delta", "septum_position"]
+    titles = [
+        "Length at Birth",
+        "Elongation Rate",
+        "Length at Division",
+        "Generation Time",
+        "Delta",
+        "Septum Position",
+    ]
+    ylabels = ["$\mu$m", "$\lambda$", "$\mu$m", "min", "$\mu$m", "daughter/mother"]
+
+    # create figure, going to apply graphs to each axis sequentially
+    fig, axes = plt.subplots(nrows=3, ncols=2, figsize=[8, 8], squeeze=False)
+
+    ax = np.ravel(axes)
+    # binning parameters, should be arguments
+    binmin = 3  # minimum bin size to display
+    bingrid = (20, 10)  # how many bins to have in the x and y directions
+    moving_window = 10  # window to calculate moving stat
+
+    # bining parameters for each data type
+    # bin_extent in within which bounds should bins go. (left, right, bottom, top)
+    if x_extents is None:
+        x_extents = (Cells_df["birth_time"].min(), Cells_df["birth_time"].max())
+
+    if bin_extents is None:
+        bin_extents = [
+            (x_extents[0], x_extents[1], 0, 4),
+            (x_extents[0], x_extents[1], 0, 1.5),
+            (x_extents[0], x_extents[1], 0, 8),
+            (x_extents[0], x_extents[1], 0, 140),
+            (x_extents[0], x_extents[1], 0, 4),
+            (x_extents[0], x_extents[1], 0, 1),
+            (x_extents[0], x_extents[1], 0, 100),
+            (x_extents[0], x_extents[1], 0, 80),
+            (x_extents[0], x_extents[1], 0, 2),
+        ]
+
+    # Now plot the filtered data
+    for i, column in enumerate(columns):
+        # get out just the data to be plot for one subplot
+        time_df = Cells_df[[time_mark, column]].apply(pd.to_numeric)
+        time_df.sort_values(by=time_mark, inplace=True)
+
+        # plot the hex scatter plot
+        p = ax[i].hexbin(
+            time_df[time_mark], time_df[column], mincnt=binmin, gridsize=bingrid
+        )
+
+        # graph moving average
+        # xlims = (time_df['birth_time'].min(), time_df['birth_time'].max()) # x lims for bins
+        xlims = x_extents
+        try:
+            bin_mean, bin_edges, bin_n = sps.binned_statistic(
+                time_df[time_mark],
+                time_df[column],
+                statistic="mean",
+                bins=np.arange(xlims[0] - 1, xlims[1] + 1, moving_window),
+            )
+            bin_centers = bin_edges[:-1] + np.diff(bin_edges) / 2
+            ax[i].plot(bin_centers, bin_mean, lw=4, alpha=0.8, color="yellow")
+
+        except:
+            pass
+
+        # formatting
+        ax[i].set_title(titles[i])
+        ax[i].set_ylabel(ylabels[i])
+
+        p.set_cmap(cmap=plt.cm.Blues)  # ty: ignore
+
+    ax[5].set_xlabel("%s [frame]" % time_mark)
+    ax[4].set_xlabel("%s [frame]" % time_mark)
+
+    plt.tight_layout()
+
+    return fig, ax
