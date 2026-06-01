@@ -112,17 +112,18 @@ def segment_chnl_stack(
     if display_result:
         viewer = napari.current_viewer()
 
-        viewer.grid.enabled = True
+        if viewer is not None:
+            viewer.grid.enabled = True
 
-        viewer.add_labels(
-            segmented_imgs,
-            name="Segmented"
-            + "_xy%03d_p%04d" % (fov_id, peak_id)
-            + "_"
-            + "seg_otsu"
-            + ".tif",
-            visible=True,
-        )
+            viewer.add_labels(
+                segmented_imgs,
+                name="Segmented"
+                + "_xy%03d_p%04d" % (fov_id, peak_id)
+                + "_"
+                + "seg_otsu"
+                + ".tif",
+                visible=True,
+            )
 
     information("Saved segmented channel %d." % peak_id)
 
@@ -381,7 +382,7 @@ class SegmentOtsu(MM3Container2):
             self.initialized = True
             self.regen_widgets()
 
-        except FileNotFoundError | ValueError:
+        except (FileNotFoundError, ValueError):
             self.initialized = False
             self.regen_widgets()
 
@@ -467,7 +468,7 @@ class SegmentOtsu(MM3Container2):
         # image by image for debug
 
         images = self.viewer.add_image(sub_stack)
-        images.gamma = 1
+        images.gamma = 1  # ty: ignore IDK why this doesn't work.
         worker = preview_image(
             self.in_paths, self.run_params, self.cur_fov_idx, self.cur_peak_idx
         )  # create "worker" object
