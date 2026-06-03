@@ -99,6 +99,7 @@ def construct_cell(
     Could be done with a class method but it's not worth it.
     """
     fov = int(cell_id.split("f")[1].split("p")[0])
+    times = [t + 1 for t in times]
 
     def orient(region: RegionProperties):
         if region.orientation > 0:
@@ -118,6 +119,7 @@ def construct_cell(
     areas_um2 = areas_px * pxl2um**2
     volumes_um3 = np.array(volumes) * pxl2um**3
 
+    print(times)
     abs_times_s = [time_table[fov][t] for t in times]
     complete = False
 
@@ -167,11 +169,18 @@ def construct_cell(
 
         # calculate the average growth rate
         try:
-            times_ = np.float64((np.array(abs_times_s) - abs_times_s[0]) / 60.0)
-            log_lengths = np.float64(np.log(lengths * pxl2um + [division_length_px]))
+            times_ = ((np.array(abs_times_s) - abs_times_s[0]) / 60.0).astype(
+                np.float64
+            )
+            log_lengths = (np.log(lengths * pxl2um + [division_length_px])).astype(
+                np.float64
+            )
+
+            print(np.array(abs_times_s))
+            print(times_.shape)
+            print(log_lengths.shape)
             p = np.polyfit(times_, log_lengths, 1)  # this wants float64
             growth_rate = p[0] * 60.0  # convert to hours
-
         except ValueError:
             growth_rate = None
             print("Elongation rate calculate failed for {}.".format(id))

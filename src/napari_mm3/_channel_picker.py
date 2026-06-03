@@ -347,11 +347,11 @@ class ChannelPicker(MM3Container2):
         except:  # noqa: E722
             Warning("Failed to load FOV")
 
-        v = napari.current_viewer()
-        if isinstance(v, Viewer):
-            v.layers["coords"].bind_key(
-                "a", lambda _: self.fov_picker_widget._increment(), overwrite=True
-            )
+        # v = napari.current_viewer()
+        # if isinstance(v, Viewer):
+        #     v.layers["coords"].bind_key(
+        #         "a", lambda _: self.fov_picker_widget._increment(), overwrite=True
+        #     )
 
     def update_fov(self):
         self.cur_fov = self.fov_picker_widget.value

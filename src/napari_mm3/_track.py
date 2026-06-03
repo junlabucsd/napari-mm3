@@ -602,7 +602,7 @@ def make_channel_lineage_old(
     fov_id, peak_id = fov_and_peak_id
     try:
         time_table = load_timetable(timetable)
-        time_table[fov_id] = {t_idx + 62: val for t_idx, val in time_table[fov_id]}
+        time_table[fov_id] = {t_idx: val for t_idx, val in time_table[fov_id].items()}
     except FileNotFoundError:
         time_table = {}
         stupid_table = {i: i for i in range(1000)}  # TODO: Make this sensible.
@@ -724,7 +724,7 @@ class InPaths:
     specs_path: Path = Path("./analysis/specs.yaml")
     segmented_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/segmented")
     channels_dir: Annotated[Path, {"mode": "d"}] = Path("./analysis/channels")
-    seg_img: Annotated[str, {"choices": ["seg_unet", "seg_otsu"]}] = "seg_unet"
+    seg_img: Annotated[str, {"choices": ["seg_unet", "seg_otsu"]}] = "seg_otsu"
 
 
 @dataclass
