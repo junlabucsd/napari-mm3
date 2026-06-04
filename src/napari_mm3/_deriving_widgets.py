@@ -8,6 +8,7 @@ from datetime import datetime
 from enum import StrEnum
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 import h5py
 import numpy as np
@@ -553,6 +554,15 @@ def ez_serialize(f):
     return kv
 
 
+def ez_deserialize(f: dict, ref: Any):
+    for p, x in vars(ref).items():
+        historic_value = f[p]
+        historic_value_cast = type(x)(historic_value)
+        setattr(ref, p, historic_value_cast)
+
+    return ref
+
+
 class MM3Container2(Container):
     """
     _compile.py is a good example of how to use this
@@ -594,6 +604,10 @@ class MM3Container2(Container):
         self.run_button.changed.connect(self.write_to_history)
         self.run_button.changed.connect(self.run)
 
+        self.load_his_button = PushButton(text="load most recent settings")
+        self.append(self.load_his_button)
+        self.load_his_button.changed.connect(self.load_from_history)
+
     def write_to_history(self):
         name = type(self).__name__
         timestamp = str(datetime.now())
@@ -612,6 +626,40 @@ class MM3Container2(Container):
 
         with open("./history.json", "w") as h:
             json.dump(history, h, indent=2)
+
+    def load_from_history(self):
+        if not Path("./history.json").exists():
+            return
+
+        with open("./history.json", "r") as history_file:
+            history_dict = json.load(history_file)
+
+        # find last entry in history
+        name = type(self).__name__
+        found = False
+        for e in history_dict[::-1]:
+            if e[0] == name:
+                print(f"Loading from {e[1]}")
+                found = True
+                break
+
+        if not found:
+            print("Couldn't find last entry")
+            return
+
+        # update internal state of each subwidget.
+        in_dict, run_dict, out_dict = e[2], e[3], e[4]
+        print(in_dict)
+        print(run_dict)
+        print(out_dict)
+
+        ez_deserialize(in_dict, self.in_paths)
+        ez_deserialize(run_dict, self.run_params)
+        ez_deserialize(out_dict, self.out_paths)
+
+        print("loading from most recent history!")
+        # update plugin visuals
+        self.regen_widgets()
 
     def add_in_folders(self):
         for folder_field, annotation in self.in_paths.__annotations__.items():
