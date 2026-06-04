@@ -140,7 +140,11 @@ def construct_cell(
         abs_division_time_s = time_table[fov][division_time]
         division_length_px = daughter1.lengths_px[0] + daughter2.lengths_px[0]
         division_width_px = (daughter1.widths_px[0] + daughter2.widths_px[0]) / 2
+        septum_position = daughter1.lengths_px[0] / (
+            daughter2.lengths_px[0] + daughter2.lengths_px[0]
+        )
 
+        elong_rate = None
         if len(times) > 1:
             # calculate the average growth rate
             try:
@@ -154,12 +158,7 @@ def construct_cell(
                 p = np.polyfit(rel_times_hr, log_lengths, 1)  # this wants float64
                 elong_rate = p[0]  # convert to hours
             except ValueError:
-                elong_rate = None
                 print(f"Elongation rate calculate failed for {id}.")
-
-            septum_position = daughter1.lengths_px[0] / (
-                daughter2.lengths_px[0] + daughter2.lengths_px[0]
-            )
 
     return Cell(
         id=cell_id,
