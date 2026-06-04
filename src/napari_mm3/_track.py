@@ -49,7 +49,7 @@ class RunParams:
         {
             "tooltip": "growth ratio of cells from frame-to-frame. For unbiased centroid matching (eg, in an antibiotic switch or growth arrest experiments), set this to 1."
         },
-    ] = 1
+    ] = 1.0
     lost_cell_time: Annotated[
         int,
         {
