@@ -500,7 +500,7 @@ def count_complete_cells(
     if isinstance(edge, GrowthEdge):
         return count_complete_cells(cell_graph, edge.cell_id, has_parent=has_parent)
     elif isinstance(edge, DivisionEdge):
-        print(f"division! {edge}, {has_parent=}")
+        # print(f"division! {edge}, {has_parent=}")
         return (
             has_parent
             + count_complete_cells(cell_graph, cell_id=edge.daughter1, has_parent=True)
@@ -558,7 +558,10 @@ def make_channel_lineages(
     information("Creating lineage for FOV %d, channel %d." % (fov_id, peak_id))
 
     img_filename = TIFF_FORMAT_PEAK % (experiment_name, fov_id, peak_id, seg_img)
-    image_data_seg = load_tiff(segmented_dir / img_filename)
+    try:
+        image_data_seg = load_tiff(segmented_dir / img_filename)
+    except FileNotFoundError:
+        return CellGraph()
 
     # Calculate all data for all time points.
     regions_by_time = [

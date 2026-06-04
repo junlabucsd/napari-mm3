@@ -36,43 +36,45 @@ class Cell:
     id: str
     fov: int
     peak: int
+    pxl2um: float
     birth_label: int
-    parent: str | None
-    times: list[int]
+    parent_id: str | None
+    time_idxs: list[int]
     abs_times_s: list[float]
-    birth_time: int
+    birth_time_idx: int
     labels: list[int]
     bboxes_px: list[list[list[int]]]
     areas_px: list[int]
     orientations_rad: list[float]
     centroids_px: list[list[int]]
-    lengths_um: list[float]
-    widths_um: list[float]
-    areas_um2: list[float]
-    volumes_um3: list[float]
+    lengths_px: list[float]
+    widths_px: list[float]
+    areas_px2: list[float]
+    volumes_px3: list[float]
 
     # only for complete cells
-    daughters: None | list[str]
-    division_time: None | int
+    daughter_ids: None | list[str]
+    division_time_idx: None | int
     abs_division_time_s: None | float
-    growth_rate: None | float
-    sb: None | float
-    sd: None | float
+    elong_rate_per_hr: None | float
+    sb_px: None | float
+    sd_px: None | float
     delta: None | float
-    septum_position: None | float
+    septum_position_px: None | float
     division_length_px: None | float
     division_width_px: None | float
-    division_length_um: None | float
-    division_width_um: None | float
 
     complete: bool
 
     # only for fluorescent cells.
     total_fluorescence: dict[str, np.ndarray] | None = None
 
+    # only for multiplexed experiments
+    strain: str | None = None
+
     @property
     def times_w_div(self):
-        return self.times + [self.division_time]
+        return self.time_idxs + [self.division_time_idx]
 
     @property
     def abs_times_w_div(self):
@@ -119,35 +121,9 @@ def construct_cell(
     areas_um2 = areas_px * pxl2um**2
     volumes_um3 = np.array(volumes) * pxl2um**3
 
-    print(times)
     abs_times_s = [time_table[fov][t] for t in times]
     complete = False
 
-    (
-        sb,
-        sd,
-        delta,
-        division_time,
-        abs_division_time_s,
-        division_length_px,
-        division_length_um,
-        division_width_px,
-        division_width_um,
-        growth_rate,
-        septum_position,
-    ) = (
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
     if len(daughters) == 2:
         """
         Divide the cell and update stats.
@@ -158,69 +134,64 @@ def construct_cell(
         daughter1, daughter2 = daughters
         sb = lengths[0] * pxl2um
         # needs to be refactored
-        sd = daughter1.lengths_um[0] + daughter2.lengths_um[0]
+        sd = daughter1.lengths_px[0] + daughter2.lengths_px[0]
         delta = sd - sb
-        division_time = daughter1.birth_time
+        division_time = daughter1.birth_time_idx
         abs_division_time_s = time_table[fov][division_time]
-        division_length_px = daughter1.lengths_um[0] + daughter2.lengths_um[0]
-        division_length_um = pxl2um * division_length_px
-        division_width_px = (daughter1.widths_um[0] + daughter2.widths_um[0]) / 2
-        division_width_um = division_width_px * pxl2um
+        division_length_px = daughter1.lengths_px[0] + daughter2.lengths_px[0]
+        division_width_px = (daughter1.widths_px[0] + daughter2.widths_px[0]) / 2
 
-        # calculate the average growth rate
-        try:
-            times_ = ((np.array(abs_times_s) - abs_times_s[0]) / 60.0).astype(
-                np.float64
+        if len(times) > 1:
+            # calculate the average growth rate
+            try:
+                rel_times_hr = (
+                    (np.array(abs_times_s) - abs_times_s[0]) / 60.0 / 60.0
+                ).astype(np.float64)
+                log_lengths = (np.log(lengths * pxl2um + [division_length_px])).astype(
+                    np.float64
+                )
+
+                p = np.polyfit(rel_times_hr, log_lengths, 1)  # this wants float64
+                elong_rate = p[0]  # convert to hours
+            except ValueError:
+                elong_rate = None
+                print(f"Elongation rate calculate failed for {id}.")
+
+            septum_position = daughter1.lengths_px[0] / (
+                daughter2.lengths_px[0] + daughter2.lengths_px[0]
             )
-            log_lengths = (np.log(lengths * pxl2um + [division_length_px])).astype(
-                np.float64
-            )
-
-            print(np.array(abs_times_s))
-            print(times_.shape)
-            print(log_lengths.shape)
-            p = np.polyfit(times_, log_lengths, 1)  # this wants float64
-            growth_rate = p[0] * 60.0  # convert to hours
-        except ValueError:
-            growth_rate = None
-            print("Elongation rate calculate failed for {}.".format(id))
-
-        septum_position = daughter1.lengths_um[0] / (
-            daughter2.lengths_um[0] + daughter2.lengths_um[0]
-        )
 
     return Cell(
         id=cell_id,
-        parent=parent_id,
+        parent_id=parent_id,
         fov=fov,
+        pxl2um=pxl2um,
         peak=int(cell_id.split("p")[1].split("t")[0]),
         birth_label=regions[0].label,
-        times=times,
+        time_idxs=times,
         abs_times_s=[time_table[fov][t] for t in times],
-        birth_time=times[0],
+        birth_time_idx=times[0],
         labels=[r.label for r in regions],
         bboxes_px=[r.bbox for r in regions],
         areas_px=[r.area for r in regions],
         orientations_rad=[orient(r) for r in regions],
         centroids_px=[r.centroid for r in regions],
-        lengths_um=lengths * pxl2um,
-        widths_um=widths * pxl2um,
-        areas_um2=areas_um2,
-        volumes_um3=volumes_um3,
-        daughters=[daughter.id for daughter in daughters],
+        lengths_px=lengths * pxl2um,
+        widths_px=widths * pxl2um,
+        areas_px2=areas_um2,
+        volumes_px3=volumes_um3,
+        daughter_ids=[daughter.id for daughter in daughters],
         # only for complete cells
-        division_time=division_time,
-        abs_division_time_s=abs_division_time_s,
-        growth_rate=growth_rate,
-        delta=delta,
-        sb=sb,
-        sd=sd,
-        septum_position=septum_position,
-        division_length_px=division_length_px,
-        division_width_px=division_width_px,
-        division_length_um=division_length_um,
-        division_width_um=division_width_um,
-        complete=complete,
+        division_time_idx=division_time if complete else None,
+        abs_division_time_s=abs_division_time_s if complete else None,
+        elong_rate_per_hr=elong_rate if complete else None,
+        delta=delta if complete else None,
+        sb_px=sb if complete else None,
+        sd_px=sd if complete else None,
+        septum_position_px=septum_position if complete else None,
+        division_length_px=division_length_px if complete else None,
+        division_width_px=division_width_px if complete else None,
+        complete=complete if complete else False,
     )
 
 
@@ -338,14 +309,41 @@ def cell_from_dict(in_dict):
     return cell
 
 
+# %% Random utility function for parsing range strings
+def range_string_to_indices(range_string):
+    """Convert a range string to a list of indices."""
+    print(f"'{range_string}'")
+    try:
+        range_string = range_string.replace(" ", "")
+        split = range_string.split(",")
+        indices = []
+        for items in split:
+            # If it's a range
+            if "-" in items:
+                limits = list(map(int, items.split("-")))
+                if len(limits) == 2:
+                    # Make it an inclusive range, as users would expect
+                    limits[1] += 1
+                    indices += list(range(limits[0], limits[1]))
+            # If it's a single item.
+            else:
+                indices += [int(items)]
+        print("Index range string valid!")
+        return indices
+    except:  # noqa: E722
+        raise ValueError(
+            "Index range string invalid. Returning empty range until a new string is specified."
+        )
+
+
 # %% Convenience functions for interaction and foci..
 def place_in_cell(cell: Cell, x, y, t):
     """Translates from screen-space to in-cell coordinates."""
     # check if our cell exists at the current timestamp.
-    if t not in cell.times:
+    if t not in cell.time_idxs:
         return None, None, None
 
-    cell_time = cell.times.index(t)
+    cell_time = cell.time_idxs.index(t)
     bbox = cell.bboxes_px[cell_time]
     # check that the point is inside the cell's bounding box.
     if not ((bbox[0] < y) & (y < bbox[2]) & (bbox[1] < x) & (x < bbox[3])):
@@ -395,7 +393,7 @@ def find_screenspace_foci(cells: Cells):
     cell: Cell
     for cell_id, cell in cells.items():
         # get conversion from cell to 'real' time
-        for i, time in enumerate(cell.times):
+        for i, time in enumerate(cell.time_idxs):
             orientation = cell.orientations_rad[i]
             centroid = cell.centroids_px[i]
 
@@ -665,7 +663,7 @@ def map_cells(cells: Cells, map_func: Callable[[Cell], Any]) -> dict[str, Any]:
 # find cells with both a mother and two daughters
 def find_complete_cells(cells: Cells) -> Cells:
     def is_complete_cell(cell: Cell):
-        return bool(cell.daughters and cell.parent)
+        return bool(cell.daughter_ids and cell.parent_id)
 
     return filter_cells(cells, is_complete_cell)
 
@@ -682,7 +680,7 @@ def find_mother_cells(cells) -> Cells:
 
 def find_cells_born_after(cells: Cells, born_after):
     def f(cell: Cell):
-        return cell.birth_time > born_after
+        return cell.birth_time_idx > born_after
 
     return filter_cells(cells, f)
 
@@ -833,7 +831,7 @@ def find_all_cell_intensities_helper(
                 )  # ty: ignore
 
             for _, cell in peak_cells.items():
-                cell_times = cell.times
+                cell_times = cell.time_idxs
                 cell_labels = cell.labels
                 total_fluorescences = []
 
@@ -937,7 +935,7 @@ def find_continuous_lineages(cells: Cells, specs, t1=0, t2=1000):
         for peak, cells in peaks.items():
             # sort the cells by time in a list for this peak
             cells_sorted = [(cell_id, cell) for cell_id, cell in cells.items()]
-            cells_sorted = sorted(cells_sorted, key=lambda x: x[1].birth_time)
+            cells_sorted = sorted(cells_sorted, key=lambda x: x[1].birth_time_idx)
 
             # Sometimes there are not any cells for the channel even if it was to be analyzed
             if not cells_sorted:
@@ -947,7 +945,7 @@ def find_continuous_lineages(cells: Cells, specs, t1=0, t2=1000):
             # and divides after t1, but not after t2
             for i, cell_data in enumerate(cells_sorted):
                 cell_id, cell = cell_data
-                if cell.birth_time < t1 and t1 <= cell.division_time < t2:
+                if cell.birth_time_idx < t1 and t1 <= cell.division_time_idx < t2:
                     # first_cell_index = i
                     break
 
@@ -1152,7 +1150,7 @@ def binned_stat(x, y, statistic="mean", bin_edges="sturges", binmin=None):
     return bin_centers, bin_means, bin_errors
 
 
-### Plotting functions #############################################################################
+# %% Plotting functions
 
 
 def plot_channel_traces(
