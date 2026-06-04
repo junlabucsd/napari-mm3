@@ -207,7 +207,7 @@ class RunParams:
     fov_list: FOVList
     stabilize: bool
     flip_image: FlipImage = FlipImage.auto
-    rotate: Annotated[float, {"min": -90, "max": 90}] = 0
+    rotate: Annotated[float, {"min": -90, "max": 90}] = 0.0
     vertical_crop_lower: float = 0.0
     vertical_crop_upper: float = 1.0
     horizontal_crop_lower: float = 0.0
