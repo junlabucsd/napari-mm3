@@ -12,7 +12,7 @@ from ._deriving_widgets import (
     load_tiff,
 )
 from .utils import (
-    TIFF_FILE_FORMAT_PEAK,
+    TIFF_FORMAT_PEAK,
     Cell,
     Cells,
     read_cells_from_json,
@@ -211,7 +211,7 @@ class FociPicking(MM3Container2):
         self.cell_label = 1
         self.update_cell_info()
 
-        stack_filename = TIFF_FILE_FORMAT_PEAK % (
+        stack_filename = TIFF_FORMAT_PEAK % (
             self.in_paths.experiment_name,
             self.fov_id,
             self.peak_id,
@@ -255,7 +255,7 @@ class FociPicking(MM3Container2):
         print(f"showing cell {self.cur_cell_id}")
 
         # switch postfix to c1/c2/c3 auto??
-        stack_filename = TIFF_FILE_FORMAT_PEAK % (
+        stack_filename = TIFF_FORMAT_PEAK % (
             self.in_paths.experiment_name,
             self.fov_id,
             self.peak_id,
@@ -263,7 +263,7 @@ class FociPicking(MM3Container2):
         )
         stack = load_tiff(self.in_paths.analysis_folder / "channels" / stack_filename)
 
-        stack_fl_filename = TIFF_FILE_FORMAT_PEAK % (
+        stack_fl_filename = TIFF_FORMAT_PEAK % (
             self.in_paths.experiment_name,
             self.fov_id,
             self.peak_id,
@@ -327,7 +327,7 @@ class FociPicking(MM3Container2):
             if self.in_paths.segmentation_mode == SegmentationMode.OTSU
             else "seg_unet"
         )
-        img_filename = TIFF_FILE_FORMAT_PEAK % (
+        img_filename = TIFF_FORMAT_PEAK % (
             self.in_paths.experiment_name,
             self.fov_id,
             self.peak_id,
@@ -499,7 +499,7 @@ class FociPicking(MM3Container2):
             if self.in_paths.segmentation_mode == SegmentationMode.OTSU
             else "seg_unet"
         )
-        img_filename = TIFF_FILE_FORMAT_PEAK % (
+        img_filename = TIFF_FORMAT_PEAK % (
             self.in_paths.experiment_name,
             self.fov_id,
             self.peak_id,

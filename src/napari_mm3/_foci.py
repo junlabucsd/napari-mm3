@@ -37,7 +37,7 @@ from ._deriving_widgets import (
     load_tiff,
 )
 from .utils import (
-    TIFF_FILE_FORMAT_PEAK,
+    TIFF_FORMAT_PEAK,
     Cells,
     organize_cells_by_channel,
     read_cells_from_json,
@@ -287,7 +287,7 @@ def foci(
             if len(cells_of_peak) == 0:
                 return
 
-            img_filename = TIFF_FILE_FORMAT_PEAK % (
+            img_filename = TIFF_FORMAT_PEAK % (
                 experiment_name,
                 fov_id,
                 peak_id,
@@ -296,7 +296,7 @@ def foci(
             img_stack = load_tiff(ana_dir / "subtracted" / img_filename)
 
             seg_str = "seg_otsu" if seg_method == SegmentationMode.OTSU else "seg_unet"
-            seg_filename = TIFF_FILE_FORMAT_PEAK % (
+            seg_filename = TIFF_FORMAT_PEAK % (
                 experiment_name,
                 fov_id,
                 peak_id,
@@ -437,7 +437,7 @@ class Foci(MM3Container):
         for cellid, cell in self.cells.items():
             all_times.union(set(cell.times))
 
-        foci_filename = TIFF_FILE_FORMAT_PEAK % (
+        foci_filename = TIFF_FORMAT_PEAK % (
             self.experiment_name,
             self.preview_fov,
             self.preview_peak,
@@ -450,7 +450,7 @@ class Foci(MM3Container):
             if self.segmentation_method == SegmentationMode.OTSU
             else "seg_unet"
         )
-        seg_filename = TIFF_FILE_FORMAT_PEAK % (
+        seg_filename = TIFF_FORMAT_PEAK % (
             self.experiment_name,
             self.preview_fov,
             self.preview_peak,
@@ -480,7 +480,7 @@ class Foci(MM3Container):
         # with p as the number of planes,
         # this displays 'sets' of n_steps images.
         for plane in self.valid_planes:
-            sub_filename = TIFF_FILE_FORMAT_PEAK % (
+            sub_filename = TIFF_FORMAT_PEAK % (
                 self.experiment_name,
                 self.preview_fov,
                 self.preview_peak,
@@ -511,7 +511,7 @@ class Foci(MM3Container):
             if self.segmentation_method == SegmentationMode.OTSU
             else "seg_unet"
         )
-        seg_filename = TIFF_FILE_FORMAT_PEAK % (
+        seg_filename = TIFF_FORMAT_PEAK % (
             self.experiment_name,
             self.preview_fov,
             self.preview_peak,

@@ -17,6 +17,7 @@ import scipy.stats as sps
 import seaborn as sns
 import tifffile as tiff
 import yaml
+from matplotlib.axes import Axes
 from scipy import ndimage as ndi
 from skimage.measure._regionprops import RegionProperties
 
@@ -805,9 +806,7 @@ def find_all_cell_intensities_helper(
                 peak_id,
                 channel_name,
             )
-            fl_stack: np.ndarray = tiff.imread(
-                intensity_directory / fl_stack_name
-            )  # ty: ignore
+            fl_stack: np.ndarray = tiff.imread(intensity_directory / fl_stack_name)  # ty: ignore
             try:
                 seg_stack_name = TIFF_FORMAT_PEAK % (
                     "",
@@ -815,9 +814,7 @@ def find_all_cell_intensities_helper(
                     peak_id,
                     "seg_unet",
                 )
-                seg_stack: np.ndarray = tiff.imread(
-                    seg_directory / seg_stack_name
-                )  # ty: ignore
+                seg_stack: np.ndarray = tiff.imread(seg_directory / seg_stack_name)  # ty: ignore
             except FileNotFoundError:
                 seg_stack_name = TIFF_FORMAT_PEAK % (
                     "",
@@ -825,9 +822,7 @@ def find_all_cell_intensities_helper(
                     peak_id,
                     "seg_otsu",
                 )
-                seg_stack: np.ndarray = tiff.imread(
-                    seg_directory / seg_stack_name
-                )  # ty: ignore
+                seg_stack: np.ndarray = tiff.imread(seg_directory / seg_stack_name)  # ty: ignore
 
             for _, cell in peak_cells.items():
                 cell_times = cell.time_idxs
@@ -976,34 +971,29 @@ def find_continuous_lineages(cells: Cells, specs, t1=0, t2=1000):
     return continuous_lineages
 
 
-def cells2df(cells_dict, columns=None):
+def cells2df(
+    cells_dict: dict[str, Cell],
+    columns=[
+        "fov",
+        "peak",
+        "birth_label",
+        "birth_time_idx",
+        "division_time_s",
+        "sb_px",
+        "sd_px",
+        "width_px",
+        "delta",
+        "elong_rate_per_hr",
+        "septum_position_px",
+    ],
+):
     """
     Take cell data (a dicionary of Cell objects) and return a dataframe.
-
-    rescale : boolean
-        If rescale is set to True, then the 6 major parameters are rescaled by their mean.
     """
-
-    # columns to include
-    if not columns:
-        columns = [
-            "fov",
-            "peak",
-            "birth_label",
-            "birth_time",
-            "division_time",
-            "sb",
-            "sd",
-            "width",
-            "delta",
-            "tau",
-            "elong_rate",
-            "septum_position",
-        ]
 
     # Make dataframe for plotting variables
     cells_df = pd.DataFrame(
-        cells_dict
+        cells_dict, index="id"
     ).transpose()  # must be transposed so data is in columns
     cells_df = cells_df.sort_values(by=["fov", "peak", "birth_time", "birth_label"])
     cells_df = cells_df[columns].apply(pd.to_numeric)
@@ -1150,6 +1140,65 @@ def binned_stat(x, y, statistic="mean", bin_edges="sturges", binmin=None):
 
 
 # %% Plotting functions
+def plot_against_birth_time(cells: dict[str, Cell], fn):
+    t_to_v = {}
+    for cell_id, cell in cells.items():
+        stat = fn(cell)
+        if stat is None:
+            continue
+        if cell.birth_time_idx not in t_to_v:
+            t_to_v[cell.birth_time_idx] = [stat]
+            continue
+        t_to_v[cell.birth_time_idx].append(stat)
+
+    xs = np.array(sorted(t for t in t_to_v))
+    ys = [np.nanmean(t_to_v[a]) for a in xs]
+
+    return xs, np.array(ys)
+
+
+def adder_plot(cells: dict[str, Cell], crop: slice = None):
+    """
+    A common control plot.
+    Plots size at birth, size at division, and the difference between the two.
+    For good, physiological data, all three should be constant over the relevant range.
+    """
+    fig, ax = plt.subplots(
+        nrows=3, figsize=(6, 6), sharex="col", layout="constrained", sharey="col"
+    )
+
+    fig.suptitle("Cell length follows adder.", fontweight="semibold")
+
+    xs, ys = plot_against_birth_time(
+        cells,
+        lambda cell: cell.division_length_px,
+    )
+    ax[0].scatter(xs[crop], ys[crop], marker=".")
+    ax[0].set_ylim(bottom=0)
+    ax[0].set_ylabel("$S_d$")
+
+    xs, ys = plot_against_birth_time(
+        cells,
+        lambda cell: cell.lengths_px[0],
+    )
+    ax[1].scatter(xs[crop], ys[crop], marker=".")
+    ax[1].set_ylim(bottom=0)
+    ax[1].set_ylabel("$S_b$")
+
+    xs, ys = plot_against_birth_time(
+        cells,
+        lambda cell: (
+            (cell.division_length_px - cell.lengths_px[0])
+            if cell.division_length_px
+            else None
+        ),
+    )
+    ax[2].scatter(xs[crop], ys[crop], marker=".")
+    ax[2].set_ylim(bottom=0)
+    ax[2].set_ylabel("$S_b  - S_d$")
+    ax[-1].set_xlabel("Birth time")
+
+    plt.show()
 
 
 def plot_channel_traces(
@@ -1363,7 +1412,7 @@ def plot_moving_avg(df, time_mark, column, window, ax, label=None):
     ax.plot(bin_centers, bin_mean, lw=1, alpha=1, label=label)
 
 
-def make_line_hist(data, bins=None, density=True):
+def line_hist(data, bins=None, density=True):
     if bins is None:
         bin_vals, bin_edges = np.histogram(data, density=density)
     else:
@@ -1376,6 +1425,32 @@ def make_line_hist(data, bins=None, density=True):
     bin_vals = np.insert(bin_vals, 0, 0)
     bin_vals = np.append(bin_vals, 0)
     return (bin_centers, bin_vals)
+
+
+def plot_line_hist(
+    data,
+    bins=None,
+    density=True,
+    ax: Axes = None,
+    skipna=False,
+    **kwargs,
+):
+    if ax is None:
+        _, ax = plt.subplots()
+
+    if skipna:
+        data = np.array(data)
+        data = data[data != np.array(None)]
+
+    bin_centers, bin_vals = line_hist(data, bins=bins, density=density)
+
+    ax.plot(bin_centers, bin_vals, **kwargs)
+    ax.set_ylim(0, np.max(bin_vals) * 1.3)
+    ax.spines["left"].set_visible(False)
+    if density:
+        ax.set_yticks([])
+
+    return bin_centers, bin_vals
 
 
 def plot_distributions(df, columns, labels=None, titles=None):
@@ -1421,22 +1496,11 @@ def plot_distributions(df, columns, labels=None, titles=None):
         cv1 = df[c].std() / df[c].mean()
 
         ax[i].set_title(titles[i], fontsize=14)
-        b1, v1 = make_line_hist(df[c], density=True)
-        ax[i].plot(
-            b1,
-            v1,
-            ls="-",
-            color="C0",
-            label="$\\mu$ = {:2.2f}\nCV = {:2.2f}".format(mu1, cv1),
-            lw=1,
+        plot_line_hist(
+            df[c], color="C0", lw=1, label=f"$\\mu$ = {mu1:2.2f}\nCV = {cv1:2.2f}"
         )
-
         ax[i].set_xlabel(labels[i], fontsize=12)
-        ax[i].set_ylim(0, np.max(v1) * 1.3)
-        ax[i].set_yticks([])
-    #     ax[i].legend(frameon=False,fontsize=6,loc=1)
 
-    sns.despine(left=True)
     plt.tight_layout()
 
 
